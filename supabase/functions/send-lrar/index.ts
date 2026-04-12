@@ -95,7 +95,7 @@ serve(async (req) => {
     if (error instanceof HttpError) {
       return jsonResponse({ error: error.message }, error.status);
     }
-    return jsonResponse({ error: error.message || "Internal server error" }, 500);
+    return jsonResponse({ error: error instanceof Error ? error.message : "Internal server error" }, 500);
   }
 });
 
