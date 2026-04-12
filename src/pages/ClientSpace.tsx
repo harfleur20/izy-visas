@@ -74,9 +74,7 @@ const normalizeStoredOption = (value?: string | null): SendOption | null => {
   return normalized === "A" || normalized === "B" || normalized === "C" ? normalized : null;
 };
 
-const getErrorMessage = (error: unknown, fallback: string) => (
-  error instanceof Error ? error.message : fallback
-);
+// Removed getErrorMessage — all errors are now handled with user-friendly messages inline
 
 const cTitles: Record<number, string> = {
   0: "Vérification de recevabilité", 1: "Création de compte", 2: "Décision de refus",
