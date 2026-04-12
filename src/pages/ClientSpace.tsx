@@ -630,10 +630,10 @@ const ClientSpace = () => {
   );
 
   const bottomNavItems = [
-    { icon: "🏠", label: "Accueil", onClick: () => setStep(0), active: step === 0 },
-    { icon: "📋", label: "Dossier", onClick: () => setStep(2), active: step >= 2 && step <= 7 },
-    { icon: "📬", label: "Envoi", onClick: () => setStep(11), active: step >= 8 && step <= 11 },
-    { icon: "📊", label: "Suivi", onClick: () => setStep(13), active: step === 13 },
+    { icon: "🏠", label: "Accueil", onClick: () => navigateToStep(0), active: step === 0 },
+    { icon: "📋", label: "Dossier", onClick: () => navigateToStep(2), active: step >= 2 && step <= 7 },
+    { icon: "📬", label: "Envoi", onClick: () => navigateToStep(11), active: step >= 8 && step <= 11 },
+    { icon: "📊", label: "Suivi", onClick: () => navigateToStep(13), active: step === 13 },
   ];
 
   return (
