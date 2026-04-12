@@ -595,7 +595,7 @@ const ClientSpace = () => {
                   first_name: profileForm.first_name, last_name: profileForm.last_name,
                   phone: profileForm.phone, prefixe_telephone: profileForm.prefixe_telephone,
                 }).eq("id", user.id);
-                if (error) { toast({ title: "Erreur", description: "Impossible de sauvegarder le profil.", variant: "destructive" }); }
+                if (error) { toast({ title: "Profil non sauvegardé", description: "Vérifiez vos informations et réessayez.", variant: "destructive" }); }
                 else {
                   const profilePatch: DossierUpdate = {
                     client_first_name: profileForm.first_name,
@@ -697,7 +697,7 @@ const ClientSpace = () => {
                 setStep(5);
               } catch (err: unknown) {
                 console.error("Save error:", err);
-                toast({ title: "Erreur", description: "Impossible d'enregistrer les données. Réessayez.", variant: "destructive" });
+                toast({ title: "Enregistrement impossible", description: "Les données de votre décision n'ont pas pu être sauvegardées. Réessayez.", variant: "destructive" });
               }
             }}
             onBack={() => setStep(1)}
