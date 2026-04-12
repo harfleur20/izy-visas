@@ -777,7 +777,7 @@ const ClientSpace = () => {
               </button>
             </div>
 
-            {selectedOption === "C" && activeDossier.validation_juridique_status !== "validee_avocat" && (
+            {selectedOption === "C" && activeDossier.lrar_status !== "validee_avocat" && (
               <Box variant="alert" title="Relecture avocat en attente">
                 L'option C nécessite la validation de l'avocat avant l'envoi LRAR automatique.
               </Box>
@@ -786,9 +786,9 @@ const ClientSpace = () => {
             <div className="flex gap-2.5 mt-7">
               <button className="font-syne font-bold text-[0.78rem] px-5 py-2.5 rounded-[7px] bg-foreground/[0.07] text-muted-foreground border border-border-2 transition-all" onClick={() => setStep(9)}>← Retour paiement</button>
               <button
-                disabled={!selectedOption || (selectedOption !== "A" && !procurationSignee) || (selectedOption === "C" && activeDossier.validation_juridique_status !== "validee_avocat")}
+                disabled={!selectedOption || (selectedOption !== "A" && !procurationSignee) || (selectedOption === "C" && activeDossier.lrar_status !== "validee_avocat")}
                 className={`font-syne font-bold text-[0.78rem] px-5 py-2.5 rounded-[7px] transition-all ${
-                  !selectedOption || (selectedOption !== "A" && !procurationSignee) || (selectedOption === "C" && activeDossier.validation_juridique_status !== "validee_avocat")
+                  !selectedOption || (selectedOption !== "A" && !procurationSignee) || (selectedOption === "C" && activeDossier.lrar_status !== "validee_avocat")
                     ? "bg-muted text-muted-foreground cursor-not-allowed opacity-50"
                     : "bg-primary-hover text-foreground hover:bg-[#5585ff]"
                 }`}
