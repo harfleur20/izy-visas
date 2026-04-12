@@ -130,9 +130,16 @@ export function DecisionRefusUpload({ dossierId, userId, onComplete, onBack }: D
 
   const handleConfirm = () => {
     const finalData = phase === "partial" && editableData ? editableData : extractedData;
-    if (finalData) {
-      onComplete(finalData);
+    if (!finalData) return;
+
+    // Block if deadline expired
+    if (finalData.delai_restant_jours !== null && finalData.delai_restant_jours < 0) {
+      toast.error("Le délai de recours de 30 jours est expiré. Vous ne pouvez pas continuer avec ce document.");
+      return;
     }
+
+    // Warn but allow if name mismatch (user already saw the warning)
+    onComplete(finalData);
   };
 
   const resetToUpload = () => {
