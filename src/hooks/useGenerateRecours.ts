@@ -17,7 +17,15 @@ export function useGenerateRecours() {
       if (error) throw error;
 
       if (data?.error && data?.missing_fields) {
-        toast.error(data.message || data.error);
+        const fieldLabels: Record<string, string> = {
+          "MOTIF DE REFUS": "les motifs de refus (retournez à l'étape Décision de refus)",
+          "CONSULAT": "les informations du consulat (retournez à l'étape Décision de refus)",
+          "PIÈCES JOINTES": "au moins une pièce justificative (retournez à l'étape Pièces justificatives)",
+        };
+        const missing = (data.missing_fields as string[])
+          .map((f: string) => fieldLabels[f] || f)
+          .join("\n• ");
+        toast.error(`Impossible de générer la lettre.\n\nIl manque :\n• ${missing}`, { duration: 8000 });
         return null;
       }
 
