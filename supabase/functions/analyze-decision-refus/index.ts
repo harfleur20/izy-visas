@@ -105,6 +105,17 @@ serve(async (req) => {
       return jsonResponse({ error: "Paramètres manquants : file, dossier_id, user_id" }, 400);
     }
 
+    // Fetch dossier owner info for cross-validation
+    const supabaseAdmin = getSupabaseAdmin();
+    const { data: dossierOwner } = await supabaseAdmin
+      .from("dossiers")
+      .select("client_first_name, client_last_name")
+      .eq("id", dossierId)
+      .single();
+
+    const ownerFirstName = (dossierOwner?.client_first_name || "").trim().toLowerCase();
+    const ownerLastName = (dossierOwner?.client_last_name || "").trim().toLowerCase();
+
     // ── Step 1: Format & size validation ─────────────────────────────────
     const fileType = file.type;
     const fileSize = file.size;
