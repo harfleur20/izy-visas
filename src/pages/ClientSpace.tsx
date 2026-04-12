@@ -76,6 +76,13 @@ const normalizeStoredOption = (value?: string | null): SendOption | null => {
 
 // Removed getErrorMessage — all errors are now handled with user-friendly messages inline
 
+// ── Step prerequisite definitions ────────────────────────────────
+// Each step declares what must be true BEFORE entering it.
+// `check` returns true if the prerequisite is met.
+// `msg` is the user-facing toast shown when blocked.
+// `redirect` is the step to send the user back to.
+type StepGuard = { check: () => boolean; msg: string; redirect: number };
+
 const cTitles: Record<number, string> = {
   0: "Vérification de recevabilité", 1: "Création de compte", 2: "Décision de refus",
   5: "Pièces justificatives",
