@@ -322,6 +322,8 @@ export type Database = {
           date_notification_refus: string | null
           date_qualification: string | null
           date_signature_procuration: string | null
+          date_finalisation_lettre: string | null
+          date_validation_juridique: string | null
           delivered_at: string | null
           destinataire_recours: string | null
           dossier_ref: string
@@ -358,9 +360,12 @@ export type Database = {
           url_decision_refus: string | null
           url_lettre_definitive: string | null
           url_lettre_neutre: string | null
+          url_lrar_pdf: string | null
           url_procuration_pdf: string | null
           use_capdemarches: boolean
           user_id: string
+          validation_juridique_mode: string
+          validation_juridique_status: string
           visa_type: string
           webhook_events: Json | null
         }
@@ -390,6 +395,8 @@ export type Database = {
           date_notification_refus?: string | null
           date_qualification?: string | null
           date_signature_procuration?: string | null
+          date_finalisation_lettre?: string | null
+          date_validation_juridique?: string | null
           delivered_at?: string | null
           destinataire_recours?: string | null
           dossier_ref: string
@@ -426,9 +433,12 @@ export type Database = {
           url_decision_refus?: string | null
           url_lettre_definitive?: string | null
           url_lettre_neutre?: string | null
+          url_lrar_pdf?: string | null
           url_procuration_pdf?: string | null
           use_capdemarches?: boolean
           user_id: string
+          validation_juridique_mode?: string
+          validation_juridique_status?: string
           visa_type: string
           webhook_events?: Json | null
         }
@@ -458,6 +468,8 @@ export type Database = {
           date_notification_refus?: string | null
           date_qualification?: string | null
           date_signature_procuration?: string | null
+          date_finalisation_lettre?: string | null
+          date_validation_juridique?: string | null
           delivered_at?: string | null
           destinataire_recours?: string | null
           dossier_ref?: string
@@ -494,9 +506,12 @@ export type Database = {
           url_decision_refus?: string | null
           url_lettre_definitive?: string | null
           url_lettre_neutre?: string | null
+          url_lrar_pdf?: string | null
           url_procuration_pdf?: string | null
           use_capdemarches?: boolean
           user_id?: string
+          validation_juridique_mode?: string
+          validation_juridique_status?: string
           visa_type?: string
           webhook_events?: Json | null
         }

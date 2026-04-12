@@ -1,6 +1,11 @@
 import { useState, useEffect } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { LrarComposition } from "@/components/LrarComposition";
+import { toast } from "sonner";
+import type { Database } from "@/integrations/supabase/types";
+
+type Dossier = Database["public"]["Tables"]["dossiers"]["Row"];
+type PieceJustificative = Database["public"]["Tables"]["pieces_justificatives"]["Row"];
 
 interface LrarCompositionWrapperProps {
   dossierId: string;
@@ -16,8 +21,9 @@ export function LrarCompositionWrapper({
   onBack,
 }: LrarCompositionWrapperProps) {
   const [loading, setLoading] = useState(true);
-  const [dossier, setDossier] = useState<any>(null);
-  const [pieces, setPieces] = useState<any[]>([]);
+  const [sending, setSending] = useState(false);
+  const [dossier, setDossier] = useState<Dossier | null>(null);
+  const [pieces, setPieces] = useState<PieceJustificative[]>([]);
 
   useEffect(() => {
     const load = async () => {
@@ -49,6 +55,15 @@ export function LrarCompositionWrapper({
       <div className="text-center py-12 text-muted-foreground">
         <div className="animate-spin h-8 w-8 border-4 border-primary border-t-transparent rounded-full mx-auto mb-4" />
         <p className="text-sm">Chargement de la composition LRAR…</p>
+      </div>
+    );
+  }
+
+  if (sending) {
+    return (
+      <div className="text-center py-12 text-muted-foreground">
+        <div className="animate-spin h-8 w-8 border-4 border-primary border-t-transparent rounded-full mx-auto mb-4" />
+        <p className="text-sm">Préparation du PDF LRAR et envoi MySendingBox…</p>
       </div>
     );
   }
@@ -104,9 +119,29 @@ export function LrarCompositionWrapper({
       visaType={dossier.visa_type}
       mandatoryPieces={mandatoryPieces}
       optionalPieces={optionalPieces}
-      onConfirm={(data) => {
-        console.log("LRAR confirmed:", data);
-        onConfirm();
+      onConfirm={async () => {
+        setSending(true);
+        try {
+          const { data: pdfData, error: pdfError } = await supabase.functions.invoke("build-lrar-pdf", {
+            body: { dossierId },
+          });
+          if (pdfError) throw pdfError;
+          if (pdfData?.error) throw new Error(pdfData.error);
+
+          const { data: sendData, error: sendError } = await supabase.functions.invoke("send-lrar/send", {
+            body: { dossierId },
+          });
+          if (sendError) throw sendError;
+          if (sendData?.error) throw new Error(sendData.error);
+
+          toast.success(`LRAR envoyée${sendData?.trackingNumber ? ` — suivi ${sendData.trackingNumber}` : ""}`);
+          onConfirm();
+        } catch (err) {
+          console.error("LRAR send error:", err);
+          toast.error(err instanceof Error ? err.message : "Impossible d'envoyer la LRAR.");
+        } finally {
+          setSending(false);
+        }
       }}
       onBack={onBack}
     />

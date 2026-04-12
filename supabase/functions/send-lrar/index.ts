@@ -134,6 +134,46 @@ async function handleSend(req: Request) {
 
   assertDossierAccess(authContext, dossier);
 
+  const optionChoisie = dossier.option_choisie || (typeof dossier.option_envoi === "string" ? dossier.option_envoi.slice(0, 1) : null);
+  if (optionChoisie === "A") {
+    return jsonResponse({
+      error: "L'option A ne déclenche pas d'envoi LRAR automatique.",
+      code: "OPTION_A_NO_AUTO_LRAR",
+    }, 400);
+  }
+
+  const { data: paidPayment } = await supabase
+    .from("payments")
+    .select("id, option_choisie, status, verified_by_webhook")
+    .eq("dossier_ref", dossier.dossier_ref)
+    .eq("user_id", dossier.user_id)
+    .eq("status", "paid")
+    .eq("verified_by_webhook", true)
+    .order("updated_at", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+
+  if (!paidPayment) {
+    return jsonResponse({
+      error: "Paiement non confirmé par Stripe. L'envoi LRAR est bloqué.",
+      code: "PAYMENT_NOT_CONFIRMED",
+    }, 402);
+  }
+
+  if (dossier.validation_juridique_status === "bloquee") {
+    return jsonResponse({
+      error: "Validation juridique bloquée. La lettre doit être corrigée avant envoi.",
+      code: "LEGAL_VALIDATION_BLOCKED",
+    }, 409);
+  }
+
+  if (optionChoisie === "C" && dossier.validation_juridique_status !== "validee_avocat") {
+    return jsonResponse({
+      error: "Option C: la relecture avocat doit être validée avant l'envoi LRAR.",
+      code: "LAWYER_REVIEW_REQUIRED",
+    }, 409);
+  }
+
   // ── Vérification 1 : Procuration signée ──
   if (!dossier.procuration_signee) {
     // Alert admin
@@ -152,8 +192,9 @@ async function handleSend(req: Request) {
   }
 
   // ── Vérification 2 : Procuration non expirée ──
-  if (dossier.procuration_valide_jusqu_au) {
-    const expiry = new Date(dossier.procuration_valide_jusqu_au);
+  const procurationExpiry = dossier.procuration_expiration || dossier.procuration_valide_jusqu_au;
+  if (procurationExpiry) {
+    const expiry = new Date(procurationExpiry);
     if (expiry < new Date()) {
       // Notify client via WhatsApp
       if (dossier.client_phone) {
@@ -165,13 +206,13 @@ async function handleSend(req: Request) {
       return jsonResponse({
         error: "Procuration expirée. Veuillez la renouveler avant l'envoi.",
         code: "PROCURATION_EXPIRED",
-        expiredAt: dossier.procuration_valide_jusqu_au,
+        expiredAt: procurationExpiry,
       }, 403);
     }
   }
 
   // ── Vérification 3 : PDF fusionné prêt ──
-  const storagePath = `${dossierId}/lrar_complet_${dossier.dossier_ref}.pdf`;
+  const storagePath = dossier.url_lrar_pdf || `${dossierId}/lrar_complet_${dossier.dossier_ref}.pdf`;
   const { data: pdfUrlData, error: pdfUrlErr } = await supabase.storage
     .from("dossiers")
     .createSignedUrl(storagePath, 7200);

@@ -13,9 +13,10 @@ interface SendOptionChooserProps {
   dateNotification?: string;
   onSelect: (option: "A" | "B" | "C") => void;
   onBack: () => void;
+  loading?: boolean;
 }
 
-export const SendOptionChooser = ({ dossierRef, dateNotification, onSelect, onBack }: SendOptionChooserProps) => {
+export const SendOptionChooser = ({ dossierRef, dateNotification, onSelect, onBack, loading = false }: SendOptionChooserProps) => {
   const [tarifs, setTarifs] = useState<Tarification | null>(null);
   const [daysLeft, setDaysLeft] = useState<number | null>(null);
 
@@ -52,7 +53,13 @@ export const SendOptionChooser = ({ dossierRef, dateNotification, onSelect, onBa
       <Desc>Votre lettre est prête. Choisissez votre mode d'envoi.</Desc>
 
       {/* Option A — Téléchargement */}
-      <div className="bg-panel border border-border rounded-xl p-5 mb-4 cursor-pointer hover:border-primary-hover/40 transition-all group" onClick={() => onSelect("A")}>
+      {loading && (
+        <Box variant="info" title="Finalisation de la lettre">
+          Préparation du PDF définitif avant paiement…
+        </Box>
+      )}
+
+      <div className={`bg-panel border border-border rounded-xl p-5 mb-4 transition-all group ${loading ? "opacity-60 pointer-events-none" : "cursor-pointer hover:border-primary-hover/40"}`} onClick={() => onSelect("A")}>
         <div className="flex gap-4 items-start">
           <div className="text-3xl flex-shrink-0">📥</div>
           <div className="flex-1">
@@ -75,7 +82,7 @@ export const SendOptionChooser = ({ dossierRef, dateNotification, onSelect, onBa
       </div>
 
       {/* Option B — MySendingBox */}
-      <div className="bg-gradient-to-br from-post-dark/20 to-gold-3/[0.08] border-[1.5px] border-post-dark/35 rounded-[14px] p-5 mb-4 cursor-pointer hover:border-primary-hover/50 transition-all group" onClick={() => onSelect("B")}>
+      <div className={`bg-gradient-to-br from-post-dark/20 to-gold-3/[0.08] border-[1.5px] border-post-dark/35 rounded-[14px] p-5 mb-4 transition-all group ${loading ? "opacity-60 pointer-events-none" : "cursor-pointer hover:border-primary-hover/50"}`} onClick={() => onSelect("B")}>
         <div className="flex gap-4 items-start">
           <div className="flex flex-col items-center gap-0.5 flex-shrink-0">
             <div className="bg-post-dark text-post font-syne font-extrabold text-sm px-2.5 py-1 rounded-t">LA POSTE</div>
@@ -101,7 +108,7 @@ export const SendOptionChooser = ({ dossierRef, dateNotification, onSelect, onBa
       </div>
 
       {/* Option C — Avocat */}
-      <div className="bg-gradient-to-br from-primary/10 to-gold/[0.07] border-[1.5px] border-gold-2/35 rounded-[14px] p-5 mb-4 relative overflow-hidden cursor-pointer hover:border-gold-2/60 transition-all group" onClick={() => onSelect("C")}>
+      <div className={`bg-gradient-to-br from-primary/10 to-gold/[0.07] border-[1.5px] border-gold-2/35 rounded-[14px] p-5 mb-4 relative overflow-hidden transition-all group ${loading ? "opacity-60 pointer-events-none" : "cursor-pointer hover:border-gold-2/60"}`} onClick={() => onSelect("C")}>
         <div className="absolute top-3 right-3 bg-gold-2 text-background font-syne text-[0.58rem] font-extrabold px-2 py-0.5 rounded tracking-wider">RECOMMANDÉ</div>
         <div className="flex gap-4 items-start">
           <div className="text-3xl flex-shrink-0">⚖️</div>

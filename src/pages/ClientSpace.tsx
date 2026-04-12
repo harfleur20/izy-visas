@@ -47,6 +47,8 @@ type ActiveDossier = {
   lrar_status?: string | null;
   option_choisie?: string | null;
   option_envoi?: string | null;
+  url_lettre_definitive?: string | null;
+  validation_juridique_status?: string | null;
   procuration_signee?: boolean | null;
   date_signature_procuration?: string | null;
   procuration_expiration?: string | null;
@@ -94,6 +96,7 @@ const ClientSpace = () => {
   const [profileLoaded, setProfileLoaded] = useState(false);
   const { generate: generateRecours, loading: generatingRecours, result: recoursResult } = useGenerateRecours();
   const [selectedOption, setSelectedOption] = useState<SendOption | null>(null);
+  const [finalizingOption, setFinalizingOption] = useState(false);
 
   const updateActiveDossier = useCallback(async (patch: DossierUpdate) => {
     if (!activeDossier) return false;
@@ -140,7 +143,7 @@ const ClientSpace = () => {
     const loadOrCreateDossier = async () => {
       const { data } = await supabase
         .from("dossiers")
-        .select("id, dossier_ref, procuration_signee, date_signature_procuration, procuration_expiration, date_notification_refus, lrar_status, option_choisie, option_envoi")
+        .select("id, dossier_ref, procuration_signee, date_signature_procuration, procuration_expiration, date_notification_refus, lrar_status, option_choisie, option_envoi, url_lettre_definitive, validation_juridique_status")
         .eq("user_id", user.id)
         .order("created_at", { ascending: false })
         .limit(1)
@@ -171,7 +174,7 @@ const ClientSpace = () => {
             recipient_postal_code: "44036",
             recipient_city: "Nantes Cedex 1",
           })
-          .select("id, dossier_ref, procuration_signee, date_signature_procuration, procuration_expiration, date_notification_refus, lrar_status, option_choisie, option_envoi")
+          .select("id, dossier_ref, procuration_signee, date_signature_procuration, procuration_expiration, date_notification_refus, lrar_status, option_choisie, option_envoi, url_lettre_definitive, validation_juridique_status")
           .single();
 
         if (!error && newDossier) {
@@ -345,16 +348,35 @@ const ClientSpace = () => {
   };
 
   const handleOptionSelect = async (option: SendOption) => {
+    if (!activeDossier) return;
+    setFinalizingOption(true);
     setSelectedOption(option);
-    if (activeDossier) {
+    try {
+      const { data, error } = await supabase.functions.invoke("finalize-letter", {
+        body: { dossier_id: activeDossier.id, option },
+      });
+      if (error) throw error;
+      if (data?.error) throw new Error(data.error);
+
       const saved = await updateActiveDossier({
         option_choisie: option,
-        option_envoi: option,
-        lrar_status: "option_selectionnee",
+        option_envoi: data?.option_envoi || option,
+        url_lettre_definitive: data?.url_lettre_definitive,
+        validation_juridique_status: data?.validation_juridique_status,
+        lrar_status: data?.status || "lettre_finalisee",
       });
       if (!saved) return;
+      toast({ title: "✅ Lettre finalisée", description: "Le PDF définitif est prêt pour le paiement et l'envoi." });
+      setStep(9);
+    } catch (err: unknown) {
+      toast({
+        title: "Finalisation impossible",
+        description: getErrorMessage(err, "Impossible de finaliser la lettre avec cette option."),
+        variant: "destructive",
+      });
+    } finally {
+      setFinalizingOption(false);
     }
-    setStep(9);
   };
 
   const sidebar = (
@@ -625,6 +647,7 @@ const ClientSpace = () => {
             dateNotification={activeDossier.date_notification_refus}
             onSelect={handleOptionSelect}
             onBack={() => setStep(7)}
+            loading={finalizingOption}
           />
         )}
 
@@ -758,12 +781,18 @@ const ClientSpace = () => {
               </button>
             </div>
 
+            {selectedOption === "C" && activeDossier.validation_juridique_status !== "validee_avocat" && (
+              <Box variant="alert" title="Relecture avocat en attente">
+                L'option C nécessite la validation de l'avocat avant l'envoi LRAR automatique.
+              </Box>
+            )}
+
             <div className="flex gap-2.5 mt-7">
               <button className="font-syne font-bold text-[0.78rem] px-5 py-2.5 rounded-[7px] bg-foreground/[0.07] text-muted-foreground border border-border-2 transition-all" onClick={() => setStep(9)}>← Retour paiement</button>
               <button
-                disabled={!selectedOption || (selectedOption !== "A" && !procurationSignee)}
+                disabled={!selectedOption || (selectedOption !== "A" && !procurationSignee) || (selectedOption === "C" && activeDossier.validation_juridique_status !== "validee_avocat")}
                 className={`font-syne font-bold text-[0.78rem] px-5 py-2.5 rounded-[7px] transition-all ${
-                  !selectedOption || (selectedOption !== "A" && !procurationSignee)
+                  !selectedOption || (selectedOption !== "A" && !procurationSignee) || (selectedOption === "C" && activeDossier.validation_juridique_status !== "validee_avocat")
                     ? "bg-muted text-muted-foreground cursor-not-allowed opacity-50"
                     : "bg-primary-hover text-foreground hover:bg-[#5585ff]"
                 }`}

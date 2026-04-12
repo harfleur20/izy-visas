@@ -422,6 +422,14 @@ serve(async (req) => {
       .createSignedUrl(storagePath, 7200);
 
     const totalPages = mergedPdf.getPageCount();
+    await supabase
+      .from("dossiers")
+      .update({
+        url_lrar_pdf: storagePath,
+        lrar_status: "pdf_lrar_prepare",
+      })
+      .eq("id", dossierId);
+
     console.log(`[BUILD-LRAR] Merged PDF: ${totalPages} pages, stored at ${storagePath}`);
 
     return jsonResponse({

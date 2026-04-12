@@ -1,5 +1,6 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.49.1";
+import { assertDossierAccess, HttpError, requireAuthenticatedContext } from "../_shared/security.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -66,6 +67,13 @@ serve(async (req) => {
     const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
     const SUPABASE_ANON_KEY = Deno.env.get("SUPABASE_ANON_KEY")!;
     const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
+    const authHeader = req.headers.get("Authorization");
+    const supabaseUser = createClient(
+      SUPABASE_URL,
+      SUPABASE_ANON_KEY,
+      { global: authHeader ? { headers: { Authorization: authHeader } } : undefined },
+    );
+    const authContext = await requireAuthenticatedContext(req, supabase, supabaseUser);
 
     const { dossier_id } = await req.json();
 
@@ -85,6 +93,8 @@ serve(async (req) => {
       });
     }
 
+    assertDossierAccess(authContext, dossier);
+
     const { data: profile } = await supabase
       .from("profiles").select("*").eq("id", dossier.user_id).single();
 
@@ -94,7 +104,10 @@ serve(async (req) => {
       .eq("dossier_id", dossier_id)
       .order("created_at", { ascending: true });
 
-    const piecesJointes = (pieces || []).map((p: any) => ({ name: p.nom_piece, pages: p.nombre_pages || 1 }));
+    const piecesJointes = (pieces || []).map((p: { nom_piece: string; nombre_pages: number | null }) => ({
+      name: p.nom_piece,
+      pages: p.nombre_pages || 1,
+    }));
 
     // ═══ Validate required fields ═══
     const clientName = dossier.client_last_name || "";
@@ -114,7 +127,7 @@ serve(async (req) => {
     const clientVille = dossier.client_ville || profile?.ville || "";
     const email = dossier.client_email || "";
 
-    const requiredFields: Record<string, any> = {
+    const requiredFields: Record<string, unknown> = {
       "NOM DU CLIENT": clientName, "TYPE DE VISA": visaType,
       "MOTIF DE REFUS": motifRefus, "DATE DE NOTIFICATION": decisionDate,
       "CONSULAT": consulat, "NUMÉRO PASSEPORT": passportNumber,
@@ -138,13 +151,19 @@ serve(async (req) => {
         .order("favorable_demandeur", { ascending: false });
 
       if (refRows && refRows.length > 0) {
-        const matchingRefs = refRows.filter((r: any) => {
+        const matchingRefs = refRows.filter((r: { motifs_concernes?: string[] | null }) => {
           const motifs = r.motifs_concernes || [];
           return motifCodes.some((c: string) => motifs.includes(c.toUpperCase()));
         });
         if (matchingRefs.length > 0) {
           refsContext = "\n\n═══ RÉFÉRENCES JURIDIQUES VÉRIFIÉES (BASE IZY VISA) ═══\n" +
-            matchingRefs.map((r: any) => {
+            matchingRefs.map((r: {
+              reference_complete: string;
+              favorable_demandeur: boolean;
+              categorie: string;
+              motifs_concernes?: string[] | null;
+              texte_exact?: string | null;
+            }) => {
               const fav = r.favorable_demandeur ? "✓ FAVORABLE" : "✗ DÉFAVORABLE";
               return `--- ${r.reference_complete} [${fav}] ---\nCatégorie: ${r.categorie}\nMotifs: ${(r.motifs_concernes || []).join(", ")}\n${r.texte_exact ? `Texte: ${r.texte_exact.substring(0, 1500)}` : ""}`;
             }).join("\n\n");
@@ -161,7 +180,10 @@ serve(async (req) => {
     ["L211-1", "L211-2", "R211-13"].forEach((a) => articlesToFetch.add(a));
     const includeArt8CEDH = motifCodes.some((c) => ["I", "J"].includes(c.toUpperCase()));
 
-    let legalContext: any = { articles: {}, jurisprudence: "" };
+    let legalContext: {
+      articles: Record<string, { found?: boolean; content?: string; url?: string }>;
+      jurisprudence?: string;
+    } = { articles: {}, jurisprudence: "" };
     let openlegiFetchSuccess = true;
     let openlegiFetchTimestamp = new Date().toISOString();
     try {
@@ -185,8 +207,8 @@ serve(async (req) => {
     // Build set of articles successfully fetched from OpenLégi (our ground truth)
     const verifiedArticleIds = new Set<string>();
     const articlesContext = Object.entries(legalContext.articles || {})
-      .filter(([_, v]: [string, any]) => v.found)
-      .map(([id, v]: [string, any]) => {
+      .filter(([_, v]) => v.found)
+      .map(([id, v]) => {
         verifiedArticleIds.add(id.toUpperCase().replace(/\s/g, ""));
         return `=== Article ${id} (CESEDA) ===\n${v.content}\nSource: ${v.url}`;
       })
@@ -196,7 +218,7 @@ serve(async (req) => {
 
     // ═══ STEP 4: Build pieces list ═══
     const piecesFormatted = piecesJointes
-      .map((p: any, i: number) => `Pièce n°${i + 1} : ${p.name} (${p.pages} page${p.pages > 1 ? "s" : ""})`)
+      .map((p, i: number) => `Pièce n°${i + 1} : ${p.name} (${p.pages} page${p.pages > 1 ? "s" : ""})`)
       .join("\n");
 
     const isCRRV = destinataireRecours === "crrv_nantes";
@@ -367,13 +389,19 @@ RAPPELS :
     if (!aiResp.ok) {
       const errData = await aiResp.json().catch(() => ({}));
       console.error("Anthropic API error:", aiResp.status, errData);
-      throw new Error(`Anthropic API error: ${(errData as any).error?.message || aiResp.status}`);
+      const message = typeof errData === "object" && errData && "error" in errData
+        ? (errData as { error?: { message?: string } }).error?.message
+        : undefined;
+      throw new Error(`Anthropic API error: ${message || aiResp.status}`);
     }
 
-    const aiData = await aiResp.json();
+    const aiData = await aiResp.json() as {
+      content?: Array<{ type?: string; text?: string }>;
+      model?: string;
+    };
     const letterContent = (aiData.content || [])
-      .filter((block: any) => block.type === "text")
-      .map((block: any) => block.text)
+      .filter((block) => block.type === "text")
+      .map((block) => block.text || "")
       .join("");
 
     const modele_ia = aiData.model || "claude-opus-4-5";
@@ -449,7 +477,7 @@ RAPPELS :
         referencesStatusMap.set(normalizedId, {
           texte_reference: refStr,
           statut: "verifie_openlegi",
-          url: (contextEntry?.[1] as any)?.url || "",
+          url: contextEntry?.[1]?.url || "",
           details: `Vérifié Légifrance le ${new Date(openlegiFetchTimestamp).toLocaleDateString("fr-FR")}`,
         });
       } else {
@@ -465,9 +493,8 @@ RAPPELS :
 
     // Also add articles that were fetched but NOT cited (for transparency)
     for (const [articleId, info] of Object.entries(legalContext.articles || {})) {
-      const v = info as any;
       const normalizedId = normalizeArticleId(articleId);
-      if (!referencesStatusMap.has(normalizedId) && !v.found) {
+      if (!referencesStatusMap.has(normalizedId) && !info.found) {
         // Article was requested from OpenLégi but not found — only relevant if Claude cited it
         // Already handled above, skip non-cited unfound articles
       }
@@ -482,7 +509,7 @@ RAPPELS :
 
     // Check for explicitly NOT FOUND articles (searched on OpenLégi but confirmed non-existent)
     const notFoundInOpenlegi = Object.entries(legalContext.articles || {})
-      .filter(([_, v]: [string, any]) => !v.found)
+      .filter(([_, v]) => !v.found)
       .map(([id]) => id);
 
     // Cross-reference: only block if Claude cited an article that OpenLégi confirmed does NOT exist
@@ -509,14 +536,22 @@ RAPPELS :
     // Re-export after potential updates
     const references_status_final = Array.from(referencesStatusMap.values());
 
-    // BLOCKING LOGIC:
-    // Block if: OpenLégi couldn't be queried at all, OR cited article confirmed non-existent, OR missing blocs
-    const openlegiUnavailable = !openlegiFetchSuccess;
-    const canSend = !hasRedBlocs && !hasNonTrouveRefs && !openlegiUnavailable;
-
     // Verify markers are present
     const hasQualiteMarker = letterContent.includes("{{QUALITE_SIGNATAIRE}}");
     const hasSignatureMarker = letterContent.includes("{{SIGNATURE}}");
+    const hasMarkerIssue = !hasQualiteMarker || !hasSignatureMarker;
+
+    // Hybrid validation:
+    // - automatic when all cited legal references are verified and the letter is structurally complete;
+    // - lawyer review required when references remain uncertain;
+    // - hard block when OpenLégi is unavailable, an article is non-existent, a block is missing, or markers are absent.
+    const openlegiUnavailable = !openlegiFetchSuccess;
+    const canSend = !hasRedBlocs && !hasNonTrouveRefs && !openlegiUnavailable && !hasMarkerIssue;
+    const validationStatus = openlegiUnavailable || hasNonTrouveRefs || hasRedBlocs || hasMarkerIssue
+      ? "bloquee"
+      : hasAVerifierRefs
+        ? "a_verifier_avocat"
+        : "validee_automatique";
 
     // Clean letter
     const cleanLetter = letterContent
@@ -535,7 +570,10 @@ RAPPELS :
       references_verifiees: refsVerifiees,
       references_a_verifier: refsAVerifier,
       lrar_status: "lettre_neutre_generee",
-    } as any).eq("id", dossier_id);
+      validation_juridique_mode: "hybride",
+      validation_juridique_status: validationStatus,
+      date_validation_juridique: validationStatus === "validee_automatique" ? new Date().toISOString() : null,
+    }).eq("id", dossier_id);
 
     // Build blocking reason message
     let blocking_reason = "";
@@ -545,6 +583,8 @@ RAPPELS :
       blocking_reason = `Article(s) ${citedButNotFound.join(", ")} introuvable(s) sur Légifrance. L'avocat doit corriger avant envoi.`;
     } else if (hasRedBlocs) {
       blocking_reason = "Des blocs obligatoires sont manquants dans la lettre.";
+    } else if (hasMarkerIssue) {
+      blocking_reason = "Les marqueurs de finalisation sont absents. Relancez la génération.";
     }
 
     return new Response(JSON.stringify({
@@ -560,6 +600,8 @@ RAPPELS :
       openlegi_fetch_timestamp: openlegiFetchTimestamp,
       blocking_reason,
       has_markers: { qualite: hasQualiteMarker, signature: hasSignatureMarker },
+      validation_juridique_mode: "hybride",
+      validation_juridique_status: validationStatus,
       dossier_ref: dossierRef,
       is_neutral: true,
       modele_ia,
@@ -568,6 +610,12 @@ RAPPELS :
     }), { headers: { ...corsHeaders, "Content-Type": "application/json" } });
   } catch (error) {
     console.error("Generate recours error:", error);
+    if (error instanceof HttpError) {
+      return new Response(
+        JSON.stringify({ error: error.message }),
+        { status: error.status, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+      );
+    }
     return new Response(
       JSON.stringify({ error: error instanceof Error ? error.message : "Unknown error" }),
       { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }

@@ -17,6 +17,27 @@ type ExpiringDossier = {
   user_id: string | null;
 };
 
+async function notifyCapdemarchesEndpoint(payload: Record<string, unknown>): Promise<{ sent: boolean; reason?: string }> {
+  const endpoint = Deno.env.get("CAPDEMARCHES_NOTIFY_URL");
+  if (!endpoint) return { sent: false, reason: "CAPDEMARCHES_NOTIFY_URL not configured" };
+
+  const secret = Deno.env.get("CAPDEMARCHES_WEBHOOK_SECRET");
+  const res = await fetch(endpoint, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      ...(secret ? { Authorization: `Bearer ${secret}` } : {}),
+    },
+    body: JSON.stringify(payload),
+  });
+
+  if (!res.ok) {
+    return { sent: false, reason: await res.text() };
+  }
+
+  return { sent: true };
+}
+
 function hasServerSecret(req: Request): boolean {
   const expectedSecret = Deno.env.get("CAPDEMARCHES_WEBHOOK_SECRET");
   if (!expectedSecret) return false;
@@ -77,8 +98,6 @@ serve(async (req) => {
         throw new HttpError(401, "Non authentifie");
       }
 
-      // In production, this would send an actual email to contact@capdemarches.fr
-      // For now, log the notification
       const notification = {
         to: "contact@capdemarches.fr",
         subject: `Nouvelle procuration — ${dossier.client_last_name} ${dossier.client_first_name} — ${dossier.dossier_ref}`,
@@ -95,12 +114,43 @@ L'équipe IZY Visa`,
         pdf_url: dossier.url_procuration_pdf,
       };
 
-      console.log("CAPDEMARCHES notification prepared:", notification);
+      const outbound = await notifyCapdemarchesEndpoint({
+        action: "nouvelle_procuration",
+        dossier_ref: dossier.dossier_ref,
+        client_first_name: dossier.client_first_name,
+        client_last_name: dossier.client_last_name,
+        client_email: dossier.client_email,
+        procuration_signed_at: dossier.date_signature_procuration,
+        procuration_expires_at: dossier.procuration_expiration,
+        notification,
+      });
+
+      await supabase.from("notifications").insert({
+        user_id: dossier.user_id,
+        titre: `Procuration transmise — ${dossier.dossier_ref}`,
+        message: outbound.sent
+          ? "La procuration CAPDEMARCHES a été transmise automatiquement."
+          : "La procuration CAPDEMARCHES est prête. Transmission externe à vérifier par l'équipe.",
+        type: outbound.sent ? "info" : "alerte",
+        lien: "/client",
+      });
+
+      if (!outbound.sent) {
+        await supabase.from("admin_tasks").insert({
+          task_type: "capdemarches_notification_a_envoyer",
+          dossier_ref: dossier.dossier_ref,
+          client_name: `${dossier.client_last_name} ${dossier.client_first_name}`,
+          user_id: dossier.user_id,
+          description: `Notification CAPDEMARCHES à vérifier/envoyer manuellement. Cause: ${outbound.reason}`,
+          statut: "en_attente",
+        });
+      }
 
       return new Response(JSON.stringify({
         success: true,
         notification,
-        message: "Notification CAPDEMARCHES préparée",
+        outbound,
+        message: outbound.sent ? "Notification CAPDEMARCHES transmise" : "Notification CAPDEMARCHES préparée avec tâche de suivi",
       }), { headers: { ...corsHeaders, "Content-Type": "application/json" } });
     }
 
@@ -178,10 +228,12 @@ L'équipe IZY Visa`,
         statut: "termine",
       });
 
-      console.log("Procuration reminder sent:", {
-        to: dossier.client_phone || dossier.client_email,
-        dossier_ref: dossier.dossier_ref,
+      await supabase.from("notifications").insert({
+        user_id: dossier.user_id,
+        titre: `Signature de procuration requise — ${dossier.dossier_ref}`,
         message: `Bonjour ${dossier.client_first_name}, votre procuration CAPDEMARCHES n'est pas encore signée. Connectez-vous à votre espace IZY Visa pour la signer.`,
+        type: "alerte",
+        lien: "/client",
       });
 
       return new Response(JSON.stringify({

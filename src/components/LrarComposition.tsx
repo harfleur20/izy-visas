@@ -38,7 +38,7 @@ interface LrarCompositionProps {
     totalCost: number;
     mandatoryPages: number;
     optionalPages: number;
-  }) => void;
+  }) => void | Promise<void>;
   onBack: () => void;
 }
 
@@ -154,7 +154,7 @@ export function LrarComposition({
         .update(dossierPatch)
         .eq("id", dossierId);
 
-      onConfirm({
+      await onConfirm({
         selectedPieceIds: Array.from(selectedIds),
         totalPages,
         totalCost: totalPricing ?? 0,

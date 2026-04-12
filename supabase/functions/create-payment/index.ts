@@ -132,8 +132,7 @@ serve(async (req) => {
       .from("dossiers")
       .update({
         option_choisie: option,
-        option_envoi: option,
-        lrar_status: "option_selectionnee",
+        lrar_status: "paiement_en_attente",
       })
       .eq("dossier_ref", dossier_ref)
       .eq("user_id", authContext.user.id);

@@ -79,7 +79,7 @@ serve(async (req) => {
             .from("dossiers")
             .update({
               lrar_status: "paiement_confirme",
-              ...(option ? { option_choisie: option, option_envoi: option } : {}),
+              ...(option ? { option_choisie: option } : {}),
             })
             .eq("dossier_ref", dossierRef)
             .eq("user_id", userId);

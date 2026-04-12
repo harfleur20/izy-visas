@@ -1,22 +1,76 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.49.1";
+import { HttpError, requireSharedWebhookSecret } from "../_shared/security.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
-  "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type, x-supabase-client-platform, x-supabase-client-platform-version, x-supabase-client-runtime, x-supabase-client-runtime-version",
+  "Access-Control-Allow-Headers": "authorization, x-webhook-secret, x-client-info, apikey, content-type, x-supabase-client-platform, x-supabase-client-platform-version, x-supabase-client-runtime, x-supabase-client-runtime-version",
 };
 
-function isAuthorizedWebhook(req: Request): boolean {
-  const expectedSecret = Deno.env.get("CAPDEMARCHES_WEBHOOK_SECRET");
-  if (!expectedSecret) {
-    throw new Error("CAPDEMARCHES_WEBHOOK_SECRET not configured");
+function jsonResponse(data: unknown, status = 200) {
+  return new Response(JSON.stringify(data), {
+    status,
+    headers: { ...corsHeaders, "Content-Type": "application/json" },
+  });
+}
+
+function formatPhone(phone: string): string {
+  const cleaned = phone.replace(/[^0-9+]/g, "");
+  if (cleaned.startsWith("+")) return cleaned;
+  if (cleaned.startsWith("0")) return `+33${cleaned.slice(1)}`;
+  return `+${cleaned}`;
+}
+
+async function insertNotification(
+  supabase: unknown,
+  userId: string,
+  titre: string,
+  message: string,
+  type = "info",
+) {
+  const client = supabase as {
+    from: (table: string) => {
+      insert: (values: Record<string, unknown>) => PromiseLike<unknown>;
+    };
+  };
+
+  await client.from("notifications").insert({
+    user_id: userId,
+    titre,
+    message,
+    type,
+    lien: "/client",
+  });
+}
+
+async function sendWhatsApp(phone: string | null | undefined, message: string) {
+  if (!phone) return;
+
+  const token = Deno.env.get("WHATSAPP_API_TOKEN");
+  const phoneId = Deno.env.get("WHATSAPP_PHONE_NUMBER_ID");
+  if (!token || !phoneId) {
+    console.warn("[CAPDEMARCHES] WhatsApp non configuré. Notification conservée en base uniquement.");
+    return;
   }
 
-  const authHeader = req.headers.get("Authorization");
-  const bearerToken = authHeader?.replace(/^Bearer\s+/i, "").trim();
-  const headerSecret = req.headers.get("x-webhook-secret")?.trim();
+  const cleanPhone = formatPhone(phone).replace(/^\+/, "");
+  const res = await fetch(`https://graph.facebook.com/v21.0/${phoneId}/messages`, {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${token}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+      messaging_product: "whatsapp",
+      to: cleanPhone,
+      type: "text",
+      text: { body: message },
+    }),
+  });
 
-  return bearerToken === expectedSecret || headerSecret === expectedSecret;
+  if (!res.ok) {
+    console.error("[CAPDEMARCHES] WhatsApp error:", await res.text());
+  }
 }
 
 serve(async (req) => {
@@ -25,12 +79,7 @@ serve(async (req) => {
   }
 
   try {
-    if (!isAuthorizedWebhook(req)) {
-      return new Response(JSON.stringify({ error: "Unauthorized webhook" }), {
-        status: 401,
-        headers: { ...corsHeaders, "Content-Type": "application/json" },
-      });
-    }
+    requireSharedWebhookSecret(req, "CAPDEMARCHES_WEBHOOK_SECRET");
 
     const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
     const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
@@ -40,9 +89,7 @@ serve(async (req) => {
     const { action, dossier_ref, expediteur, scan_url, type_decision, notes } = body;
 
     if (!dossier_ref) {
-      return new Response(JSON.stringify({ error: "dossier_ref is required" }), {
-        status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" },
-      });
+      return jsonResponse({ error: "dossier_ref is required" }, 400);
     }
 
     // Find the dossier
@@ -53,9 +100,7 @@ serve(async (req) => {
       .single();
 
     if (dossierErr || !dossier) {
-      return new Response(JSON.stringify({ error: "Dossier not found" }), {
-        status: 404, headers: { ...corsHeaders, "Content-Type": "application/json" },
-      });
+      return jsonResponse({ error: "Dossier not found" }, 404);
     }
 
     if (action === "courrier_recu") {
@@ -93,22 +138,25 @@ serve(async (req) => {
         related_courrier_id: courrier.id,
       });
 
-      // TODO: Send WhatsApp notification to client
-      // "📬 CAPDEMARCHES a reçu un courrier officiel pour votre dossier IZY-[REF]."
+      const message = `📬 CAPDEMARCHES a reçu un courrier officiel pour votre dossier ${dossier_ref}. Il sera scanné et transmis sous 24 heures.`;
+      await insertNotification(supabase, dossier.user_id, `Courrier reçu — ${dossier_ref}`, message, "courrier");
+      await sendWhatsApp(dossier.client_phone, message);
+      await supabase
+        .from("dossiers")
+        .update({ lrar_status: "courrier_capdemarches_recu" })
+        .eq("id", dossier.id);
 
-      return new Response(JSON.stringify({
+      return jsonResponse({
         success: true,
         courrier_id: courrier.id,
         message: "Courrier enregistré, tâche admin créée",
-      }), { headers: { ...corsHeaders, "Content-Type": "application/json" } });
+      });
     }
 
     if (action === "courrier_transmis") {
       // CAPDEMARCHES has scanned and transmitted the mail
       if (!scan_url) {
-        return new Response(JSON.stringify({ error: "scan_url is required" }), {
-          status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" },
-        });
+        return jsonResponse({ error: "scan_url is required" }, 400);
       }
 
       // Update the latest unscanned courrier
@@ -139,24 +187,36 @@ serve(async (req) => {
           .eq("related_courrier_id", courrier.id);
       }
 
-      // TODO: Send WhatsApp notification
-      // "📄 Le courrier de la CRRV concernant votre dossier IZY-[REF] est disponible."
+      const statusByDecision: Record<string, string> = {
+        visa_obtenu: "decision_favorable_recue",
+        favorable: "decision_favorable_recue",
+        rejet: "decision_defavorable_recue",
+        defavorable: "decision_defavorable_recue",
+        demande_complement: "demande_complement_recue",
+      };
+      const nextStatus = statusByDecision[String(type_decision || "").toLowerCase()] || "courrier_capdemarches_transmis";
+      await supabase
+        .from("dossiers")
+        .update({ lrar_status: nextStatus })
+        .eq("id", dossier.id);
 
-      return new Response(JSON.stringify({
+      const message = `📄 Le courrier reçu par CAPDEMARCHES pour votre dossier ${dossier_ref} est disponible dans votre espace IZY Visa.`;
+      await insertNotification(supabase, dossier.user_id, `Courrier transmis — ${dossier_ref}`, message, "courrier");
+      await sendWhatsApp(dossier.client_phone, message);
+
+      return jsonResponse({
         success: true,
         message: "Courrier marqué comme transmis",
         type_decision,
-      }), { headers: { ...corsHeaders, "Content-Type": "application/json" } });
+      });
     }
 
-    return new Response(JSON.stringify({ error: "Invalid action. Use 'courrier_recu' or 'courrier_transmis'" }), {
-      status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" },
-    });
+    return jsonResponse({ error: "Invalid action. Use 'courrier_recu' or 'courrier_transmis'" }, 400);
   } catch (error) {
     console.error("CAPDEMARCHES webhook error:", error);
-    return new Response(
-      JSON.stringify({ error: error instanceof Error ? error.message : "Unknown error" }),
-      { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }
-    );
+    if (error instanceof HttpError) {
+      return jsonResponse({ error: error.message }, error.status);
+    }
+    return jsonResponse({ error: error instanceof Error ? error.message : "Unknown error" }, 500);
   }
 });
