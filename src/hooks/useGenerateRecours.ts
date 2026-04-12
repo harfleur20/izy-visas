@@ -14,7 +14,36 @@ export function useGenerateRecours() {
         body: { dossier_id: dossierId },
       });
 
-      if (error) throw error;
+      // When edge function returns 4xx, supabase SDK puts body in error context
+      // Try to extract missing_fields from the error or data
+      const responseData = data || (error as any)?.context?.json?.() || null;
+
+      if (error) {
+        // Check if this is a "missing fields" 400 error
+        let parsed: any = null;
+        try {
+          if (typeof error === "object" && "context" in error) {
+            const ctx = (error as any).context;
+            if (ctx && typeof ctx.json === "function") {
+              parsed = await ctx.json();
+            }
+          }
+        } catch { /* ignore parse errors */ }
+
+        if (parsed?.missing_fields) {
+          const fieldLabels: Record<string, string> = {
+            "MOTIF DE REFUS": "les motifs de refus (retournez à l'étape Décision de refus)",
+            "CONSULAT": "les informations du consulat (retournez à l'étape Décision de refus)",
+            "PIÈCES JOINTES": "au moins une pièce justificative (retournez à l'étape Pièces justificatives)",
+          };
+          const missing = (parsed.missing_fields as string[])
+            .map((f: string) => fieldLabels[f] || f)
+            .join("\n• ");
+          toast.error(`Impossible de générer la lettre.\n\nIl manque :\n• ${missing}`, { duration: 8000 });
+          return null;
+        }
+        throw error;
+      }
 
       if (data?.error && data?.missing_fields) {
         const fieldLabels: Record<string, string> = {
