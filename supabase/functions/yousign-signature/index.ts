@@ -1,6 +1,12 @@
 import { serve } from "https://deno.land/std@0.190.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.49.4";
-import { HttpError, requireYousignWebhookSignature } from "../_shared/security.ts";
+import {
+  assertDossierAccess,
+  AuthenticatedContext,
+  HttpError,
+  requireAuthenticatedContext,
+  requireYousignWebhookSignature,
+} from "../_shared/security.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -39,6 +45,27 @@ function getSupabaseAdmin() {
   );
 }
 
+async function getAuthenticatedContext(req: Request): Promise<{
+  authContext: AuthenticatedContext;
+  supabase: ReturnType<typeof getSupabaseAdmin>;
+}> {
+  const supabase = getSupabaseAdmin();
+  const authHeader = req.headers.get("Authorization");
+  const supabaseUser = createClient(
+    Deno.env.get("SUPABASE_URL") ?? "",
+    Deno.env.get("SUPABASE_ANON_KEY") ?? "",
+    {
+      auth: { persistSession: false },
+      global: authHeader ? { headers: { Authorization: authHeader } } : undefined,
+    },
+  );
+
+  return {
+    authContext: await requireAuthenticatedContext(req, supabase, supabaseUser),
+    supabase,
+  };
+}
+
 serve(async (req) => {
   if (req.method === "OPTIONS") {
     return new Response(null, { headers: corsHeaders });
@@ -72,11 +99,24 @@ serve(async (req) => {
 // ── 1. Create signature request ──────────────────────────────────────────────
 
 async function handleCreate(req: Request) {
-  const { dossierRef, documentName, documentBase64, signerEmail, signerPhone, userId } = await req.json();
+  const { authContext, supabase } = await getAuthenticatedContext(req);
+  const { dossierRef, documentName, documentBase64, signerEmail, signerPhone } = await req.json();
 
-  if (!dossierRef || !documentName || !documentBase64 || !signerEmail || !userId) {
-    return jsonResponse({ error: "Missing required fields: dossierRef, documentName, documentBase64, signerEmail, userId" }, 400);
+  if (!dossierRef || !documentName || !documentBase64 || !signerEmail) {
+    return jsonResponse({ error: "Missing required fields: dossierRef, documentName, documentBase64, signerEmail" }, 400);
   }
+
+  const { data: dossier, error: dossierError } = await supabase
+    .from("dossiers")
+    .select("id, user_id")
+    .eq("dossier_ref", dossierRef)
+    .single();
+
+  if (dossierError || !dossier) {
+    return jsonResponse({ error: "Dossier introuvable" }, 404);
+  }
+
+  assertDossierAccess(authContext, dossier);
 
   // 1. Create signature request
   const sigReqRes = await fetch(`${YOUSIGN_API_URL}/signature_requests`, {
@@ -174,9 +214,8 @@ async function handleCreate(req: Request) {
   console.log(`[YOUSIGN] Signature request activated: ${sigReq.id}`);
 
   // 5. Save to database
-  const supabase = getSupabaseAdmin();
   const { error: dbError } = await supabase.from("signatures").insert({
-    user_id: userId,
+    user_id: authContext.user.id,
     dossier_ref: dossierRef,
     yousign_signature_request_id: sigReq.id,
     yousign_signer_id: signer.id,
@@ -202,13 +241,24 @@ async function handleCreate(req: Request) {
 // ── 2. Verify OTP ───────────────────────────────────────────────────────────
 
 async function handleVerifyOtp(req: Request) {
+  const { authContext, supabase } = await getAuthenticatedContext(req);
   const { signatureRequestId, signerId, otp } = await req.json();
 
   if (!signatureRequestId || !signerId || !otp) {
     return jsonResponse({ error: "Missing: signatureRequestId, signerId, otp" }, 400);
   }
 
-  const supabase = getSupabaseAdmin();
+  const { data: sig, error: sigError } = await supabase
+    .from("signatures")
+    .select("user_id")
+    .eq("yousign_signature_request_id", signatureRequestId)
+    .single();
+
+  if (sigError || !sig) {
+    return jsonResponse({ error: "Signature not found" }, 404);
+  }
+
+  assertDossierAccess(authContext, sig);
 
   // Explicit test bypass for sandbox only.
   if (ALLOW_TEST_OTP && otp === "123456") {
@@ -302,13 +352,13 @@ async function handleWebhook(req: Request) {
 // ── 4. Download certificate ──────────────────────────────────────────────────
 
 async function handleDownloadCertificate(req: Request) {
+  const { authContext, supabase } = await getAuthenticatedContext(req);
   const { signatureRequestId } = await req.json();
 
   if (!signatureRequestId) {
     return jsonResponse({ error: "Missing signatureRequestId" }, 400);
   }
 
-  const supabase = getSupabaseAdmin();
   const { data: sig, error } = await supabase
     .from("signatures")
     .select("certificate_path, user_id")

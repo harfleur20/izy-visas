@@ -1,6 +1,7 @@
 import { serve } from "https://deno.land/std@0.190.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.49.4";
 import { PDFDocument, StandardFonts, rgb } from "npm:pdf-lib@1.17.1";
+import { assertDossierAccess, HttpError, requireAuthenticatedContext } from "../_shared/security.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -23,24 +24,124 @@ function jsonResponse(data: unknown, status = 200) {
   });
 }
 
-// ── Fetch PDF from URL or Storage ───────────────────────────────────────────
+// ── Fetch PDF from trusted Supabase Storage only ────────────────────────────
 
-async function fetchPdf(url: string): Promise<Uint8Array> {
-  const res = await fetch(url);
-  if (!res.ok) throw new Error(`Failed to fetch PDF: ${url} (${res.status})`);
+type StorageConstraint = {
+  bucket: string;
+  pathPrefix: string;
+};
+
+type StorageRef = {
+  bucket: string;
+  path: string;
+};
+
+type OptionalPieceInput = {
+  id?: string;
+};
+
+function parseStorageRef(
+  source: string,
+  defaultBucket: string,
+): StorageRef {
+  if (!source || typeof source !== "string") {
+    throw new HttpError(400, "PDF source manquante");
+  }
+
+  if (!source.startsWith("http://") && !source.startsWith("https://")) {
+    return { bucket: defaultBucket, path: normalizeStoragePath(source) };
+  }
+
+  const supabaseUrl = Deno.env.get("SUPABASE_URL");
+  if (!supabaseUrl) {
+    throw new HttpError(500, "SUPABASE_URL not configured");
+  }
+
+  const parsed = new URL(source);
+  const expectedHost = new URL(supabaseUrl).host;
+  if (parsed.host !== expectedHost) {
+    throw new HttpError(400, "PDF source externe refusee");
+  }
+
+  const match = parsed.pathname.match(/^\/storage\/v1\/object\/(?:sign|public|authenticated)\/([^/]+)\/(.+)$/);
+  if (!match) {
+    throw new HttpError(400, "URL de stockage Supabase invalide");
+  }
+
+  return {
+    bucket: decodeURIComponent(match[1]),
+    path: normalizeStoragePath(decodeURIComponent(match[2])),
+  };
+}
+
+function normalizeStoragePath(path: string): string {
+  const normalized = path.replace(/^\/+/, "");
+  if (
+    !normalized ||
+    normalized.includes("..") ||
+    normalized.includes("\\") ||
+    normalized.startsWith("http:") ||
+    normalized.startsWith("https:") ||
+    normalized.startsWith("file:") ||
+    normalized.startsWith("data:")
+  ) {
+    throw new HttpError(400, "Chemin de fichier invalide");
+  }
+
+  return normalized;
+}
+
+function assertAllowedStorageRef(ref: StorageRef, constraints: StorageConstraint[]) {
+  const allowed = constraints.some((constraint) =>
+    ref.bucket === constraint.bucket && ref.path.startsWith(constraint.pathPrefix)
+  );
+
+  if (!allowed) {
+    throw new HttpError(403, "Acces refuse au fichier PDF");
+  }
+}
+
+async function fetchPdfFromTrustedStorage(
+  supabase: ReturnType<typeof getSupabaseAdmin>,
+  source: string,
+  defaultBucket: string,
+  constraints: StorageConstraint[],
+): Promise<Uint8Array> {
+  const ref = parseStorageRef(source, defaultBucket);
+  assertAllowedStorageRef(ref, constraints);
+
+  const { data, error } = await supabase.storage
+    .from(ref.bucket)
+    .createSignedUrl(ref.path, 3600);
+
+  if (error || !data?.signedUrl) {
+    throw new Error(`Storage URL failed: ${ref.bucket}/${ref.path}`);
+  }
+
+  const res = await fetch(data.signedUrl);
+  if (!res.ok) {
+    throw new Error(`Failed to fetch PDF from storage (${res.status})`);
+  }
+
   return new Uint8Array(await res.arrayBuffer());
 }
 
-async function fetchStoragePdf(
-  supabase: ReturnType<typeof getSupabaseAdmin>,
-  bucket: string,
-  path: string
-): Promise<Uint8Array> {
-  const { data, error } = await supabase.storage
-    .from(bucket)
-    .createSignedUrl(path, 3600);
-  if (error || !data?.signedUrl) throw new Error(`Storage URL failed: ${path}`);
-  return fetchPdf(data.signedUrl);
+function extractSelectedPieceIds(optionalPieces: unknown, dossierSelection: unknown): string[] {
+  const ids = new Set<string>();
+
+  if (Array.isArray(dossierSelection)) {
+    for (const id of dossierSelection) {
+      if (typeof id === "string") ids.add(id);
+    }
+  }
+
+  if (Array.isArray(optionalPieces)) {
+    for (const piece of optionalPieces as OptionalPieceInput[]) {
+      if (typeof piece?.id === "string") ids.add(piece.id);
+    }
+  }
+
+  return [...ids];
 }
 
 // ── Create separator page ───────────────────────────────────────────────────
@@ -167,47 +268,78 @@ serve(async (req) => {
   try {
     const {
       dossierId,
-      dossierRef,
-      clientName,
-      visaType,
-      refusType,
       recoursSignedPdfUrl,
-      decisionRefusPdfUrl,
       preuveDepotPdfUrl,
       demandeMotifsPdfUrl,
       optionalPieces,
     } = await req.json();
 
-    if (!dossierId || !dossierRef || !recoursSignedPdfUrl) {
-      return jsonResponse({ error: "Missing required fields: dossierId, dossierRef, recoursSignedPdfUrl" }, 400);
+    if (!dossierId) {
+      return jsonResponse({ error: "Missing required field: dossierId" }, 400);
     }
 
     const supabase = getSupabaseAdmin();
+    const authHeader = req.headers.get("Authorization");
+    const supabaseUser = createClient(
+      Deno.env.get("SUPABASE_URL") ?? "",
+      Deno.env.get("SUPABASE_ANON_KEY") ?? "",
+      {
+        auth: { persistSession: false },
+        global: authHeader ? { headers: { Authorization: authHeader } } : undefined,
+      },
+    );
+    const authContext = await requireAuthenticatedContext(req, supabase, supabaseUser);
+
+    const { data: dossier, error: dossierError } = await supabase
+      .from("dossiers")
+      .select("*")
+      .eq("id", dossierId)
+      .single();
+
+    if (dossierError || !dossier) {
+      return jsonResponse({ error: "Dossier introuvable" }, 404);
+    }
+
+    assertDossierAccess(authContext, dossier);
+
     const mergedPdf = await PDFDocument.create();
+    const dossierRef = dossier.dossier_ref;
+    const clientName = `${dossier.client_first_name || ""} ${dossier.client_last_name || ""}`.trim() || "Client";
+    const refusType = dossier.refus_type;
+    const allowedDossierFiles = [{ bucket: "dossiers", pathPrefix: `${dossierId}/` }];
+    const allowedRecoursFiles = [
+      ...allowedDossierFiles,
+      { bucket: "signature-certificates", pathPrefix: `${dossier.user_id}/` },
+    ];
 
     // Build inventory
     const inventory: { number: number; title: string; pages: number; pdfBytes: Uint8Array }[] = [];
 
     // Piece 1 — Lettre de recours
-    const recoursPdf = await fetchPdf(recoursSignedPdfUrl);
+    const recoursSource = recoursSignedPdfUrl || dossier.url_lettre_definitive || dossier.url_lettre_neutre;
+    if (!recoursSource) {
+      return jsonResponse({ error: "Lettre de recours signee introuvable" }, 400);
+    }
+
+    const recoursPdf = await fetchPdfFromTrustedStorage(supabase, recoursSource, "dossiers", allowedRecoursFiles);
     const recoursDoc = await PDFDocument.load(recoursPdf);
     inventory.push({ number: 1, title: "Lettre de recours gracieux", pages: recoursDoc.getPageCount(), pdfBytes: recoursPdf });
 
     // Piece 2 — Décision de refus or Preuve de dépôt + Demande de motifs
     if (refusType === "implicite") {
       if (preuveDepotPdfUrl) {
-        const pdf = await fetchPdf(preuveDepotPdfUrl);
+        const pdf = await fetchPdfFromTrustedStorage(supabase, preuveDepotPdfUrl, "dossiers", allowedDossierFiles);
         const doc = await PDFDocument.load(pdf);
         inventory.push({ number: 2, title: "Preuve de dépôt de la demande initiale", pages: doc.getPageCount(), pdfBytes: pdf });
       }
       if (demandeMotifsPdfUrl) {
-        const pdf = await fetchPdf(demandeMotifsPdfUrl);
+        const pdf = await fetchPdfFromTrustedStorage(supabase, demandeMotifsPdfUrl, "dossiers", allowedDossierFiles);
         const doc = await PDFDocument.load(pdf);
         inventory.push({ number: 3, title: "Demande de communication des motifs", pages: doc.getPageCount(), pdfBytes: pdf });
       }
     } else {
-      if (decisionRefusPdfUrl) {
-        const pdf = await fetchPdf(decisionRefusPdfUrl);
+      if (dossier.url_decision_refus) {
+        const pdf = await fetchPdfFromTrustedStorage(supabase, dossier.url_decision_refus, "dossiers", allowedDossierFiles);
         const doc = await PDFDocument.load(pdf);
         inventory.push({ number: 2, title: "Décision de refus de visa", pages: doc.getPageCount(), pdfBytes: pdf });
       }
@@ -215,15 +347,28 @@ serve(async (req) => {
 
     // Optional pieces
     const startNum = inventory.length + 1;
-    if (optionalPieces && Array.isArray(optionalPieces)) {
-      for (let i = 0; i < optionalPieces.length; i++) {
-        const piece = optionalPieces[i];
-        if (!piece.pdfUrl || !piece.title) continue;
-        const pdf = await fetchPdf(piece.pdfUrl);
+    const selectedPieceIds = extractSelectedPieceIds(optionalPieces, dossier.pieces_selectionnees_ids);
+    if (selectedPieceIds.length > 0) {
+      const { data: pieces, error: piecesError } = await supabase
+        .from("pieces_justificatives")
+        .select("id, nom_piece, url_fichier_original, url_fichier_corrige, statut_ocr")
+        .eq("dossier_id", dossierId)
+        .in("id", selectedPieceIds);
+
+      if (piecesError) {
+        throw piecesError;
+      }
+
+      for (let i = 0; i < (pieces || []).length; i++) {
+        const piece = pieces![i];
+        if (piece.statut_ocr === "rejected" || piece.statut_ocr === "rejete") continue;
+        const source = piece.url_fichier_corrige || piece.url_fichier_original;
+        if (!source) continue;
+        const pdf = await fetchPdfFromTrustedStorage(supabase, source, "dossiers", allowedDossierFiles);
         const doc = await PDFDocument.load(pdf);
         inventory.push({
           number: startNum + i,
-          title: piece.title,
+          title: piece.nom_piece,
           pages: doc.getPageCount(),
           pdfBytes: pdf,
         });
@@ -291,6 +436,9 @@ serve(async (req) => {
     });
   } catch (error) {
     console.error("[BUILD-LRAR] Error:", error);
+    if (error instanceof HttpError) {
+      return jsonResponse({ error: error.message }, error.status);
+    }
     return jsonResponse({ error: error.message || "Internal server error" }, 500);
   }
 });
