@@ -632,8 +632,13 @@ export type Database = {
           dossier_ref: string
           id: string
           option_choisie: string | null
+          payment_links: Json | null
           payment_method: string
           pricing_details: Json
+          provider_checkout_url: string | null
+          provider_payload: Json | null
+          provider_payment_id: string | null
+          provider_status: string | null
           status: string
           stripe_payment_intent_id: string | null
           stripe_session_id: string | null
@@ -648,8 +653,13 @@ export type Database = {
           dossier_ref: string
           id?: string
           option_choisie?: string | null
+          payment_links?: Json | null
           payment_method: string
           pricing_details?: Json
+          provider_checkout_url?: string | null
+          provider_payload?: Json | null
+          provider_payment_id?: string | null
+          provider_status?: string | null
           status?: string
           stripe_payment_intent_id?: string | null
           stripe_session_id?: string | null
@@ -664,8 +674,13 @@ export type Database = {
           dossier_ref?: string
           id?: string
           option_choisie?: string | null
+          payment_links?: Json | null
           payment_method?: string
           pricing_details?: Json
+          provider_checkout_url?: string | null
+          provider_payload?: Json | null
+          provider_payment_id?: string | null
+          provider_status?: string | null
           status?: string
           stripe_payment_intent_id?: string | null
           stripe_session_id?: string | null
