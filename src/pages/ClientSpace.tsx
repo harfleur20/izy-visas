@@ -457,7 +457,7 @@ const ClientSpace = () => {
 
     // Step 13: always accessible once dossier exists
     setStep(target);
-  }, [activeDossier, refDate, hasRejectedPieces, toast]);
+  }, [activeDossier, refDate, hasRejectedPieces]);
 
   const handleReceivabilityContinue = async () => {
     if (refDate && activeDossier) {
