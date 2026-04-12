@@ -609,22 +609,22 @@ const ClientSpace = () => {
   const sidebar = (
     <>
       <NavGroup label="Qualification">
-        <NavItem icon="⚠️" label="Recevabilité" active={step === 0} badge={{ text: "!", color: "red" }} onClick={() => setStep(0)} />
-        <NavItem icon="👤" label="Création de compte" active={step === 1} suffixIcon={procurationSignee ? "✅" : "⚠️"} onClick={() => setStep(1)} />
+        <NavItem icon="⚠️" label="Recevabilité" active={step === 0} badge={{ text: "!", color: "red" }} onClick={() => navigateToStep(0)} />
+        <NavItem icon="👤" label="Création de compte" active={step === 1} suffixIcon={procurationSignee ? "✅" : "⚠️"} onClick={() => navigateToStep(1)} />
       </NavGroup>
       <NavGroup label="Dossier">
-        <NavItem icon="📄" label="Décision de refus" active={step === 2} onClick={() => setStep(2)} />
+        <NavItem icon="📄" label="Décision de refus" active={step === 2} onClick={() => navigateToStep(2)} />
       </NavGroup>
       <NavGroup label="Constitution">
-        <NavItem icon="📎" label="Pièces justificatives" active={step === 5} onClick={() => setStep(5)} />
-        <NavItem icon="📄" label="Lettre de recours" active={step === 7} onClick={() => setStep(7)} />
+        <NavItem icon="📎" label="Pièces justificatives" active={step === 5} onClick={() => navigateToStep(5)} />
+        <NavItem icon="📄" label="Lettre de recours" active={step === 7} onClick={() => navigateToStep(7)} />
       </NavGroup>
       <NavGroup label="Finalisation">
-        <NavItem icon="🔀" label="Mode d'envoi" active={step === 8} gold onClick={() => setStep(8)} />
-        <NavItem icon="💳" label="Paiement" active={step === 9} onClick={() => setStep(9)} />
-        <NavItem icon="✍️" label="Signature YouSign" active={step === 10} onClick={() => setStep(10)} />
-        <NavItem icon="📬" label="Envoi LRAR" active={step === 11} onClick={() => setStep(11)} />
-        <NavItem icon="📊" label="Suivi & décision" active={step === 13} onClick={() => setStep(13)} />
+        <NavItem icon="🔀" label="Mode d'envoi" active={step === 8} gold onClick={() => navigateToStep(8)} />
+        <NavItem icon="💳" label="Paiement" active={step === 9} onClick={() => navigateToStep(9)} />
+        <NavItem icon="✍️" label="Signature YouSign" active={step === 10} onClick={() => navigateToStep(10)} />
+        <NavItem icon="📬" label="Envoi LRAR" active={step === 11} onClick={() => navigateToStep(11)} />
+        <NavItem icon="📊" label="Suivi & décision" active={step === 13} onClick={() => navigateToStep(13)} />
       </NavGroup>
     </>
   );
