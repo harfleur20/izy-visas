@@ -74,9 +74,7 @@ const normalizeStoredOption = (value?: string | null): SendOption | null => {
   return normalized === "A" || normalized === "B" || normalized === "C" ? normalized : null;
 };
 
-const getErrorMessage = (error: unknown, fallback: string) => (
-  error instanceof Error ? error.message : fallback
-);
+// Removed getErrorMessage — all errors are now handled with user-friendly messages inline
 
 const cTitles: Record<number, string> = {
   0: "Vérification de recevabilité", 1: "Création de compte", 2: "Décision de refus",
@@ -118,7 +116,7 @@ const ClientSpace = () => {
 
     if (error) {
       console.error("Dossier update error:", error);
-      toast({ title: "Erreur", description: "Impossible de sauvegarder l'étape du dossier.", variant: "destructive" });
+      toast({ title: "Sauvegarde impossible", description: "Vérifiez votre connexion internet et réessayez.", variant: "destructive" });
       return false;
     }
 
@@ -363,6 +361,34 @@ const ClientSpace = () => {
 
   const handleOptionSelect = async (option: SendOption) => {
     if (!activeDossier) return;
+
+    // Pre-check: fetch dossier to verify letter was generated
+    const { data: freshDossier } = await supabase
+      .from("dossiers")
+      .select("lettre_neutre_contenu, validation_juridique_status")
+      .eq("id", activeDossier.id)
+      .single();
+
+    if (!freshDossier?.lettre_neutre_contenu) {
+      toast({
+        title: "Lettre non générée",
+        description: "Vous devez d'abord générer votre lettre de recours à l'étape précédente avant de choisir un mode d'envoi.",
+        variant: "destructive",
+      });
+      setStep(7);
+      return;
+    }
+
+    if (freshDossier.validation_juridique_status === "bloquee") {
+      toast({
+        title: "Lettre à corriger",
+        description: "Votre lettre contient des éléments à corriger. Regénérez-la avant de continuer.",
+        variant: "destructive",
+      });
+      setStep(7);
+      return;
+    }
+
     setFinalizingOption(true);
     setSelectedOption(option);
     try {
@@ -383,9 +409,24 @@ const ClientSpace = () => {
       toast({ title: "✅ Lettre finalisée", description: "Le PDF définitif est prêt pour le paiement et l'envoi." });
       setStep(9);
     } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : "";
+      let userMessage = "Une erreur est survenue lors de la préparation de votre lettre. Réessayez.";
+
+      if (msg.includes("neutre non générée") || msg.includes("Générez d'abord")) {
+        userMessage = "Vous devez d'abord générer votre lettre de recours à l'étape « Lettre de recours ».";
+        setStep(7);
+      } else if (msg.includes("bloquants") || msg.includes("Regénérez")) {
+        userMessage = "Votre lettre contient des éléments à corriger. Retournez à l'étape de la lettre pour la regénérer.";
+        setStep(7);
+      } else if (msg.includes("avocat") || msg.includes("Option C")) {
+        userMessage = "Des références juridiques nécessitent une relecture par un avocat. Choisissez l'option C ou corrigez votre lettre.";
+      } else if (msg.includes("indisponible")) {
+        userMessage = "Le service avocat est temporairement indisponible. Réessayez dans quelques instants ou choisissez une autre option.";
+      }
+
       toast({
-        title: "Finalisation impossible",
-        description: getErrorMessage(err, "Impossible de finaliser la lettre avec cette option."),
+        title: "Impossible de continuer",
+        description: userMessage,
         variant: "destructive",
       });
     } finally {
@@ -394,7 +435,16 @@ const ClientSpace = () => {
   };
 
   const handlePayment = async () => {
-    if (!cguAccepted || !selectedOption || !activeDossier) return;
+    if (!selectedOption) {
+      toast({ title: "Option manquante", description: "Retournez à l'étape « Mode d'envoi » pour choisir votre option.", variant: "destructive" });
+      setStep(8);
+      return;
+    }
+    if (!cguAccepted) {
+      toast({ title: "CGU requises", description: "Vous devez accepter les conditions générales avant de payer.", variant: "destructive" });
+      return;
+    }
+    if (!activeDossier) return;
 
     setPaymentLoading(true);
     setTaraPaymentLinks(null);
@@ -409,7 +459,7 @@ const ClientSpace = () => {
       setActiveDossier((prev) => prev ? { ...prev, lrar_status: "paiement_en_attente" } : prev);
 
       if (paymentMethod === "stripe") {
-        if (!data?.url) throw new Error("Lien Stripe indisponible");
+        if (!data?.url) throw new Error("Lien de paiement indisponible");
         window.open(data.url, "_blank");
         return;
       }
@@ -424,9 +474,20 @@ const ClientSpace = () => {
         description: "Choisissez WhatsApp, Telegram, Dikalo ou SMS pour finaliser le paiement.",
       });
     } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : "";
+      let userMessage = "Impossible de lancer le paiement. Vérifiez votre connexion et réessayez.";
+
+      if (msg.includes("secrets") || msg.includes("configured")) {
+        userMessage = "Le service de paiement est temporairement indisponible. Réessayez dans quelques minutes.";
+      } else if (msg.includes("Dossier introuvable")) {
+        userMessage = "Votre dossier est introuvable. Rechargez la page et réessayez.";
+      } else if (msg.includes("Non autorise") || msg.includes("Non authentifie")) {
+        userMessage = "Votre session a expiré. Reconnectez-vous pour continuer.";
+      }
+
       toast({
         title: "Erreur de paiement",
-        description: getErrorMessage(err, "Impossible de créer la session de paiement."),
+        description: userMessage,
         variant: "destructive",
       });
     } finally {
@@ -534,7 +595,7 @@ const ClientSpace = () => {
                   first_name: profileForm.first_name, last_name: profileForm.last_name,
                   phone: profileForm.phone, prefixe_telephone: profileForm.prefixe_telephone,
                 }).eq("id", user.id);
-                if (error) { toast({ title: "Erreur", description: "Impossible de sauvegarder le profil.", variant: "destructive" }); }
+                if (error) { toast({ title: "Profil non sauvegardé", description: "Vérifiez vos informations et réessayez.", variant: "destructive" }); }
                 else {
                   const profilePatch: DossierUpdate = {
                     client_first_name: profileForm.first_name,
@@ -636,7 +697,7 @@ const ClientSpace = () => {
                 setStep(5);
               } catch (err: unknown) {
                 console.error("Save error:", err);
-                toast({ title: "Erreur", description: "Impossible d'enregistrer les données. Réessayez.", variant: "destructive" });
+                toast({ title: "Enregistrement impossible", description: "Les données de votre décision n'ont pas pu être sauvegardées. Réessayez.", variant: "destructive" });
               }
             }}
             onBack={() => setStep(1)}
