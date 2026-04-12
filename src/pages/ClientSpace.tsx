@@ -363,6 +363,34 @@ const ClientSpace = () => {
 
   const handleOptionSelect = async (option: SendOption) => {
     if (!activeDossier) return;
+
+    // Pre-check: fetch dossier to verify letter was generated
+    const { data: freshDossier } = await supabase
+      .from("dossiers")
+      .select("lettre_neutre_contenu, validation_juridique_status")
+      .eq("id", activeDossier.id)
+      .single();
+
+    if (!freshDossier?.lettre_neutre_contenu) {
+      toast({
+        title: "Lettre non générée",
+        description: "Vous devez d'abord générer votre lettre de recours à l'étape précédente avant de choisir un mode d'envoi.",
+        variant: "destructive",
+      });
+      setStep(7);
+      return;
+    }
+
+    if (freshDossier.validation_juridique_status === "bloquee") {
+      toast({
+        title: "Lettre à corriger",
+        description: "Votre lettre contient des éléments à corriger. Regénérez-la avant de continuer.",
+        variant: "destructive",
+      });
+      setStep(7);
+      return;
+    }
+
     setFinalizingOption(true);
     setSelectedOption(option);
     try {
@@ -383,9 +411,24 @@ const ClientSpace = () => {
       toast({ title: "✅ Lettre finalisée", description: "Le PDF définitif est prêt pour le paiement et l'envoi." });
       setStep(9);
     } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : "";
+      let userMessage = "Une erreur est survenue lors de la préparation de votre lettre. Réessayez.";
+
+      if (msg.includes("neutre non générée") || msg.includes("Générez d'abord")) {
+        userMessage = "Vous devez d'abord générer votre lettre de recours à l'étape « Lettre de recours ».";
+        setStep(7);
+      } else if (msg.includes("bloquants") || msg.includes("Regénérez")) {
+        userMessage = "Votre lettre contient des éléments à corriger. Retournez à l'étape de la lettre pour la regénérer.";
+        setStep(7);
+      } else if (msg.includes("avocat") || msg.includes("Option C")) {
+        userMessage = "Des références juridiques nécessitent une relecture par un avocat. Choisissez l'option C ou corrigez votre lettre.";
+      } else if (msg.includes("indisponible")) {
+        userMessage = "Le service avocat est temporairement indisponible. Réessayez dans quelques instants ou choisissez une autre option.";
+      }
+
       toast({
-        title: "Finalisation impossible",
-        description: getErrorMessage(err, "Impossible de finaliser la lettre avec cette option."),
+        title: "Impossible de continuer",
+        description: userMessage,
         variant: "destructive",
       });
     } finally {
