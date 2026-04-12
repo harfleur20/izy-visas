@@ -81,7 +81,7 @@ const normalizeStoredOption = (value?: string | null): SendOption | null => {
 // `check` returns true if the prerequisite is met.
 // `msg` is the user-facing toast shown when blocked.
 // `redirect` is the step to send the user back to.
-type StepGuard = { check: () => boolean; msg: string; redirect: number };
+// Guards are checked inline in navigateToStep
 
 const cTitles: Record<number, string> = {
   0: "Vérification de recevabilité", 1: "Création de compte", 2: "Décision de refus",
