@@ -190,6 +190,7 @@ export const ProcurationFlow = ({
   });
   const [editingField, setEditingField] = useState<string | null>(null);
   const [editValues, setEditValues] = useState<Partial<ProfileData>>({});
+  const [draftMissing, setDraftMissing] = useState<Partial<ProfileData>>({});
   const [checks, setChecks] = useState({ lu: false, autorise: false, comprends: false });
   const [signatureRequestId, setSignatureRequestId] = useState("");
   const [signerId, setSignerId] = useState("");
@@ -405,8 +406,8 @@ export const ProcurationFlow = ({
                           <label className={labelClass}>{f.label} *</label>
                           <input
                             className={inputClass}
-                            value={profile[f.key]}
-                            onChange={(e) => setProfile(prev => ({ ...prev, [f.key]: e.target.value }))}
+                            value={draftMissing[f.key] ?? ""}
+                            onChange={(e) => setDraftMissing(prev => ({ ...prev, [f.key]: e.target.value }))}
                             placeholder={f.label}
                           />
                         </div>
@@ -416,14 +417,17 @@ export const ProcurationFlow = ({
                       onClick={async () => {
                         const updates: Partial<ProfileData> = {};
                         missingFields.forEach(f => {
-                          if (profile[f.key]) (updates as any)[f.key] = profile[f.key];
+                          const val = draftMissing[f.key];
+                          if (val) (updates as any)[f.key] = val;
                         });
                         if (Object.keys(updates).length > 0) {
                           await supabase.from("profiles").update(updates as any).eq("id", userId);
+                          setProfile(prev => ({ ...prev, ...updates }));
+                          setDraftMissing({});
                           toast.success("Profil mis à jour");
                         }
                       }}
-                      disabled={missingFields.some(f => !profile[f.key])}
+                      disabled={missingFields.some(f => !draftMissing[f.key])}
                       className="mt-3 font-syne font-bold text-xs px-4 py-2 rounded-lg bg-primary text-primary-foreground disabled:opacity-50"
                     >
                       Sauvegarder
