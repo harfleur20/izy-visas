@@ -1,0 +1,1 @@
+ALTER TABLE public.dossiers ADD COLUMN IF NOT EXISTS procuration_valide_jusqu_au date;

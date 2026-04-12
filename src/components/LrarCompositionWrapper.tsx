@@ -1,0 +1,114 @@
+import { useState, useEffect } from "react";
+import { supabase } from "@/integrations/supabase/client";
+import { LrarComposition } from "@/components/LrarComposition";
+
+interface LrarCompositionWrapperProps {
+  dossierId: string;
+  dossierRef: string;
+  onConfirm: () => void;
+  onBack: () => void;
+}
+
+export function LrarCompositionWrapper({
+  dossierId,
+  dossierRef,
+  onConfirm,
+  onBack,
+}: LrarCompositionWrapperProps) {
+  const [loading, setLoading] = useState(true);
+  const [dossier, setDossier] = useState<any>(null);
+  const [pieces, setPieces] = useState<any[]>([]);
+
+  useEffect(() => {
+    const load = async () => {
+      setLoading(true);
+
+      // Fetch dossier
+      const { data: d } = await supabase
+        .from("dossiers")
+        .select("*")
+        .eq("id", dossierId)
+        .single();
+
+      // Fetch pieces justificatives
+      const { data: pj } = await supabase
+        .from("pieces_justificatives")
+        .select("*")
+        .eq("dossier_id", dossierId)
+        .order("created_at", { ascending: true });
+
+      setDossier(d);
+      setPieces(pj || []);
+      setLoading(false);
+    };
+    load();
+  }, [dossierId]);
+
+  if (loading) {
+    return (
+      <div className="text-center py-12 text-muted-foreground">
+        <div className="animate-spin h-8 w-8 border-4 border-primary border-t-transparent rounded-full mx-auto mb-4" />
+        <p className="text-sm">Chargement de la composition LRAR…</p>
+      </div>
+    );
+  }
+
+  if (!dossier) {
+    return (
+      <div className="text-center py-12 text-muted-foreground">
+        <p>Dossier introuvable.</p>
+      </div>
+    );
+  }
+
+  // Build mandatory pieces (always 2: lettre de recours + décision de refus)
+  const mandatoryPieces = [
+    {
+      title: "Lettre de recours",
+      pages: 4, // Will be dynamically set after YouSign signing
+      date: "Signée YouSign — Obligatoire",
+    },
+    {
+      title: "Décision de refus de visa",
+      pages: pieces.find(
+        (p) => p.type_piece === "obligatoire" && p.nom_piece?.toLowerCase().includes("refus")
+      )?.nombre_pages || 2,
+      date: dossier.date_notification_refus
+        ? `Uploadée le ${new Date(dossier.date_notification_refus).toLocaleDateString("fr-FR")} — Obligatoire`
+        : "Obligatoire",
+    },
+  ];
+
+  // Build optional pieces from pieces_justificatives (exclude mandatory-type recours/refus)
+  const optionalPieces = pieces
+    .filter((p) => {
+      const isDecisionRefus =
+        p.nom_piece?.toLowerCase().includes("refus") && p.type_piece === "obligatoire";
+      return !isDecisionRefus && p.statut_ocr !== "rejected";
+    })
+    .map((p) => ({
+      id: p.id,
+      title: p.nom_piece,
+      pages: p.nombre_pages || 1,
+      pdfUrl: p.url_fichier_original || "",
+      uploadedAt: new Date(p.date_upload).toLocaleDateString("fr-FR"),
+    }));
+
+  return (
+    <LrarComposition
+      dossierRef={dossierRef}
+      dossierId={dossierId}
+      clientName={`${dossier.client_last_name} ${dossier.client_first_name}`}
+      clientFirstName={dossier.client_first_name}
+      clientLastName={dossier.client_last_name}
+      visaType={dossier.visa_type}
+      mandatoryPieces={mandatoryPieces}
+      optionalPieces={optionalPieces}
+      onConfirm={(data) => {
+        console.log("LRAR confirmed:", data);
+        onConfirm();
+      }}
+      onBack={onBack}
+    />
+  );
+}

@@ -1,0 +1,627 @@
+import { useState, useCallback, useEffect } from "react";
+import ShellLayout from "@/components/ShellLayout";
+import { useAuth } from "@/hooks/useAuth";
+import { supabase } from "@/integrations/supabase/client";
+
+import { toast } from "@/hooks/use-toast";
+import { NavItem, NavGroup } from "@/components/NavItem";
+import { Eyebrow, BigTitle, Desc, Box } from "@/components/ui-custom";
+import { ProcurationFlow } from "@/components/ProcurationFlow";
+import { type UploadedPiece } from "@/components/DocumentUploader";
+import { PiecesRequisesClient } from "@/components/PiecesRequisesClient";
+import { DecisionRefusUpload } from "@/components/DecisionRefusUpload";
+import { useGenerateRecours } from "@/hooks/useGenerateRecours";
+import { LetterPreview } from "@/components/LetterPreview";
+import { SendOptionChooser } from "@/components/SendOptionChooser";
+import { LrarCompositionWrapper } from "@/components/LrarCompositionWrapper";
+import { LrarTrackingSuivi } from "@/components/LrarTrackingSuivi";
+
+const cTitles: Record<number, string> = {
+  0: "Vérification de recevabilité", 1: "Création de compte", 2: "Décision de refus",
+  5: "Pièces justificatives",
+  7: "Lettre de recours", 8: "Mode d'envoi", 9: "Paiement",
+  10: "Signature YouSign", 11: "Envoi MySendingBox / LRAR",
+  13: "Suivi & décision",
+};
+
+const ClientSpace = () => {
+  const { user } = useAuth();
+  const [step, setStep] = useState(0);
+  const [cguAccepted, setCguAccepted] = useState(false);
+  const [refDate, setRefDate] = useState("");
+  const [dlResult, setDlResult] = useState<{ type: string; days: number; deadline: string } | null>(null);
+  const [uploadedPieces, setUploadedPieces] = useState<UploadedPiece[]>([]);
+  const [selectedVisaType, setSelectedVisaType] = useState("");
+  const [selectedMotif, setSelectedMotif] = useState("");
+  const [activeDossier, setActiveDossier] = useState<{ id: string; dossier_ref: string; date_notification_refus?: string } | null>(null);
+  const [procurationModalOpen, setProcurationModalOpen] = useState(false);
+  const [procurationSignee, setProcurationSignee] = useState(false);
+  const [procurationDate, setProcurationDate] = useState<string | null>(null);
+  const [procurationExpiry, setProcurationExpiry] = useState<string | null>(null);
+  const [profileForm, setProfileForm] = useState({ first_name: "", last_name: "", phone: "", prefixe_telephone: "+237" });
+  const [profileLoaded, setProfileLoaded] = useState(false);
+  const { generate: generateRecours, loading: generatingRecours, result: recoursResult } = useGenerateRecours();
+  const [selectedOption, setSelectedOption] = useState<"A" | "B" | "C" | null>(null);
+
+  // Load profile data
+  useEffect(() => {
+    if (!user) return;
+    const loadProfile = async () => {
+      const { data } = await supabase
+        .from("profiles")
+        .select("first_name, last_name, phone, prefixe_telephone")
+        .eq("id", user.id)
+        .single();
+      if (data) {
+        setProfileForm({
+          first_name: data.first_name || user.user_metadata?.first_name || user.user_metadata?.given_name || "",
+          last_name: data.last_name || user.user_metadata?.last_name || user.user_metadata?.family_name || "",
+          phone: data.phone || "",
+          prefixe_telephone: data.prefixe_telephone || "+237",
+        });
+      }
+      setProfileLoaded(true);
+    };
+    loadProfile();
+  }, [user]);
+
+  // Fetch or create active dossier
+  useEffect(() => {
+    if (!user) return;
+    const loadOrCreateDossier = async () => {
+      const { data } = await supabase
+        .from("dossiers")
+        .select("id, dossier_ref, procuration_signee, date_signature_procuration, procuration_expiration, date_notification_refus")
+        .eq("user_id", user.id)
+        .order("created_at", { ascending: false })
+        .limit(1)
+        .maybeSingle();
+
+      if (data) {
+        setActiveDossier(data as any);
+        setProcurationSignee(data.procuration_signee || false);
+        setProcurationDate(data.date_signature_procuration || null);
+        setProcurationExpiry(data.procuration_expiration || null);
+      } else {
+        const ref = `IZY-${new Date().getFullYear()}-${String(Date.now()).slice(-6)}`;
+        const { data: newDossier, error } = await supabase
+          .from("dossiers")
+          .insert({
+            user_id: user.id,
+            dossier_ref: ref,
+            visa_type: "court_sejour",
+            client_first_name: user.user_metadata?.first_name || user.user_metadata?.given_name || "",
+            client_last_name: user.user_metadata?.last_name || user.user_metadata?.family_name || "",
+            client_email: user.email || "",
+            recipient_name: "Commission de Recours contre les Refus de Visa",
+            recipient_address: "BP 83609",
+            recipient_postal_code: "44036",
+            recipient_city: "Nantes Cedex 1",
+          })
+          .select("id, dossier_ref")
+          .single();
+
+        if (!error && newDossier) {
+          setActiveDossier(newDossier);
+        }
+      }
+    };
+    loadOrCreateDossier();
+  }, [user]);
+
+  // Load existing pieces from DB and subscribe to realtime OCR updates
+  useEffect(() => {
+    if (!activeDossier) return;
+    const dossierId = activeDossier.id;
+
+    // Load existing pieces
+    const loadPieces = async () => {
+      const { data } = await supabase
+        .from("pieces_justificatives")
+        .select("id, nom_piece, statut_ocr, score_qualite, nombre_pages, motif_rejet, url_fichier_original, type_document_detecte, langue_detectee, ocr_details")
+        .eq("dossier_id", dossierId)
+        .order("created_at", { ascending: true });
+
+      if (data && data.length > 0) {
+        const mapped: UploadedPiece[] = data.map((row) => {
+          const details = (row.ocr_details || {}) as Record<string, any>;
+          let status: UploadedPiece["status"] = "analyzing";
+          if (row.statut_ocr === "accepte") status = "accepted";
+          else if (row.statut_ocr === "rejete" || row.statut_ocr === "erreur") status = "rejected";
+          else if (row.statut_ocr === "en_cours") status = "analyzing";
+
+          return {
+            id: row.id,
+            name: row.nom_piece,
+            status,
+            score: row.score_qualite || 0,
+            pages: row.nombre_pages || 1,
+            rejectionMessage: row.motif_rejet || undefined,
+            canAutoCorrect: details.canAutoCorrect || false,
+            fileUrl: row.url_fichier_original || undefined,
+            typeMismatchWarning: details.typeMismatchWarning || undefined,
+            decisionWarning: details.decisionWarning || undefined,
+            languageNotice: details.languageNotice || undefined,
+            typeDocumentDetecte: row.type_document_detecte || undefined,
+          };
+        });
+        setUploadedPieces(mapped);
+      }
+    };
+    loadPieces();
+
+    // Subscribe to realtime updates for this dossier's pieces
+    const channel = supabase
+      .channel(`pieces-ocr-${dossierId}`)
+      .on(
+        "postgres_changes",
+        {
+          event: "UPDATE",
+          schema: "public",
+          table: "pieces_justificatives",
+          filter: `dossier_id=eq.${dossierId}`,
+        },
+        (payload) => {
+          const row = payload.new as any;
+          if (!row || row.statut_ocr === "en_cours") return;
+
+          const details = (row.ocr_details || {}) as Record<string, any>;
+          let status: UploadedPiece["status"] = "analyzing";
+          if (row.statut_ocr === "accepte") status = "accepted";
+          else if (row.statut_ocr === "rejete" || row.statut_ocr === "erreur") status = "rejected";
+
+          const updated: UploadedPiece = {
+            id: row.id,
+            name: row.nom_piece,
+            status,
+            score: row.score_qualite || 0,
+            pages: row.nombre_pages || 1,
+            rejectionMessage: row.motif_rejet || undefined,
+            canAutoCorrect: details.canAutoCorrect || false,
+            fileUrl: row.url_fichier_original || undefined,
+            typeMismatchWarning: details.typeMismatchWarning || undefined,
+            decisionWarning: details.decisionWarning || undefined,
+            languageNotice: details.languageNotice || undefined,
+            typeDocumentDetecte: row.type_document_detecte || undefined,
+          };
+
+          setUploadedPieces((prev) => {
+            const idx = prev.findIndex((p) => p.id === row.id);
+            if (idx >= 0) {
+              const next = [...prev];
+              next[idx] = { ...next[idx], ...updated };
+              return next;
+            }
+            return [...prev, updated];
+          });
+
+          if (status === "accepted") {
+            toast({ title: `✅ ${row.nom_piece} acceptée — Qualité : ${row.score_qualite}/100` });
+          } else if (status === "rejected") {
+            toast({ title: `❌ ${row.nom_piece} rejetée`, description: row.motif_rejet || "Qualité insuffisante", variant: "destructive" });
+          }
+        }
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, [activeDossier]);
+
+  const handlePieceUploaded = useCallback((piece: UploadedPiece) => {
+    setUploadedPieces((prev) => {
+      const idx = prev.findIndex((p) => p.id === piece.id);
+      if (idx >= 0) {
+        const next = [...prev];
+        next[idx] = piece;
+        return next;
+      }
+      return [...prev, piece];
+    });
+  }, []);
+
+  const handlePieceRemoved = useCallback((id: string) => {
+    setUploadedPieces((prev) => prev.filter((p) => p.id !== id));
+  }, []);
+
+  const hasRejectedPieces = uploadedPieces.some((p) => p.status === "rejected");
+  const hasAnalyzingPieces = uploadedPieces.some((p) => p.status === "uploading" || p.status === "analyzing" || p.status === "correcting");
+
+  const checkDeadline = (dateStr: string) => {
+    if (!dateStr) return;
+    const ref = new Date(dateStr);
+    const dl = new Date(ref);
+    dl.setDate(dl.getDate() + 30);
+    const today = new Date();
+    const diff = Math.ceil((dl.getTime() - today.getTime()) / 86400000);
+    const deadline = dl.toLocaleDateString("fr-FR");
+    if (diff < 0) setDlResult({ type: "expired", days: Math.abs(diff), deadline });
+    else if (diff <= 7) setDlResult({ type: "urgent", days: diff, deadline });
+    else setDlResult({ type: "ok", days: diff, deadline });
+  };
+
+  const handleOptionSelect = async (option: "A" | "B" | "C") => {
+    setSelectedOption(option);
+    setStep(9);
+  };
+
+  const sidebar = (
+    <>
+      <NavGroup label="Qualification">
+        <NavItem icon="⚠️" label="Recevabilité" active={step === 0} badge={{ text: "!", color: "red" }} onClick={() => setStep(0)} />
+        <NavItem icon="👤" label="Création de compte" active={step === 1} suffixIcon={procurationSignee ? "✅" : "⚠️"} onClick={() => setStep(1)} />
+      </NavGroup>
+      <NavGroup label="Dossier">
+        <NavItem icon="📄" label="Décision de refus" active={step === 2} onClick={() => setStep(2)} />
+      </NavGroup>
+      <NavGroup label="Constitution">
+        <NavItem icon="📎" label="Pièces justificatives" active={step === 5} onClick={() => setStep(5)} />
+        <NavItem icon="📄" label="Lettre de recours" active={step === 7} onClick={() => setStep(7)} />
+      </NavGroup>
+      <NavGroup label="Finalisation">
+        <NavItem icon="🔀" label="Mode d'envoi" active={step === 8} gold onClick={() => setStep(8)} />
+        <NavItem icon="💳" label="Paiement" active={step === 9} onClick={() => setStep(9)} />
+        <NavItem icon="✍️" label="Signature YouSign" active={step === 10} onClick={() => setStep(10)} />
+        <NavItem icon="📬" label="Envoi LRAR" active={step === 11} onClick={() => setStep(11)} />
+        <NavItem icon="📊" label="Suivi & décision" active={step === 13} onClick={() => setStep(13)} />
+      </NavGroup>
+    </>
+  );
+
+  const bottomNavItems = [
+    { icon: "🏠", label: "Accueil", onClick: () => setStep(0), active: step === 0 },
+    { icon: "📋", label: "Dossier", onClick: () => setStep(2), active: step >= 2 && step <= 7 },
+    { icon: "📬", label: "Envoi", onClick: () => setStep(11), active: step >= 8 && step <= 11 },
+    { icon: "📊", label: "Suivi", onClick: () => setStep(13), active: step === 13 },
+  ];
+
+  return (
+    <ShellLayout
+      role="client"
+      roleLabel="Client"
+      sidebar={sidebar}
+      topbarTitle={cTitles[step]}
+      topbarRight={<div className="w-[30px] h-[30px] rounded-md bg-gradient-to-br from-primary-hover to-purple-600 flex items-center justify-center font-syne font-extrabold text-[0.68rem]">AD</div>}
+      footerContent={<><strong className="text-muted-foreground">Me NGUIYAN Dieu Le Fit</strong><br />Avocat à la cour<br />2C Rue Ferdinand de Lesseps<br />94000 Créteil</>}
+      bottomNavItems={bottomNavItems}
+    >
+      <div className="animate-fadeU">
+        {/* Step 0 — Recevabilité */}
+        {step === 0 && (
+          <div>
+            <Eyebrow>⚠ Avant tout</Eyebrow>
+            <BigTitle>Vérification de recevabilité</BigTitle>
+            <Desc>Premier écran obligatoire. Un recours hors délai est irrecevable sans exception possible.</Desc>
+            <Box variant="alert" title="🚨 Délai de forclusion : 30 jours calendaires">À compter de la notification du refus exprès. Passé ce délai, aucun recours administratif n'est possible.</Box>
+            <div className="mb-4">
+              <label className="font-syne text-[0.64rem] font-bold tracking-wider uppercase text-muted-foreground mb-1.5 block">Date de notification du refus</label>
+              <div className="grid grid-cols-3 gap-2">
+                <select className="w-full bg-background-2 border-[1.5px] border-border-2 rounded-[9px] px-3 py-2.5 text-foreground text-sm outline-none cursor-pointer focus:border-primary-hover/55 focus:bg-primary/[0.07]"
+                  value={refDate ? refDate.split("-")[2] || "" : ""}
+                  onChange={(e) => { const parts = (refDate || "--").split("-"); const newDate = `${parts[0] || ""}-${parts[1] || ""}-${e.target.value}`; setRefDate(newDate); if (parts[0] && parts[1] && e.target.value) checkDeadline(newDate); }}>
+                  <option value="">Jour</option>
+                  {Array.from({ length: 31 }, (_, i) => i + 1).map((d) => (<option key={d} value={String(d).padStart(2, "0")}>{d}</option>))}
+                </select>
+                <select className="w-full bg-background-2 border-[1.5px] border-border-2 rounded-[9px] px-3 py-2.5 text-foreground text-sm outline-none cursor-pointer focus:border-primary-hover/55 focus:bg-primary/[0.07]"
+                  value={refDate ? refDate.split("-")[1] || "" : ""}
+                  onChange={(e) => { const parts = (refDate || "--").split("-"); const newDate = `${parts[0] || ""}-${e.target.value}-${parts[2] || ""}`; setRefDate(newDate); if (parts[0] && e.target.value && parts[2]) checkDeadline(newDate); }}>
+                  <option value="">Mois</option>
+                  {["Janvier","Février","Mars","Avril","Mai","Juin","Juillet","Août","Septembre","Octobre","Novembre","Décembre"].map((m, i) => (<option key={i} value={String(i + 1).padStart(2, "0")}>{m}</option>))}
+                </select>
+                <select className="w-full bg-background-2 border-[1.5px] border-border-2 rounded-[9px] px-3 py-2.5 text-foreground text-sm outline-none cursor-pointer focus:border-primary-hover/55 focus:bg-primary/[0.07]"
+                  value={refDate ? refDate.split("-")[0] || "" : ""}
+                  onChange={(e) => { const parts = (refDate || "--").split("-"); const newDate = `${e.target.value}-${parts[1] || ""}-${parts[2] || ""}`; setRefDate(newDate); if (e.target.value && parts[1] && parts[2]) checkDeadline(newDate); }}>
+                  <option value="">Année</option>
+                  {Array.from({ length: 5 }, (_, i) => new Date().getFullYear() - i).map((y) => (<option key={y} value={String(y)}>{y}</option>))}
+                </select>
+              </div>
+            </div>
+            {dlResult && dlResult.type === "expired" && <Box variant="alert" title={`🚫 Recours irrecevable — Délai expiré depuis ${dlResult.days} jours`}>Consultez un avocat pour d'autres options.</Box>}
+            {dlResult && dlResult.type === "urgent" && <Box variant="alert" title={`⚠️ URGENCE — ${dlResult.days} jour(s) restant(s)`}>Date limite : <strong>{dlResult.deadline}</strong>. Agissez immédiatement.</Box>}
+            {dlResult && dlResult.type === "ok" && <Box variant="ok" title={`✓ Recevable — ${dlResult.days} jours restants`}>Date limite : <strong>{dlResult.deadline}</strong>.</Box>}
+            <div className="flex gap-2.5 mt-7 flex-wrap">
+              <button className="font-syne font-bold text-[0.78rem] px-5 py-2.5 rounded-[7px] bg-primary-hover text-foreground hover:bg-[#5585ff] hover:-translate-y-px transition-all" onClick={() => setStep(1)}>Mon recours est recevable →</button>
+            </div>
+          </div>
+        )}
+
+        {/* Step 1 — Compte */}
+        {step === 1 && (
+          <div>
+            <Eyebrow>Étape 1</Eyebrow>
+            <BigTitle>Création de compte</BigTitle>
+            <Desc>Indispensable pour reprendre votre dossier, être alerté des délais et permettre à l'avocat d'accéder à votre recours.</Desc>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+              <div className="mb-4"><label className="font-syne text-[0.64rem] font-bold tracking-wider uppercase text-muted-foreground mb-1.5 block">Prénom</label><input className="w-full bg-background-2 border-[1.5px] border-border-2 rounded-[9px] px-3 py-2.5 text-foreground text-sm outline-none focus:border-primary-hover/55 focus:bg-primary/[0.07]" placeholder="Marie-Claire" value={profileForm.first_name} onChange={e => setProfileForm(p => ({ ...p, first_name: e.target.value }))} /></div>
+              <div className="mb-4"><label className="font-syne text-[0.64rem] font-bold tracking-wider uppercase text-muted-foreground mb-1.5 block">Nom</label><input className="w-full bg-background-2 border-[1.5px] border-border-2 rounded-[9px] px-3 py-2.5 text-foreground text-sm outline-none focus:border-primary-hover/55 focus:bg-primary/[0.07]" placeholder="MVONDO" value={profileForm.last_name} onChange={e => setProfileForm(p => ({ ...p, last_name: e.target.value }))} /></div>
+            </div>
+            <div className="mb-4"><label className="font-syne text-[0.64rem] font-bold tracking-wider uppercase text-muted-foreground mb-1.5 block">Email</label><input type="email" className="w-full bg-background-2 border-[1.5px] border-border-2 rounded-[9px] px-3 py-2.5 text-foreground text-sm outline-none focus:border-primary-hover/55 focus:bg-primary/[0.07]" value={user?.email || ""} disabled /></div>
+            <div className="mb-4"><label className="font-syne text-[0.64rem] font-bold tracking-wider uppercase text-muted-foreground mb-1.5 block">WhatsApp (alertes délais)</label><input type="tel" className="w-full bg-background-2 border-[1.5px] border-border-2 rounded-[9px] px-3 py-2.5 text-foreground text-sm outline-none focus:border-primary-hover/55 focus:bg-primary/[0.07]" placeholder="+237 6 90 00 00 00" value={profileForm.phone} onChange={e => setProfileForm(p => ({ ...p, phone: e.target.value }))} /></div>
+            <div className="flex gap-2.5 mt-7">
+              <button className="font-syne font-bold text-[0.78rem] px-5 py-2.5 rounded-[7px] bg-foreground/[0.07] text-muted-foreground border border-border-2 hover:text-foreground transition-all" onClick={() => setStep(0)}>← Retour</button>
+              <button className="font-syne font-bold text-[0.78rem] px-5 py-2.5 rounded-[7px] bg-primary-hover text-foreground hover:bg-[#5585ff] transition-all" onClick={async () => {
+                if (!user) return;
+                const { error } = await supabase.from("profiles").update({
+                  first_name: profileForm.first_name, last_name: profileForm.last_name,
+                  phone: profileForm.phone, prefixe_telephone: profileForm.prefixe_telephone,
+                }).eq("id", user.id);
+                if (error) { toast({ title: "Erreur", description: "Impossible de sauvegarder le profil.", variant: "destructive" }); }
+                else { toast({ title: "✅ Profil sauvegardé" }); setProcurationModalOpen(true); }
+              }}>Sauvegarder & continuer →</button>
+            </div>
+            {!procurationSignee && (
+              <button onClick={() => setProcurationModalOpen(true)} className="mt-4 font-syne font-bold text-xs px-4 py-2 rounded-lg bg-amber-500/10 text-amber-600 border border-amber-500/30 hover:bg-amber-500/20 transition-all">
+                ⚠️ Signer ma procuration CAPDEMARCHES
+              </button>
+            )}
+          </div>
+        )}
+
+        {/* Procuration Modal */}
+        {activeDossier && user && (
+          <ProcurationFlow
+            open={procurationModalOpen}
+            onOpenChange={setProcurationModalOpen}
+            dossierRef={activeDossier.dossier_ref}
+            dossierId={activeDossier.id}
+            userEmail={user.email || ""}
+            userId={user.id}
+            onComplete={() => {
+              setProcurationSignee(true);
+              setProcurationDate(new Date().toISOString());
+              const expiry = new Date();
+              expiry.setMonth(expiry.getMonth() + 12);
+              setProcurationExpiry(expiry.toISOString().split("T")[0]);
+              setStep(2);
+            }}
+            onSkip={() => setStep(2)}
+          />
+        )}
+
+        {/* Step 2 — Décision de refus */}
+        {step === 2 && activeDossier && user && (
+          <DecisionRefusUpload
+            dossierId={activeDossier.id}
+            userId={user.id}
+            onComplete={async (data) => {
+              try {
+                const { error } = await supabase
+                  .from("dossiers")
+                  .update({
+                    client_first_name: data.demandeur.prenom || undefined,
+                    client_last_name: data.demandeur.nom || undefined,
+                    client_date_naissance: data.demandeur.date_naissance || undefined,
+                    client_lieu_naissance: data.demandeur.lieu_naissance || undefined,
+                    client_nationalite: data.demandeur.nationalite || undefined,
+                    client_passport_number: data.demandeur.numero_passeport || undefined,
+                    visa_type: data.visa.type_visa,
+                    type_visa_texte_original: data.visa.type_visa_texte_original,
+                    consulat_nom: data.consulat.nom,
+                    consulat_ville: data.consulat.ville,
+                    consulat_pays: data.consulat.pays,
+                    date_notification_refus: data.refus.date_notification ? (() => {
+                      const p = data.refus.date_notification!.match(/(\d{1,2})\/(\d{1,2})\/(\d{4})/);
+                      return p ? `${p[3]}-${p[2]}-${p[1]}` : null;
+                    })() : null,
+                    motifs_refus: data.refus.motifs_coches,
+                    motifs_texte_original: data.refus.motifs_texte_original,
+                    numero_decision: data.refus.numero_decision,
+                    destinataire_recours: data.destinataire_recours,
+                    langue_document: data.langue_document,
+                    url_decision_refus: data.url_fichier,
+                    score_ocr_decision: data.confiance_extraction,
+                    date_qualification: new Date().toISOString(),
+                    lrar_status: "qualification_complete",
+                  } as any)
+                  .eq("id", activeDossier.id);
+
+                if (error) throw error;
+                setSelectedVisaType(data.visa.type_visa);
+                setSelectedMotif(data.refus.motifs_coches[0] || "F");
+                setStep(5);
+              } catch (err: any) {
+                console.error("Save error:", err);
+                toast({ title: "Erreur", description: "Impossible d'enregistrer les données. Réessayez.", variant: "destructive" });
+              }
+            }}
+            onBack={() => setStep(1)}
+          />
+        )}
+        {step === 2 && (!activeDossier || !user) && (
+          <div className="text-center py-12 text-muted-foreground"><p>Chargement de votre dossier…</p></div>
+        )}
+
+        {/* Step 5 — Pièces justificatives */}
+        {step === 5 && (
+          <div>
+            <Eyebrow>Étape 2</Eyebrow>
+            <BigTitle>Pièces justificatives</BigTitle>
+            <Desc>Liste personnalisée selon votre visa et le motif. Chaque pièce est numérotée pour l'inventaire de la lettre. Chaque document est vérifié par OCR automatiquement.</Desc>
+            <PiecesRequisesClient
+              visaType={selectedVisaType || "court_sejour"}
+              motifRefus={selectedMotif || "F"}
+              dossierId={activeDossier?.id || ""}
+              userId={user?.id || ""}
+              uploadedPieces={uploadedPieces}
+              onPieceUploaded={handlePieceUploaded}
+              onPieceRemoved={handlePieceRemoved}
+            />
+            {hasRejectedPieces && (
+              <Box variant="alert" title="⚠️ Pièces rejetées">Certains documents ont été rejetés par le contrôle qualité. Corrigez-les ou réuploadez-les avant de continuer.</Box>
+            )}
+            <div className="flex gap-2.5 mt-7">
+              <button className="font-syne font-bold text-[0.78rem] px-5 py-2.5 rounded-[7px] bg-foreground/[0.07] text-muted-foreground border border-border-2 transition-all" onClick={() => setStep(2)}>← Retour</button>
+              <button
+                className={`font-syne font-bold text-[0.78rem] px-5 py-2.5 rounded-[7px] transition-all ${
+                  hasRejectedPieces || hasAnalyzingPieces ? "bg-muted text-muted-foreground cursor-not-allowed opacity-50" : "bg-primary-hover text-foreground hover:bg-[#5585ff]"
+                }`}
+                disabled={hasRejectedPieces || hasAnalyzingPieces}
+                onClick={() => setStep(7)}
+              >
+                {hasAnalyzingPieces ? "Analyse en cours…" : "Valider les pièces →"}
+              </button>
+            </div>
+          </div>
+        )}
+
+        {/* Step 7 — TEMPS 1 : Lettre neutre */}
+        {step === 7 && (
+          <LetterPreview
+            result={recoursResult!}
+            loading={generatingRecours}
+            onGenerate={() => activeDossier && generateRecours(activeDossier.id)}
+            onRegenerate={() => activeDossier && generateRecours(activeDossier.id)}
+            onChooseOption={() => setStep(8)}
+            onBack={() => setStep(5)}
+            canGenerate={!!activeDossier}
+          />
+        )}
+
+        {/* Step 8 — Choix du mode d'envoi (TEMPS 2) */}
+        {step === 8 && activeDossier && (
+          <SendOptionChooser
+            dossierRef={activeDossier.dossier_ref}
+            dateNotification={activeDossier.date_notification_refus}
+            onSelect={handleOptionSelect}
+            onBack={() => setStep(7)}
+          />
+        )}
+
+        {/* Step 9 — Paiement */}
+        {step === 9 && (
+          <div>
+            <Eyebrow>Paiement</Eyebrow>
+            <BigTitle>Paiement sécurisé</BigTitle>
+            <Desc>Paiement sécurisé par carte bancaire via Stripe.</Desc>
+
+            {selectedOption && (
+              <div className="bg-panel border border-border rounded-xl p-4 mb-4">
+                <div className="font-syne text-[0.65rem] font-bold tracking-wider uppercase text-muted mb-2">Option sélectionnée</div>
+                <div className="font-syne font-bold text-sm">
+                  {selectedOption === "A" && "📥 Téléchargement direct"}
+                  {selectedOption === "B" && "📬 Envoi MySendingBox automatique"}
+                  {selectedOption === "C" && "⚖️ Avocat relit, signe et envoie"}
+                </div>
+              </div>
+            )}
+
+            {/* Card visual */}
+            <div className="bg-gradient-to-br from-background-3 via-primary-hover/[0.12] to-gold/[0.08] border border-border-2 rounded-[13px] p-4 mb-4 font-mono relative overflow-hidden">
+              <div className="absolute -top-8 -right-5 w-28 h-28 rounded-full bg-[radial-gradient(circle,rgba(56,112,255,0.14),transparent_70%)]" />
+              <div className="w-8 h-6 rounded-[3px] bg-gradient-to-br from-[#D4AF37] to-[#F5D060] mb-3 flex items-center justify-center">
+                <div className="w-5 h-3.5 rounded-sm bg-gradient-to-br from-[#B8960A] to-[#E8C040]" />
+              </div>
+              <div className="text-[0.95rem] tracking-[0.16em] text-foreground mb-2.5 flex gap-2.5">
+                <span className="opacity-40">••••</span><span className="opacity-40">••••</span><span className="opacity-40">••••</span><span className="opacity-40">••••</span>
+              </div>
+              <div className="flex justify-between">
+                <div><div className="text-[0.5rem] text-muted-foreground uppercase tracking-wider font-syne mb-0.5">Titulaire</div><div className="text-xs">NOM PRÉNOM</div></div>
+                <div><div className="text-[0.5rem] text-muted-foreground uppercase tracking-wider font-syne mb-0.5">Expire</div><div className="text-xs">MM/AA</div></div>
+              </div>
+            </div>
+
+            <Box variant="info" title="Paiement sécurisé Stripe">
+              Vous serez redirigé vers la page de paiement sécurisée Stripe. Vos données bancaires ne transitent jamais par nos serveurs.
+            </Box>
+
+            <button
+              disabled={!cguAccepted}
+              onClick={async () => {
+                if (!cguAccepted) return;
+                try {
+                  const { data, error } = await supabase.functions.invoke("create-payment", {
+                    body: { dossier_ref: activeDossier?.dossier_ref || "", option: selectedOption },
+                  });
+                  if (error) throw error;
+                  if (data?.url) window.open(data.url, "_blank");
+                } catch (err: any) {
+                  toast({ title: "Erreur de paiement", description: err.message || "Impossible de créer la session de paiement.", variant: "destructive" });
+                }
+              }}
+              className={`w-full rounded-xl py-4 font-syne font-extrabold text-[0.92rem] transition-all flex items-center justify-center gap-2 mt-5 ${cguAccepted ? "cursor-pointer bg-gradient-to-br from-primary to-[#2258CC] text-foreground shadow-[0_8px_24px_rgba(26,80,220,0.32)] hover:shadow-[0_12px_32px_rgba(26,80,220,0.48)] hover:-translate-y-0.5" : "cursor-not-allowed opacity-50 bg-muted text-muted-foreground"}`}
+            >
+              🔒 Payer par carte
+            </button>
+
+            <div className="mt-4 text-center text-[0.72rem] text-muted-foreground leading-relaxed">
+              💳 Paiement sécurisé par <strong>Stripe</strong><br />
+              Visa · Mastercard · American Express<br />
+              Chiffrement TLS 1.3 · PCI-DSS Level 1
+            </div>
+
+            <label className="flex items-start gap-3 mt-5 p-4 rounded-xl border border-border bg-background-2 cursor-pointer select-none">
+              <input type="checkbox" checked={cguAccepted} onChange={(e) => setCguAccepted(e.target.checked)} className="mt-0.5 w-4 h-4 rounded border-border accent-primary shrink-0" />
+              <span className="text-xs text-muted-foreground leading-relaxed">
+                J'accepte les{" "}
+                <a href="/cgu" target="_blank" className="text-primary hover:underline font-medium">Conditions Générales d'Utilisation et la Politique de Confidentialité</a>.
+                Je comprends qu'IZY Visa est un outil d'aide à la rédaction et ne se substitue pas à un avocat.
+              </span>
+            </label>
+            {!cguAccepted && <p className="text-[0.7rem] text-destructive mt-1 ml-1">Vous devez accepter les CGU avant de procéder au paiement.</p>}
+
+            <div className="flex gap-2.5 mt-7">
+              <button className="font-syne font-bold text-[0.78rem] px-5 py-2.5 rounded-[7px] bg-foreground/[0.07] text-muted-foreground border border-border-2 transition-all" onClick={() => setStep(8)}>← Retour</button>
+            </div>
+          </div>
+        )}
+
+        {/* Step 11 — Composition & Envoi LRAR */}
+        {step === 11 && activeDossier && (
+          <LrarCompositionWrapper
+            dossierId={activeDossier.id}
+            dossierRef={activeDossier.dossier_ref}
+            onConfirm={() => setStep(13)}
+            onBack={() => setStep(9)}
+          />
+        )}
+
+        {/* Step 13 — Suivi */}
+        {step === 13 && activeDossier && (
+          <div>
+            <LrarTrackingSuivi dossierId={activeDossier.id} dossierRef={activeDossier.dossier_ref} />
+            <div className="flex gap-2.5 mt-7 flex-wrap">
+              <button className="font-syne font-bold text-[0.78rem] px-5 py-2.5 rounded-[7px] bg-foreground/[0.07] text-muted-foreground border border-border-2 transition-all">+ Transmettre des pièces complémentaires</button>
+              <button className="font-syne font-bold text-[0.78rem] px-5 py-2.5 rounded-[7px] bg-success/20 text-success border border-success/30 transition-all">Visa obtenu ✓</button>
+            </div>
+            {/* Procuration section */}
+            <div className="mt-8 bg-panel border border-border rounded-xl p-5">
+              <h3 className="font-syne font-bold text-sm mb-3">📬 Ma procuration CAPDEMARCHES</h3>
+              {procurationSignee ? (
+                <div>
+                  <div className="flex items-center gap-2 mb-2">
+                    <span className="text-green-600 text-lg">✅</span>
+                    <span className="font-syne font-bold text-sm text-green-700 dark:text-green-400">Procuration active</span>
+                  </div>
+                  <div className="text-xs text-muted-foreground space-y-1">
+                    <p>Signée le {procurationDate ? new Date(procurationDate).toLocaleDateString("fr-FR") : "—"}</p>
+                    <p>Valide jusqu'au {procurationExpiry ? new Date(procurationExpiry).toLocaleDateString("fr-FR") : "—"}</p>
+                  </div>
+                  <div className="flex gap-2 mt-3">
+                    <button className="font-syne font-bold text-xs px-3 py-1.5 rounded-lg bg-foreground/[0.07] text-muted-foreground border border-border">⬇️ Télécharger</button>
+                    {procurationExpiry && (() => {
+                      const daysLeft = Math.ceil((new Date(procurationExpiry).getTime() - Date.now()) / 86400000);
+                      return daysLeft <= 30 ? (
+                        <button onClick={() => setProcurationModalOpen(true)} className="font-syne font-bold text-xs px-3 py-1.5 rounded-lg bg-amber-500/10 text-amber-600 border border-amber-500/30">🔄 Renouveler</button>
+                      ) : null;
+                    })()}
+                  </div>
+                </div>
+              ) : (
+                <div>
+                  <div className="flex items-center gap-2 mb-2">
+                    <span className="text-amber-500 text-lg">⚠️</span>
+                    <span className="font-syne font-bold text-sm text-amber-600">Procuration non signée</span>
+                  </div>
+                  <button onClick={() => setProcurationModalOpen(true)} className="mt-2 font-syne font-bold text-xs px-4 py-2 rounded-lg bg-primary text-primary-foreground">✍️ Signer ma procuration</button>
+                </div>
+              )}
+            </div>
+          </div>
+        )}
+      </div>
+    </ShellLayout>
+  );
+};
+
+export default ClientSpace;
