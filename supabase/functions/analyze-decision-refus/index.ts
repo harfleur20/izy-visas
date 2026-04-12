@@ -338,6 +338,30 @@ serve(async (req) => {
     const destinataire = analysisResult.destinataire_recours || 
       (visaTypeNormalized === "court_sejour" ? "sous_directeur_visas" : "crrv_nantes");
 
+    // ── Name cross-validation ──────────────────────────────────────────
+    const docNom = (demandeur.nom || "").trim().toLowerCase();
+    const docPrenom = (demandeur.prenom || "").trim().toLowerCase();
+    let nomMismatch = false;
+    if (docNom && ownerLastName) {
+      const lastMatch = docNom.includes(ownerLastName) || ownerLastName.includes(docNom);
+      const firstMatch = !docPrenom || !ownerFirstName || docPrenom.includes(ownerFirstName) || ownerFirstName.includes(docPrenom);
+      nomMismatch = !lastMatch || !firstMatch;
+    }
+
+    const warnings: { type: string; message: string }[] = [];
+    if (nomMismatch) {
+      warnings.push({
+        type: "name_mismatch",
+        message: `Le nom sur la décision (${demandeur.nom || "?"} ${demandeur.prenom || "?"}) ne correspond pas au titulaire du dossier. Vérifiez que vous avez uploadé le bon document.`,
+      });
+    }
+    if (delaiRestant !== null && delaiRestant < 0) {
+      warnings.push({
+        type: "deadline_expired",
+        message: `Le délai de recours de 30 jours est expiré depuis ${Math.abs(delaiRestant)} jour${Math.abs(delaiRestant) > 1 ? "s" : ""}. Le recours gracieux n'est plus recevable.`,
+      });
+    }
+
     const extractedData = {
       demandeur: {
         nom: demandeur.nom || null,
@@ -369,6 +393,8 @@ serve(async (req) => {
       delai_restant_jours: delaiRestant,
       score_qualite: analysisResult.score_qualite || 0,
       url_fichier: storagePath,
+      warnings,
+      nom_mismatch: nomMismatch,
     };
 
     if (confidence < 70) {
