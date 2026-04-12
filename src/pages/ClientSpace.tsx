@@ -45,10 +45,8 @@ type ActiveDossier = {
   dossier_ref: string;
   date_notification_refus?: string | null;
   lrar_status?: string | null;
-  option_choisie?: string | null;
   option_envoi?: string | null;
   url_lettre_definitive?: string | null;
-  validation_juridique_status?: string | null;
   procuration_signee?: boolean | null;
   date_signature_procuration?: string | null;
   procuration_expiration?: string | null;
@@ -143,7 +141,7 @@ const ClientSpace = () => {
     const loadOrCreateDossier = async () => {
       const { data } = await supabase
         .from("dossiers")
-        .select("id, dossier_ref, procuration_signee, date_signature_procuration, procuration_expiration, date_notification_refus, lrar_status, option_choisie, option_envoi, url_lettre_definitive, validation_juridique_status")
+        .select("id, dossier_ref, procuration_signee, date_signature_procuration, procuration_expiration, date_notification_refus, lrar_status, option_envoi, url_lettre_definitive")
         .eq("user_id", user.id)
         .order("created_at", { ascending: false })
         .limit(1)
@@ -154,7 +152,7 @@ const ClientSpace = () => {
         setProcurationSignee(data.procuration_signee || false);
         setProcurationDate(data.date_signature_procuration || null);
         setProcurationExpiry(data.procuration_expiration || null);
-        setSelectedOption(normalizeStoredOption(data.option_choisie || data.option_envoi));
+        setSelectedOption(normalizeStoredOption(data.option_envoi));
         if (data.date_notification_refus) {
           setRefDate(data.date_notification_refus);
         }
@@ -174,7 +172,7 @@ const ClientSpace = () => {
             recipient_postal_code: "44036",
             recipient_city: "Nantes Cedex 1",
           })
-          .select("id, dossier_ref, procuration_signee, date_signature_procuration, procuration_expiration, date_notification_refus, lrar_status, option_choisie, option_envoi, url_lettre_definitive, validation_juridique_status")
+          .select("id, dossier_ref, procuration_signee, date_signature_procuration, procuration_expiration, date_notification_refus, lrar_status, option_envoi, url_lettre_definitive")
           .single();
 
         if (!error && newDossier) {
@@ -359,10 +357,8 @@ const ClientSpace = () => {
       if (data?.error) throw new Error(data.error);
 
       const saved = await updateActiveDossier({
-        option_choisie: option,
         option_envoi: data?.option_envoi || option,
         url_lettre_definitive: data?.url_lettre_definitive,
-        validation_juridique_status: data?.validation_juridique_status,
         lrar_status: data?.status || "lettre_finalisee",
       });
       if (!saved) return;
