@@ -2,6 +2,7 @@ import { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "@/hooks/use-toast";
+import { isAdminRole, pickPrimaryRole } from "@/lib/roles";
 
 const ResetPassword = () => {
   const navigate = useNavigate();
@@ -31,8 +32,30 @@ const ResetPassword = () => {
     try {
       const { error } = await supabase.auth.updateUser({ password });
       if (error) throw error;
-      toast({ title: "Mot de passe mis à jour", description: "Vous pouvez maintenant vous connecter." });
-      navigate("/auth", { replace: true });
+
+      const {
+        data: { user },
+      } = await supabase.auth.getUser();
+
+      let nextPath = "/auth";
+
+      if (user) {
+        const { data: roles } = await supabase
+          .from("user_roles")
+          .select("role")
+          .eq("user_id", user.id);
+
+        const primaryRole = pickPrimaryRole((roles || []).map((row) => row.role));
+        nextPath = isAdminRole(primaryRole) ? "/setup-2fa" : "/auth";
+      }
+
+      toast({
+        title: "Mot de passe mis à jour",
+        description: nextPath === "/setup-2fa"
+          ? "Mot de passe enregistré. Configurez maintenant la double authentification."
+          : "Vous pouvez maintenant vous connecter.",
+      });
+      navigate(nextPath, { replace: true });
     } catch (err: unknown) {
       const message = err instanceof Error ? err.message : "Erreur";
       toast({ title: "Erreur", description: message, variant: "destructive" });

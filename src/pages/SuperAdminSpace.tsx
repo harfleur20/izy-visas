@@ -5,14 +5,23 @@ import { Eyebrow, BigTitle, Box } from "@/components/ui-custom";
 import { useAuth } from "@/hooks/useAuth";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
+import type { Database } from "@/integrations/supabase/types";
+import { roleLabel } from "@/lib/roles";
+
+type UserRoleRow = Database["public"]["Tables"]["user_roles"]["Row"];
+type AuditLogRow = Database["public"]["Tables"]["audit_admin"]["Row"];
+type InvitationRow = Database["public"]["Tables"]["admin_invitations"]["Row"];
+type ProfileRow = Database["public"]["Tables"]["profiles"]["Row"];
+type AdminListItem = UserRoleRow & { profile?: Pick<ProfileRow, "id" | "first_name" | "last_name" | "phone"> };
 
 const SuperAdminSpace = () => {
   const { user } = useAuth();
   const [page, setPage] = useState(0);
-  const [admins, setAdmins] = useState<any[]>([]);
-  const [auditLogs, setAuditLogs] = useState<any[]>([]);
-  const [invitations, setInvitations] = useState<any[]>([]);
+  const [admins, setAdmins] = useState<AdminListItem[]>([]);
+  const [auditLogs, setAuditLogs] = useState<AuditLogRow[]>([]);
+  const [invitations, setInvitations] = useState<InvitationRow[]>([]);
   const [loading, setLoading] = useState(false);
+  const [lastActivationUrl, setLastActivationUrl] = useState("");
 
   // Form state for new admin
   const [form, setForm] = useState({
@@ -24,7 +33,7 @@ const SuperAdminSpace = () => {
     const { data } = await supabase
       .from("user_roles")
       .select("user_id, role")
-      .in("role", ["admin_delegue", "admin_juridique", "super_admin"] as any[]);
+      .in("role", ["admin_delegue", "admin_juridique", "super_admin"]);
     if (data) {
       // Fetch profiles for these users
       const userIds = data.map(d => d.user_id);
@@ -59,10 +68,22 @@ const SuperAdminSpace = () => {
   };
 
   useEffect(() => {
-    fetchAdmins();
-    fetchAudit();
-    fetchInvitations();
+    void fetchAdmins();
+    void fetchAudit();
+    void fetchInvitations();
   }, []);
+
+  const buildActivationUrl = (token: string) => `${window.location.origin}/activate-admin?token=${encodeURIComponent(token)}`;
+
+  const copyActivationLink = async (token: string) => {
+    const activationUrl = buildActivationUrl(token);
+    try {
+      await navigator.clipboard.writeText(activationUrl);
+      toast.success("Lien d’activation copié");
+    } catch {
+      toast.error("Impossible de copier le lien");
+    }
+  };
 
   const handleInviteAdmin = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -73,13 +94,13 @@ const SuperAdminSpace = () => {
       });
       if (error) throw error;
       if (data?.error) throw new Error(data.error);
-      toast.success(data.message || "Admin invité avec succès");
+      setLastActivationUrl(data.activation_url || "");
+      toast.success(data.message || "Invitation créée");
       setForm({ email: "", nom: "", prenom: "", role: "admin_delegue", motif: "", perimetre: "", date_debut: "", date_fin: "" });
-      fetchAdmins();
-      fetchInvitations();
-      fetchAudit();
-    } catch (err: any) {
-      toast.error(err.message || "Erreur lors de l'invitation");
+      void fetchInvitations();
+      void fetchAudit();
+    } catch (err: unknown) {
+      toast.error(err instanceof Error ? err.message : "Erreur lors de l'invitation");
     } finally {
       setLoading(false);
     }
@@ -95,10 +116,30 @@ const SuperAdminSpace = () => {
       if (error) throw error;
       if (data?.error) throw new Error(data.error);
       toast.success(data.message || "Admin révoqué");
-      fetchAdmins();
-      fetchAudit();
-    } catch (err: any) {
-      toast.error(err.message || "Erreur lors de la révocation");
+      void fetchAdmins();
+      void fetchInvitations();
+      void fetchAudit();
+    } catch (err: unknown) {
+      toast.error(err instanceof Error ? err.message : "Erreur lors de la révocation");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleRevokeInvitation = async (invitationId: string) => {
+    if (!confirm("Révoquer cette invitation en attente ?")) return;
+    setLoading(true);
+    try {
+      const { data, error } = await supabase.functions.invoke("revoke-admin", {
+        body: { invitation_id: invitationId },
+      });
+      if (error) throw error;
+      if (data?.error) throw new Error(data.error);
+      toast.success(data.message || "Invitation révoquée");
+      void fetchInvitations();
+      void fetchAudit();
+    } catch (err: unknown) {
+      toast.error(err instanceof Error ? err.message : "Erreur lors de la révocation");
     } finally {
       setLoading(false);
     }
@@ -155,6 +196,19 @@ const SuperAdminSpace = () => {
             <Box variant="info" title="Sécurité">
               Seul le super administrateur peut créer, modifier ou révoquer des comptes administrateurs. Toutes les actions sont journalisées.
             </Box>
+            {lastActivationUrl && (
+              <div className="mt-4 bg-panel border border-border rounded-xl p-4">
+                <div className="font-syne font-bold text-sm mb-2">Dernier lien d’activation</div>
+                <div className="text-xs text-muted-foreground break-all mb-3">{lastActivationUrl}</div>
+                <button
+                  onClick={() => navigator.clipboard.writeText(lastActivationUrl).then(() => toast.success("Lien copié")).catch(() => toast.error("Impossible de copier le lien"))}
+                  className={btnPrimary}
+                  type="button"
+                >
+                  Copier le lien
+                </button>
+              </div>
+            )}
           </div>
         )}
 
@@ -208,7 +262,7 @@ const SuperAdminSpace = () => {
                   </div>
                 </div>
                 <button type="submit" disabled={loading} className={btnPrimary}>
-                  {loading ? "Création…" : "Créer et envoyer l'invitation"}
+                  {loading ? "Création…" : "Créer l'invitation"}
                 </button>
               </form>
             </div>
@@ -239,7 +293,7 @@ const SuperAdminSpace = () => {
                             a.role === "admin_delegue" ? "bg-primary/20 text-primary-hover" :
                             "bg-purple-500/20 text-purple-400"
                           }`}>
-                            {a.role === "super_admin" ? "Super Admin" : a.role === "admin_delegue" ? "Admin délégué" : "Admin juridique"}
+                            {roleLabel(a.role)}
                           </span>
                         </td>
                         <td className="px-3.5 py-2.5 text-xs border-b border-foreground/[0.03]">
@@ -272,7 +326,7 @@ const SuperAdminSpace = () => {
                 <table className="w-full border-collapse">
                   <thead>
                     <tr>
-                      {["Email", "Rôle", "Date", "Statut"].map(h => (
+                      {["Email", "Rôle", "Date", "Statut", "Actions"].map(h => (
                         <th key={h} className="font-syne text-[0.6rem] font-bold tracking-wider uppercase text-muted px-3.5 py-2 text-left border-b border-border">{h}</th>
                       ))}
                     </tr>
@@ -281,7 +335,7 @@ const SuperAdminSpace = () => {
                     {invitations.map((inv) => (
                       <tr key={inv.id} className="hover:bg-foreground/[0.022]">
                         <td className="px-3.5 py-2.5 text-xs border-b border-foreground/[0.03]">{inv.email}</td>
-                        <td className="px-3.5 py-2.5 text-xs border-b border-foreground/[0.03]">{inv.role}</td>
+                        <td className="px-3.5 py-2.5 text-xs border-b border-foreground/[0.03]">{roleLabel(inv.role)}</td>
                         <td className="px-3.5 py-2.5 text-xs text-muted-foreground border-b border-foreground/[0.03]">
                           {new Date(inv.created_at).toLocaleDateString("fr-FR")}
                         </td>
@@ -294,6 +348,27 @@ const SuperAdminSpace = () => {
                             <span className="text-muted-foreground">Expirée</span>
                           ) : (
                             <span className="text-amber-400 font-bold">En attente</span>
+                          )}
+                        </td>
+                        <td className="px-3.5 py-2.5 text-xs border-b border-foreground/[0.03]">
+                          {!inv.revoked && !inv.used_at && new Date(inv.expires_at) >= new Date() && (
+                            <div className="flex gap-2">
+                              <button
+                                type="button"
+                                onClick={() => copyActivationLink(inv.token)}
+                                className="font-syne font-bold text-[0.65rem] px-3 py-1 rounded-md bg-primary/15 text-primary-hover border border-primary/20 hover:bg-primary/25 transition-all"
+                              >
+                                Copier le lien
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => handleRevokeInvitation(inv.id)}
+                                disabled={loading}
+                                className="font-syne font-bold text-[0.65rem] px-3 py-1 rounded-md bg-destructive/[0.14] text-red-2 border border-destructive/25 hover:bg-destructive/25 transition-all"
+                              >
+                                Révoquer
+                              </button>
+                            </div>
                           )}
                         </td>
                       </tr>

@@ -1,14 +1,16 @@
 import { useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, useSearchParams } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
 import { lovable } from "@/integrations/lovable/index";
 import { toast } from "@/hooks/use-toast";
 import { useAuth } from "@/hooks/useAuth";
 import { useEffect } from "react";
+import { homeRouteForRole, isAdminRole } from "@/lib/roles";
 
 const Auth = () => {
   const navigate = useNavigate();
-  const { session, role } = useAuth();
+  const [searchParams] = useSearchParams();
+  const { session, role, hasMfaEnabled } = useAuth();
   const [mode, setMode] = useState<"login" | "signup" | "forgot">("login");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -21,16 +23,23 @@ const Auth = () => {
   const [passportNumber, setPassportNumber] = useState("");
   const [loading, setLoading] = useState(false);
 
+  useEffect(() => {
+    const invitedEmail = searchParams.get("email");
+    if (invitedEmail) {
+      setEmail(invitedEmail);
+      setMode("login");
+    }
+  }, [searchParams]);
+
   // Redirect if already logged in
   useEffect(() => {
     if (session && role) {
-      const routes: Record<string, string> = {
-        client: "/client", avocat: "/avocat", admin: "/admin",
-        super_admin: "/super-admin", admin_delegue: "/admin", admin_juridique: "/admin-juridique",
-      };
-      navigate(routes[role] || "/client", { replace: true });
+      navigate(
+        isAdminRole(role) && !hasMfaEnabled ? "/setup-2fa" : homeRouteForRole(role),
+        { replace: true },
+      );
     }
-  }, [session, role, navigate]);
+  }, [session, role, hasMfaEnabled, navigate]);
 
   const handleEmailAuth = async (e: React.FormEvent) => {
     e.preventDefault();

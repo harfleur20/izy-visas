@@ -1,30 +1,20 @@
-import { useState, useEffect } from "react";
+import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
 import { toast } from "@/hooks/use-toast";
+import { homeRouteForRole, isAdminRole } from "@/lib/roles";
 
 const Setup2FA = () => {
   const navigate = useNavigate();
-  const { role, hasMfaEnabled } = useAuth();
-  const [qrCode, setQrCode] = useState<string>("");
-  const [secret, setSecret] = useState<string>("");
-  const [factorId, setFactorId] = useState<string>("");
+  const { session, role, hasMfaEnabled, loading: authLoading } = useAuth();
+  const [qrCode, setQrCode] = useState("");
+  const [secret, setSecret] = useState("");
+  const [factorId, setFactorId] = useState("");
   const [verifyCode, setVerifyCode] = useState("");
   const [loading, setLoading] = useState(false);
   const [step, setStep] = useState<"enroll" | "verify">("enroll");
-
-  // If already has MFA, redirect to appropriate space
-  useEffect(() => {
-    if (hasMfaEnabled && role) {
-      const routes: Record<string, string> = {
-        super_admin: "/super-admin",
-        admin_delegue: "/admin",
-        admin_juridique: "/admin-juridique",
-      };
-      navigate(routes[role] || "/", { replace: true });
-    }
-  }, [hasMfaEnabled, role, navigate]);
+  const [enrollmentStarted, setEnrollmentStarted] = useState(false);
 
   const startEnrollment = async () => {
     setLoading(true);
@@ -33,19 +23,53 @@ const Setup2FA = () => {
         factorType: "totp",
         friendlyName: "IZY VISA Admin 2FA",
       });
-      if (error) throw error;
+
+      if (error) {
+        throw error;
+      }
+
       if (data) {
         setQrCode(data.totp.qr_code);
         setSecret(data.totp.secret);
         setFactorId(data.id);
         setStep("verify");
       }
-    } catch (err: any) {
-      toast({ title: "Erreur", description: err.message, variant: "destructive" });
+    } catch (err: unknown) {
+      toast({
+        title: "Erreur",
+        description: err instanceof Error ? err.message : "Impossible de preparer la 2FA.",
+        variant: "destructive",
+      });
     } finally {
       setLoading(false);
     }
   };
+
+  useEffect(() => {
+    if (authLoading) {
+      return;
+    }
+
+    if (!session) {
+      navigate("/auth", { replace: true });
+      return;
+    }
+
+    if (!isAdminRole(role)) {
+      navigate(homeRouteForRole(role), { replace: true });
+      return;
+    }
+
+    if (hasMfaEnabled) {
+      navigate(homeRouteForRole(role), { replace: true });
+      return;
+    }
+
+    if (!enrollmentStarted) {
+      setEnrollmentStarted(true);
+      void startEnrollment();
+    }
+  }, [authLoading, enrollmentStarted, hasMfaEnabled, navigate, role, session]);
 
   const verifyFactor = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -54,34 +78,37 @@ const Setup2FA = () => {
       const { data: challenge, error: challengeError } = await supabase.auth.mfa.challenge({
         factorId,
       });
-      if (challengeError) throw challengeError;
+
+      if (challengeError) {
+        throw challengeError;
+      }
 
       const { error: verifyError } = await supabase.auth.mfa.verify({
         factorId,
         challengeId: challenge.id,
         code: verifyCode,
       });
-      if (verifyError) throw verifyError;
 
-      toast({ title: "2FA activé", description: "Double authentification configurée avec succès." });
+      if (verifyError) {
+        throw verifyError;
+      }
 
-      // Redirect to admin space
-      const routes: Record<string, string> = {
-        super_admin: "/super-admin",
-        admin_delegue: "/admin",
-        admin_juridique: "/admin-juridique",
-      };
-      navigate(routes[role || ""] || "/", { replace: true });
-    } catch (err: any) {
-      toast({ title: "Erreur", description: err.message, variant: "destructive" });
+      toast({
+        title: "2FA active",
+        description: "Double authentification configuree avec succes.",
+      });
+
+      navigate(homeRouteForRole(role), { replace: true });
+    } catch (err: unknown) {
+      toast({
+        title: "Erreur",
+        description: err instanceof Error ? err.message : "Verification 2FA impossible.",
+        variant: "destructive",
+      });
     } finally {
       setLoading(false);
     }
   };
-
-  useEffect(() => {
-    startEnrollment();
-  }, []);
 
   const inputClass = "w-full bg-background-2 border-[1.5px] border-border-2 rounded-[9px] px-3 py-2.5 text-foreground text-sm outline-none transition-all focus:border-primary-hover/55 text-center tracking-[0.3em] text-lg";
 
@@ -101,7 +128,7 @@ const Setup2FA = () => {
           {step === "enroll" && (
             <div className="text-center">
               <div className="w-8 h-8 border-2 border-primary-hover border-t-transparent rounded-full animate-spin mx-auto" />
-              <p className="text-muted-foreground text-sm mt-3">Préparation…</p>
+              <p className="text-muted-foreground text-sm mt-3">Preparation...</p>
             </div>
           )}
 
@@ -122,13 +149,13 @@ const Setup2FA = () => {
               <form onSubmit={verifyFactor} className="space-y-4">
                 <div>
                   <label className="font-syne text-[0.64rem] font-bold tracking-wider uppercase text-muted-foreground mb-1.5 block">
-                    Code de vérification
+                    Code de verification
                   </label>
                   <input
                     type="text"
                     className={inputClass}
                     value={verifyCode}
-                    onChange={e => setVerifyCode(e.target.value.replace(/\D/g, "").slice(0, 6))}
+                    onChange={(e) => setVerifyCode(e.target.value.replace(/\D/g, "").slice(0, 6))}
                     placeholder="000000"
                     maxLength={6}
                     required
@@ -139,7 +166,7 @@ const Setup2FA = () => {
                   disabled={loading || verifyCode.length !== 6}
                   className="w-full font-syne font-bold text-[0.78rem] px-5 py-3 rounded-[9px] bg-primary-hover text-foreground hover:bg-[#5585ff] transition-all disabled:opacity-50"
                 >
-                  {loading ? "Vérification…" : "Activer la 2FA"}
+                  {loading ? "Verification..." : "Activer la 2FA"}
                 </button>
               </form>
             </div>

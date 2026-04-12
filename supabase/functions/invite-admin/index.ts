@@ -1,5 +1,6 @@
 import { serve } from "https://deno.land/std@0.190.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.49.4";
+import { HttpError, requireAuthenticatedContext } from "../_shared/security.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -9,9 +10,82 @@ const corsHeaders = {
 
 function getSupabaseAdmin() {
   return createClient(
-    Deno.env.get("SUPABASE_URL")!,
-    Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!
+    Deno.env.get("SUPABASE_URL") ?? "",
+    Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") ?? "",
+    { auth: { persistSession: false } },
   );
+}
+
+function jsonResponse(data: unknown, status = 200) {
+  return new Response(JSON.stringify(data), {
+    status,
+    headers: { ...corsHeaders, "Content-Type": "application/json" },
+  });
+}
+
+function getRequestMetadata(req: Request) {
+  return {
+    adresse_ip:
+      req.headers.get("x-forwarded-for")?.split(",")[0]?.trim() ||
+      req.headers.get("cf-connecting-ip") ||
+      "unknown",
+    user_agent: req.headers.get("user-agent") || "unknown",
+  };
+}
+
+function getAppBaseUrl(req: Request) {
+  return Deno.env.get("APP_BASE_URL")?.trim()
+    || req.headers.get("origin")?.trim()
+    || "https://izy-visas.lovable.app";
+}
+
+async function logAudit(
+  supabaseAdmin: ReturnType<typeof getSupabaseAdmin>,
+  req: Request,
+  payload: {
+    action_type: string;
+    admin_id: string;
+    admin_role: string;
+    cible_type?: string;
+    cible_id?: string;
+    details?: Record<string, unknown>;
+  },
+) {
+  const { adresse_ip, user_agent } = getRequestMetadata(req);
+  await supabaseAdmin.from("audit_admin").insert({
+    ...payload,
+    details: payload.details ?? {},
+    adresse_ip,
+    user_agent,
+  });
+}
+
+async function requireSuperAdmin(req: Request) {
+  const supabaseAdmin = getSupabaseAdmin();
+  const authHeader = req.headers.get("Authorization");
+  const supabaseUser = createClient(
+    Deno.env.get("SUPABASE_URL") ?? "",
+    Deno.env.get("SUPABASE_ANON_KEY") ?? "",
+    {
+      auth: { persistSession: false },
+      global: authHeader ? { headers: { Authorization: authHeader } } : undefined,
+    },
+  );
+
+  const authContext = await requireAuthenticatedContext(req, supabaseAdmin, supabaseUser);
+
+  if (!authContext.roles.includes("super_admin")) {
+    await logAudit(supabaseAdmin, req, {
+      action_type: "tentative_creation_admin_non_autorisee",
+      admin_id: authContext.user.id,
+      admin_role: authContext.roles[0] || "unknown",
+      details: { email: authContext.user.email || null },
+    });
+
+    throw new HttpError(403, "Acces reserve au super administrateur");
+  }
+
+  return { supabaseAdmin, authContext };
 }
 
 serve(async (req) => {
@@ -20,79 +94,50 @@ serve(async (req) => {
   }
 
   try {
-    // Verify caller is super_admin
-    const authHeader = req.headers.get("Authorization");
-    if (!authHeader) {
-      return new Response(JSON.stringify({ error: "Non autorisé" }), {
-        status: 401,
-        headers: { ...corsHeaders, "Content-Type": "application/json" },
-      });
-    }
-
-    const supabaseAdmin = getSupabaseAdmin();
-    const supabaseUser = createClient(
-      Deno.env.get("SUPABASE_URL")!,
-      Deno.env.get("SUPABASE_ANON_KEY")!,
-      { global: { headers: { Authorization: authHeader } } }
-    );
-
-    const { data: { user } } = await supabaseUser.auth.getUser();
-    if (!user) {
-      return new Response(JSON.stringify({ error: "Non authentifié" }), {
-        status: 401,
-        headers: { ...corsHeaders, "Content-Type": "application/json" },
-      });
-    }
-
-    // Check super_admin role
-    const { data: roleData } = await supabaseAdmin
-      .from("user_roles")
-      .select("role")
-      .eq("user_id", user.id)
-      .eq("role", "super_admin")
-      .single();
-
-    if (!roleData) {
-      // Log unauthorized attempt
-      await supabaseAdmin.from("audit_admin").insert({
-        action_type: "tentative_creation_admin_non_autorisee",
-        admin_id: user.id,
-        admin_role: "unknown",
-        details: { email: user.email },
-        adresse_ip: req.headers.get("x-forwarded-for") || req.headers.get("cf-connecting-ip") || "unknown",
-        user_agent: req.headers.get("user-agent") || "unknown",
-      });
-
-      return new Response(JSON.stringify({ error: "Accès réservé au super administrateur" }), {
-        status: 403,
-        headers: { ...corsHeaders, "Content-Type": "application/json" },
-      });
-    }
-
+    const { supabaseAdmin, authContext } = await requireSuperAdmin(req);
     const body = await req.json();
-    const { email, role, nom, prenom, motif, perimetre, date_debut, date_fin } = body;
+
+    const email = String(body.email || "").trim().toLowerCase();
+    const role = String(body.role || "").trim();
+    const nom = String(body.nom || "").trim() || null;
+    const prenom = String(body.prenom || "").trim() || null;
+    const motif = String(body.motif || "").trim() || null;
+    const perimetre = String(body.perimetre || "").trim() || null;
+    const date_debut = String(body.date_debut || "").trim() || null;
+    const date_fin = String(body.date_fin || "").trim() || null;
 
     if (!email || !role) {
-      return new Response(JSON.stringify({ error: "Email et rôle requis" }), {
-        status: 400,
-        headers: { ...corsHeaders, "Content-Type": "application/json" },
-      });
+      throw new HttpError(400, "Email et role requis");
     }
 
     if (!["admin_delegue", "admin_juridique"].includes(role)) {
-      return new Response(JSON.stringify({ error: "Rôle invalide" }), {
-        status: 400,
-        headers: { ...corsHeaders, "Content-Type": "application/json" },
-      });
+      throw new HttpError(400, "Role invalide");
     }
 
-    // Create invitation
-    const { data: invitation, error: invError } = await supabaseAdmin
+    if (date_debut && date_fin && date_fin < date_debut) {
+      throw new HttpError(400, "La date de fin doit etre posterieure a la date de debut");
+    }
+
+    const { data: existingInvitation } = await supabaseAdmin
+      .from("admin_invitations")
+      .select("id")
+      .eq("email", email)
+      .eq("revoked", false)
+      .is("used_at", null)
+      .gt("expires_at", new Date().toISOString())
+      .limit(1)
+      .maybeSingle();
+
+    if (existingInvitation) {
+      throw new HttpError(409, "Une invitation active existe deja pour cet email");
+    }
+
+    const { data: invitation, error: invitationError } = await supabaseAdmin
       .from("admin_invitations")
       .insert({
         email,
         role,
-        created_by: user.id,
+        created_by: authContext.user.id,
         nom,
         prenom,
         motif,
@@ -100,73 +145,45 @@ serve(async (req) => {
         date_debut,
         date_fin,
       })
-      .select()
+      .select("id, email, role, token, expires_at")
       .single();
 
-    if (invError) {
-      return new Response(JSON.stringify({ error: invError.message }), {
-        status: 500,
-        headers: { ...corsHeaders, "Content-Type": "application/json" },
-      });
+    if (invitationError || !invitation) {
+      throw new Error(invitationError?.message || "Impossible de creer l'invitation");
     }
 
-    // Create the user account via Supabase Auth with a generated password
-    const tempPassword = crypto.randomUUID() + "!Aa1";
-    const { data: newUser, error: authError } = await supabaseAdmin.auth.admin.createUser({
-      email,
-      password: tempPassword,
-      email_confirm: true,
-      user_metadata: { first_name: prenom, last_name: nom },
-    });
+    const activationUrl = `${getAppBaseUrl(req)}/activate-admin?token=${encodeURIComponent(invitation.token)}`;
 
-    if (authError) {
-      return new Response(JSON.stringify({ error: authError.message }), {
-        status: 500,
-        headers: { ...corsHeaders, "Content-Type": "application/json" },
-      });
-    }
-
-    // Assign the role
-    if (newUser?.user) {
-      await supabaseAdmin.from("user_roles").insert({
-        user_id: newUser.user.id,
+    await logAudit(supabaseAdmin, req, {
+      action_type: "creation_invitation_admin",
+      admin_id: authContext.user.id,
+      admin_role: "super_admin",
+      cible_type: "invitation",
+      cible_id: invitation.id,
+      details: {
+        email,
         role,
-      });
-    }
-
-    // Send password reset email so admin can set their password
-    await supabaseAdmin.auth.admin.generateLink({
-      type: "recovery",
-      email,
-      options: {
-        redirectTo: `${req.headers.get("origin") || "https://izy-visas.lovable.app"}/reset-password`,
+        nom,
+        prenom,
+        motif,
+        perimetre,
+        date_debut,
+        date_fin,
       },
     });
 
-    // Log the action
-    await supabaseAdmin.from("audit_admin").insert({
-      action_type: "creation_compte_admin",
-      admin_id: user.id,
-      admin_role: "super_admin",
-      cible_type: "user",
-      cible_id: newUser?.user?.id || email,
-      details: { email, role, nom, prenom, motif, perimetre, invitation_id: invitation.id },
-      adresse_ip: req.headers.get("x-forwarded-for") || req.headers.get("cf-connecting-ip") || "unknown",
-      user_agent: req.headers.get("user-agent") || "unknown",
-    });
-
-    return new Response(JSON.stringify({
+    return jsonResponse({
       success: true,
       invitation_id: invitation.id,
-      user_id: newUser?.user?.id,
-      message: "Invitation créée. Un email de configuration a été envoyé.",
-    }), {
-      headers: { ...corsHeaders, "Content-Type": "application/json" },
+      activation_url: activationUrl,
+      expires_at: invitation.expires_at,
+      message: "Invitation creee. Copiez le lien d'activation et transmettez-le au futur administrateur.",
     });
-  } catch (err) {
-    return new Response(JSON.stringify({ error: err.message }), {
-      status: 500,
-      headers: { ...corsHeaders, "Content-Type": "application/json" },
-    });
+  } catch (error) {
+    console.error("[INVITE-ADMIN] Error:", error);
+    if (error instanceof HttpError) {
+      return jsonResponse({ error: error.message }, error.status);
+    }
+    return jsonResponse({ error: error instanceof Error ? error.message : "Internal server error" }, 500);
   }
 });

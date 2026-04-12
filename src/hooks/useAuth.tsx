@@ -1,8 +1,7 @@
 import { createContext, useContext, useEffect, useState, useCallback, ReactNode } from "react";
 import { Session, User } from "@supabase/supabase-js";
 import { supabase } from "@/integrations/supabase/client";
-
-type AppRole = "client" | "avocat" | "admin" | "super_admin" | "admin_delegue" | "admin_juridique";
+import { AppRole, isAdminRole, pickPrimaryRole } from "@/lib/roles";
 
 interface AuthContextType {
   session: Session | null;
@@ -40,10 +39,9 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
       const { data } = await supabase
         .from("user_roles")
         .select("role")
-        .eq("user_id", userId)
-        .limit(1)
-        .single();
-      return (data?.role as AppRole) || "client";
+        .eq("user_id", userId);
+
+      return pickPrimaryRole((data || []).map((row) => row.role)) || "client";
     } catch {
       return "client";
     }
@@ -106,7 +104,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
   };
 
   const isSuperAdmin = role === "super_admin";
-  const isAdmin = ["super_admin", "admin_delegue", "admin_juridique", "admin"].includes(role || "");
+  const isAdmin = isAdminRole(role);
 
   return (
     <AuthContext.Provider value={{ session, user, role, loading, signOut, isSuperAdmin, isAdmin, hasMfaEnabled }}>

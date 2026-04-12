@@ -1,7 +1,7 @@
 import { Navigate } from "react-router-dom";
 import { useAuth } from "@/hooks/useAuth";
-
-type AllowedRole = "client" | "avocat" | "admin" | "super_admin" | "admin_delegue" | "admin_juridique";
+import { AppRole, homeRouteForRole, normalizeRole } from "@/lib/roles";
+type AllowedRole = AppRole;
 
 interface ProtectedRouteProps {
   children: React.ReactNode;
@@ -11,6 +11,8 @@ interface ProtectedRouteProps {
 
 const ProtectedRoute = ({ children, allowedRoles, requireMfa }: ProtectedRouteProps) => {
   const { session, role, loading, hasMfaEnabled } = useAuth();
+  const normalizedRole = normalizeRole(role);
+  const normalizedAllowedRoles = allowedRoles?.map((allowedRole) => normalizeRole(allowedRole)).filter(Boolean) as AllowedRole[] | undefined;
 
   if (loading) {
     return (
@@ -32,16 +34,8 @@ const ProtectedRoute = ({ children, allowedRoles, requireMfa }: ProtectedRoutePr
     return <Navigate to="/setup-2fa" replace />;
   }
 
-  if (allowedRoles && role && !allowedRoles.includes(role as AllowedRole)) {
-    const roleRoutes: Record<string, string> = {
-      client: "/client",
-      avocat: "/avocat",
-      super_admin: "/super-admin",
-      admin_delegue: "/admin",
-      admin_juridique: "/admin-juridique",
-      admin: "/admin",
-    };
-    return <Navigate to={roleRoutes[role] || "/"} replace />;
+  if (normalizedAllowedRoles && normalizedRole && !normalizedAllowedRoles.includes(normalizedRole)) {
+    return <Navigate to={homeRouteForRole(normalizedRole)} replace />;
   }
 
   return <>{children}</>;
