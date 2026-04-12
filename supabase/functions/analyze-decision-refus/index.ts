@@ -154,12 +154,11 @@ serve(async (req) => {
       return jsonResponse({ status: "error", code: "config_error", message: "Service OCR non configuré." }, 500);
     }
 
-    const client = new Mistral({ apiKey: mistralApiKey });
     let analysisResult: any;
 
     try {
       if (fileType === "application/pdf" && signedUrl) {
-        // PDF: use Mistral OCR REST API (SDK doesn't have ocr.process)
+        // PDF: use Mistral OCR REST API
         const ocrRes = await fetch("https://api.mistral.ai/v1/ocr", {
           method: "POST",
           headers: {
@@ -192,23 +191,33 @@ serve(async (req) => {
           });
         }
 
-        // Analyze extracted text with pixtral
-        const analysisResponse = await client.chat.complete({
-          model: "pixtral-12b-2409",
-          messages: [{
-            role: "user",
-            content: [
-              { type: "text", text: `${DECISION_REFUS_PROMPT}\n\nTexte extrait du document :\n${allText.substring(0, 4000)}` },
-            ],
-          }],
+        // Analyze extracted text with pixtral via REST
+        const analysisRes = await fetch("https://api.mistral.ai/v1/chat/completions", {
+          method: "POST",
+          headers: {
+            "Authorization": `Bearer ${mistralApiKey}`,
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            model: "pixtral-12b-2409",
+            messages: [{
+              role: "user",
+              content: [
+                { type: "text", text: `${DECISION_REFUS_PROMPT}\n\nTexte extrait du document :\n${allText.substring(0, 4000)}` },
+              ],
+            }],
+          }),
         });
+
+        if (!analysisRes.ok) throw new Error(`Chat API error: ${analysisRes.status}`);
+        const analysisResponse = await analysisRes.json();
 
         const responseText = (analysisResponse.choices?.[0]?.message?.content || "") as string;
         const jsonMatch = responseText.match(/\{[\s\S]*\}/);
         if (!jsonMatch) throw new Error("No JSON in response");
         analysisResult = JSON.parse(jsonMatch[0]);
       } else {
-        // Image: use pixtral-12b-2409 directly
+        // Image: use pixtral-12b-2409 directly via REST
         let binary = "";
         for (let i = 0; i < bytes.length; i++) {
           binary += String.fromCharCode(bytes[i]);
@@ -216,16 +225,26 @@ serve(async (req) => {
         const base64Content = btoa(binary);
         const mimeType = fileType === "image/png" ? "image/png" : "image/jpeg";
 
-        const visionResponse = await client.chat.complete({
-          model: "pixtral-12b-2409",
-          messages: [{
-            role: "user",
-            content: [
-              { type: "image_url", imageUrl: { url: `data:${mimeType};base64,${base64Content}` } },
-              { type: "text", text: DECISION_REFUS_PROMPT },
-            ],
-          }],
+        const visionRes = await fetch("https://api.mistral.ai/v1/chat/completions", {
+          method: "POST",
+          headers: {
+            "Authorization": `Bearer ${mistralApiKey}`,
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            model: "pixtral-12b-2409",
+            messages: [{
+              role: "user",
+              content: [
+                { type: "image_url", image_url: { url: `data:${mimeType};base64,${base64Content}` } },
+                { type: "text", text: DECISION_REFUS_PROMPT },
+              ],
+            }],
+          }),
         });
+
+        if (!visionRes.ok) throw new Error(`Vision API error: ${visionRes.status}`);
+        const visionResponse = await visionRes.json();
 
         const responseText = (visionResponse.choices?.[0]?.message?.content || "") as string;
         const jsonMatch = responseText.match(/\{[\s\S]*\}/);
