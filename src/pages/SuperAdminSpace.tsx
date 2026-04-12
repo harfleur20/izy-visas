@@ -32,7 +32,7 @@ const SuperAdminSpace = () => {
   const fetchAdmins = async () => {
     const { data } = await supabase
       .from("user_roles")
-      .select("user_id, role")
+      .select("id, user_id, role")
       .in("role", ["admin_delegue", "admin_juridique", "super_admin"]);
     if (data) {
       // Fetch profiles for these users
@@ -42,7 +42,7 @@ const SuperAdminSpace = () => {
         .select("id, first_name, last_name, phone")
         .in("id", userIds);
       const merged: AdminListItem[] = data.map(r => ({
-        id: (r as any).id ?? r.user_id,
+        id: r.id,
         user_id: r.user_id,
         role: r.role,
         profile: profiles?.find(p => p.id === r.user_id),
