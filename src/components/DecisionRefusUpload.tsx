@@ -41,6 +41,8 @@ interface ExtractedData {
   delai_restant_jours: number | null;
   score_qualite: number;
   url_fichier: string;
+  warnings?: { type: string; message: string }[];
+  nom_mismatch?: boolean;
 }
 
 interface DecisionRefusUploadProps {
