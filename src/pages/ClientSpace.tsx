@@ -76,6 +76,13 @@ const normalizeStoredOption = (value?: string | null): SendOption | null => {
 
 // Removed getErrorMessage — all errors are now handled with user-friendly messages inline
 
+// ── Step prerequisite definitions ────────────────────────────────
+// Each step declares what must be true BEFORE entering it.
+// `check` returns true if the prerequisite is met.
+// `msg` is the user-facing toast shown when blocked.
+// `redirect` is the step to send the user back to.
+// Guards are checked inline in navigateToStep
+
 const cTitles: Record<number, string> = {
   0: "Vérification de recevabilité", 1: "Création de compte", 2: "Décision de refus",
   5: "Pièces justificatives",
@@ -348,6 +355,110 @@ const ClientSpace = () => {
     else setDlResult({ type: "ok", days: diff, deadline });
   };
 
+  // ── Step navigation with guardrails ────────────────────────────
+  // Validates prerequisites before allowing navigation to a step.
+  // For steps requiring DB checks, fetches fresh data from the dossier.
+  const navigateToStep = useCallback(async (target: number) => {
+    // Steps 0 and 1 are always accessible
+    if (target <= 1) { setStep(target); return; }
+
+    if (!activeDossier) {
+      toast({ title: "Dossier non chargé", description: "Patientez le chargement de votre dossier.", variant: "destructive" });
+      return;
+    }
+
+    // Fetch fresh dossier state for reliable checks
+    const { data: d } = await supabase
+      .from("dossiers")
+      .select("date_notification_refus, motifs_refus, consulat_nom, lettre_neutre_contenu, option_choisie, lrar_status, url_lettre_definitive, validation_juridique_status")
+      .eq("id", activeDossier.id)
+      .single();
+
+    if (!d) {
+      toast({ title: "Dossier introuvable", description: "Rechargez la page.", variant: "destructive" });
+      return;
+    }
+
+    const block = (title: string, description: string, redirect: number) => {
+      toast({ title, description, variant: "destructive" });
+      setStep(redirect);
+    };
+
+    // Step 2: needs recevabilité (date set)
+    if (target === 2) {
+      if (!d.date_notification_refus && !refDate) {
+        block("Recevabilité requise", "Indiquez d'abord la date de notification du refus.", 0);
+        return;
+      }
+      setStep(2); return;
+    }
+
+    // Step 5: needs décision de refus analysée (motifs + consulat)
+    if (target === 5) {
+      const motifs = d.motifs_refus as string[] | null;
+      if (!motifs || motifs.length === 0 || !d.consulat_nom) {
+        block("Décision de refus incomplète", "Uploadez et validez votre décision de refus avant d'accéder aux pièces justificatives.", 2);
+        return;
+      }
+      setStep(5); return;
+    }
+
+    // Step 7: needs pieces step done (no rejected) + motifs present
+    if (target === 7) {
+      const motifs = d.motifs_refus as string[] | null;
+      if (!motifs || motifs.length === 0 || !d.consulat_nom) {
+        block("Décision de refus incomplète", "Les motifs de refus et le consulat doivent être renseignés.", 2);
+        return;
+      }
+      if (hasRejectedPieces) {
+        block("Pièces rejetées", "Corrigez les pièces rejetées avant de générer la lettre.", 5);
+        return;
+      }
+      setStep(7); return;
+    }
+
+    // Step 8: needs lettre générée
+    if (target === 8) {
+      if (!d.lettre_neutre_contenu) {
+        block("Lettre non générée", "Générez d'abord votre lettre de recours.", 7);
+        return;
+      }
+      setStep(8); return;
+    }
+
+    // Step 9: needs option choisie + lettre finalisée
+    if (target === 9) {
+      if (!d.option_choisie) {
+        block("Mode d'envoi manquant", "Choisissez d'abord votre mode d'envoi.", 8);
+        return;
+      }
+      setStep(9); return;
+    }
+
+    // Step 10: needs payment (lrar_status check)
+    if (target === 10) {
+      const paidStatuses = ["paiement_confirme", "lettre_finalisee", "signature_verifiee", "envoyee", "distribuee"];
+      if (!d.option_choisie || !paidStatuses.includes(d.lrar_status || "")) {
+        block("Paiement requis", "Finalisez le paiement avant de passer à la signature.", 9);
+        return;
+      }
+      setStep(10); return;
+    }
+
+    // Step 11: needs signature verified
+    if (target === 11) {
+      const opt = normalizeStoredOption(d.option_choisie);
+      if (opt === "A") {
+        block("Option A : pas d'envoi LRAR", "Avec l'option téléchargement, vous envoyez vous-même. Rendez-vous au suivi.", 13);
+        return;
+      }
+      setStep(11); return;
+    }
+
+    // Step 13: always accessible once dossier exists
+    setStep(target);
+  }, [activeDossier, refDate, hasRejectedPieces]);
+
   const handleReceivabilityContinue = async () => {
     if (refDate && activeDossier) {
       const saved = await updateActiveDossier({
@@ -498,31 +609,31 @@ const ClientSpace = () => {
   const sidebar = (
     <>
       <NavGroup label="Qualification">
-        <NavItem icon="⚠️" label="Recevabilité" active={step === 0} badge={{ text: "!", color: "red" }} onClick={() => setStep(0)} />
-        <NavItem icon="👤" label="Création de compte" active={step === 1} suffixIcon={procurationSignee ? "✅" : "⚠️"} onClick={() => setStep(1)} />
+        <NavItem icon="⚠️" label="Recevabilité" active={step === 0} badge={{ text: "!", color: "red" }} onClick={() => navigateToStep(0)} />
+        <NavItem icon="👤" label="Création de compte" active={step === 1} suffixIcon={procurationSignee ? "✅" : "⚠️"} onClick={() => navigateToStep(1)} />
       </NavGroup>
       <NavGroup label="Dossier">
-        <NavItem icon="📄" label="Décision de refus" active={step === 2} onClick={() => setStep(2)} />
+        <NavItem icon="📄" label="Décision de refus" active={step === 2} onClick={() => navigateToStep(2)} />
       </NavGroup>
       <NavGroup label="Constitution">
-        <NavItem icon="📎" label="Pièces justificatives" active={step === 5} onClick={() => setStep(5)} />
-        <NavItem icon="📄" label="Lettre de recours" active={step === 7} onClick={() => setStep(7)} />
+        <NavItem icon="📎" label="Pièces justificatives" active={step === 5} onClick={() => navigateToStep(5)} />
+        <NavItem icon="📄" label="Lettre de recours" active={step === 7} onClick={() => navigateToStep(7)} />
       </NavGroup>
       <NavGroup label="Finalisation">
-        <NavItem icon="🔀" label="Mode d'envoi" active={step === 8} gold onClick={() => setStep(8)} />
-        <NavItem icon="💳" label="Paiement" active={step === 9} onClick={() => setStep(9)} />
-        <NavItem icon="✍️" label="Signature YouSign" active={step === 10} onClick={() => setStep(10)} />
-        <NavItem icon="📬" label="Envoi LRAR" active={step === 11} onClick={() => setStep(11)} />
-        <NavItem icon="📊" label="Suivi & décision" active={step === 13} onClick={() => setStep(13)} />
+        <NavItem icon="🔀" label="Mode d'envoi" active={step === 8} gold onClick={() => navigateToStep(8)} />
+        <NavItem icon="💳" label="Paiement" active={step === 9} onClick={() => navigateToStep(9)} />
+        <NavItem icon="✍️" label="Signature YouSign" active={step === 10} onClick={() => navigateToStep(10)} />
+        <NavItem icon="📬" label="Envoi LRAR" active={step === 11} onClick={() => navigateToStep(11)} />
+        <NavItem icon="📊" label="Suivi & décision" active={step === 13} onClick={() => navigateToStep(13)} />
       </NavGroup>
     </>
   );
 
   const bottomNavItems = [
-    { icon: "🏠", label: "Accueil", onClick: () => setStep(0), active: step === 0 },
-    { icon: "📋", label: "Dossier", onClick: () => setStep(2), active: step >= 2 && step <= 7 },
-    { icon: "📬", label: "Envoi", onClick: () => setStep(11), active: step >= 8 && step <= 11 },
-    { icon: "📊", label: "Suivi", onClick: () => setStep(13), active: step === 13 },
+    { icon: "🏠", label: "Accueil", onClick: () => navigateToStep(0), active: step === 0 },
+    { icon: "📋", label: "Dossier", onClick: () => navigateToStep(2), active: step >= 2 && step <= 7 },
+    { icon: "📬", label: "Envoi", onClick: () => navigateToStep(11), active: step >= 8 && step <= 11 },
+    { icon: "📊", label: "Suivi", onClick: () => navigateToStep(13), active: step === 13 },
   ];
 
   return (
