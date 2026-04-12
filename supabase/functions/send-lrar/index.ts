@@ -1,11 +1,11 @@
 import { serve } from "https://deno.land/std@0.190.0/http/server.ts";
 import { createClient } from "npm:@supabase/supabase-js@2.57.2";
-import { assertDossierAccess, HttpError, requireAuthenticatedContext } from "../_shared/security.ts";
+import { assertDossierAccess, HttpError, requireAuthenticatedContext, requireSharedWebhookSecret } from "../_shared/security.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
   "Access-Control-Allow-Headers":
-    "authorization, x-client-info, apikey, content-type, x-supabase-client-platform, x-supabase-client-platform-version, x-supabase-client-runtime, x-supabase-client-runtime-version",
+    "authorization, x-webhook-secret, x-client-info, apikey, content-type, x-supabase-client-platform, x-supabase-client-platform-version, x-supabase-client-runtime, x-supabase-client-runtime-version",
 };
 
 const MSB_API_URL = "https://api.mysendingbox.fr";
@@ -281,9 +281,11 @@ async function handleSend(req: Request) {
 // ── 2. Webhook MySendingBox ─────────────────────────────────────────────────
 
 async function handleWebhook(req: Request) {
+  requireSharedWebhookSecret(req, "MSB_WEBHOOK_SECRET");
+
   const payload = await req.json();
-  const eventType = payload.event?.type;
-  const letterId = payload.letter?.id;
+  const eventType = payload.event?.type || payload.event?.name;
+  const letterId = payload.letter?.id || payload.letter?._id || payload.event?.letter;
 
   console.log(`[SEND-LRAR-WEBHOOK] Event=${eventType} Letter=${letterId}`);
 

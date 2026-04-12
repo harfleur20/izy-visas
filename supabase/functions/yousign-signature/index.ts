@@ -1,10 +1,11 @@
 import { serve } from "https://deno.land/std@0.190.0/http/server.ts";
 import { createClient } from "npm:@supabase/supabase-js@2.57.2";
+import { HttpError, requireYousignWebhookSignature } from "../_shared/security.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
   "Access-Control-Allow-Headers":
-    "authorization, x-client-info, apikey, content-type, x-supabase-client-platform, x-supabase-client-platform-version, x-supabase-client-runtime, x-supabase-client-runtime-version",
+    "authorization, x-yousign-signature-256, x-client-info, apikey, content-type, x-supabase-client-platform, x-supabase-client-platform-version, x-supabase-client-runtime, x-supabase-client-runtime-version",
 };
 
 const YOUSIGN_API_URL = Deno.env.get("YOUSIGN_API_URL") || "https://api-sandbox.yousign.app/v3";
@@ -61,6 +62,9 @@ serve(async (req) => {
     }
   } catch (error) {
     console.error("[YOUSIGN] Error:", error);
+    if (error instanceof HttpError) {
+      return jsonResponse({ error: error.message }, error.status);
+    }
     return jsonResponse({ error: error.message || "Internal server error" }, 500);
   }
 });
@@ -243,7 +247,10 @@ async function handleVerifyOtp(req: Request) {
 // ── 3. Webhook handler ──────────────────────────────────────────────────────
 
 async function handleWebhook(req: Request) {
-  const payload = await req.json();
+  const rawBody = await req.text();
+  await requireYousignWebhookSignature(req, rawBody);
+
+  const payload = JSON.parse(rawBody);
   const eventType = payload.event_name;
 
   console.log(`[YOUSIGN-WEBHOOK] Event: ${eventType}`);

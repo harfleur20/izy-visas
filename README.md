@@ -99,11 +99,13 @@ OPENLEGI_MCP_TOKEN=
 ANTHROPIC_API_KEY=
 MISTRAL_API_KEY=
 YOUSIGN_API_KEY=
+YOUSIGN_WEBHOOK_SECRET=
 STRIPE_SECRET_KEY=
 STRIPE_WEBHOOK_SECRET=
 PISTE_CLIENT_ID=
 PISTE_CLIENT_SECRET=
 MSB_API_KEY_TEST=
+MSB_WEBHOOK_SECRET=
 ```
 
 Required after the block 1 security hardening:
@@ -117,6 +119,16 @@ MSB_ENV=test
 ```
 
 `CAPDEMARCHES_WEBHOOK_SECRET` is also accepted for protected CAPDEMARCHES maintenance calls.
+
+### Webhook endpoints
+
+Use these endpoints when configuring third-party webhooks:
+
+- YouSign: `https://ormvdwjcanakbyhqjasz.supabase.co/functions/v1/yousign-signature/webhook`
+- MySendingBox current LRAR flow: `https://ormvdwjcanakbyhqjasz.supabase.co/functions/v1/send-lrar/webhook?webhook_secret=<MSB_WEBHOOK_SECRET>`
+- MySendingBox legacy LRAR flow: `https://ormvdwjcanakbyhqjasz.supabase.co/functions/v1/mysendingbox-lrar/webhook?webhook_secret=<MSB_WEBHOOK_SECRET>`
+
+For YouSign, copy the webhook subscription secret from YouSign into `YOUSIGN_WEBHOOK_SECRET`. The backend verifies the `X-Yousign-Signature-256` HMAC signature.
 
 Optional / feature-dependent:
 
@@ -148,6 +160,8 @@ Before considering the security block closed:
 - add `APP_BASE_URL`
 - add `CAPDEMARCHES_WEBHOOK_SECRET`
 - add `STRIPE_WEBHOOK_SECRET` after creating the Stripe webhook endpoint
+- add `YOUSIGN_WEBHOOK_SECRET` from the YouSign webhook subscription
+- add `MSB_WEBHOOK_SECRET` and include it in the MySendingBox webhook URL
 - keep `YOUSIGN_ALLOW_TEST_OTP=false`
 - rotate the previously exposed OpenLégi token
 

@@ -1,10 +1,11 @@
 import { serve } from "https://deno.land/std@0.190.0/http/server.ts";
 import { createClient } from "npm:@supabase/supabase-js@2.57.2";
+import { HttpError, requireSharedWebhookSecret } from "../_shared/security.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
   "Access-Control-Allow-Headers":
-    "authorization, x-client-info, apikey, content-type, x-supabase-client-platform, x-supabase-client-platform-version, x-supabase-client-runtime, x-supabase-client-runtime-version",
+    "authorization, x-webhook-secret, x-client-info, apikey, content-type, x-supabase-client-platform, x-supabase-client-platform-version, x-supabase-client-runtime, x-supabase-client-runtime-version",
 };
 
 const MSB_API_URL = "https://api.mysendingbox.fr";
@@ -78,6 +79,9 @@ serve(async (req) => {
     }
   } catch (error) {
     console.error("[MSB] Error:", error);
+    if (error instanceof HttpError) {
+      return jsonResponse({ error: error.message }, error.status);
+    }
     return jsonResponse({ error: error.message || "Internal server error" }, 500);
   }
 });
@@ -220,9 +224,11 @@ async function handleSend(req: Request) {
 // ── 2. Webhook handler ──────────────────────────────────────────────────────
 
 async function handleWebhook(req: Request) {
+  requireSharedWebhookSecret(req, "MSB_WEBHOOK_SECRET");
+
   const payload = await req.json();
-  const eventType = payload.event?.type;
-  const letterId = payload.letter?.id;
+  const eventType = payload.event?.type || payload.event?.name;
+  const letterId = payload.letter?.id || payload.letter?._id || payload.event?.letter;
 
   console.log(`[MSB-WEBHOOK] Event: ${eventType}, Letter: ${letterId}`);
 
