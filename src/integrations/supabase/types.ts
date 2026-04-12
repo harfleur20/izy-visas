@@ -322,8 +322,6 @@ export type Database = {
           date_notification_refus: string | null
           date_qualification: string | null
           date_signature_procuration: string | null
-          date_finalisation_lettre: string | null
-          date_validation_juridique: string | null
           delivered_at: string | null
           destinataire_recours: string | null
           dossier_ref: string
@@ -335,7 +333,6 @@ export type Database = {
           motifs_texte_original: string[] | null
           mysendingbox_letter_id: string | null
           numero_decision: string | null
-          option_choisie: string | null
           option_envoi: string | null
           pieces_obligatoires_pages: number | null
           pieces_optionnelles_pages: number | null
@@ -360,12 +357,9 @@ export type Database = {
           url_decision_refus: string | null
           url_lettre_definitive: string | null
           url_lettre_neutre: string | null
-          url_lrar_pdf: string | null
           url_procuration_pdf: string | null
           use_capdemarches: boolean
           user_id: string
-          validation_juridique_mode: string
-          validation_juridique_status: string
           visa_type: string
           webhook_events: Json | null
         }
@@ -395,8 +389,6 @@ export type Database = {
           date_notification_refus?: string | null
           date_qualification?: string | null
           date_signature_procuration?: string | null
-          date_finalisation_lettre?: string | null
-          date_validation_juridique?: string | null
           delivered_at?: string | null
           destinataire_recours?: string | null
           dossier_ref: string
@@ -408,7 +400,6 @@ export type Database = {
           motifs_texte_original?: string[] | null
           mysendingbox_letter_id?: string | null
           numero_decision?: string | null
-          option_choisie?: string | null
           option_envoi?: string | null
           pieces_obligatoires_pages?: number | null
           pieces_optionnelles_pages?: number | null
@@ -433,12 +424,9 @@ export type Database = {
           url_decision_refus?: string | null
           url_lettre_definitive?: string | null
           url_lettre_neutre?: string | null
-          url_lrar_pdf?: string | null
           url_procuration_pdf?: string | null
           use_capdemarches?: boolean
           user_id: string
-          validation_juridique_mode?: string
-          validation_juridique_status?: string
           visa_type: string
           webhook_events?: Json | null
         }
@@ -468,8 +456,6 @@ export type Database = {
           date_notification_refus?: string | null
           date_qualification?: string | null
           date_signature_procuration?: string | null
-          date_finalisation_lettre?: string | null
-          date_validation_juridique?: string | null
           delivered_at?: string | null
           destinataire_recours?: string | null
           dossier_ref?: string
@@ -481,7 +467,6 @@ export type Database = {
           motifs_texte_original?: string[] | null
           mysendingbox_letter_id?: string | null
           numero_decision?: string | null
-          option_choisie?: string | null
           option_envoi?: string | null
           pieces_obligatoires_pages?: number | null
           pieces_optionnelles_pages?: number | null
@@ -506,12 +491,9 @@ export type Database = {
           url_decision_refus?: string | null
           url_lettre_definitive?: string | null
           url_lettre_neutre?: string | null
-          url_lrar_pdf?: string | null
           url_procuration_pdf?: string | null
           use_capdemarches?: boolean
           user_id?: string
-          validation_juridique_mode?: string
-          validation_juridique_status?: string
           visa_type?: string
           webhook_events?: Json | null
         }
@@ -632,8 +614,6 @@ export type Database = {
           dossier_ref: string
           id: string
           payment_method: string
-          option_choisie: string | null
-          pricing_details: Json
           status: string
           stripe_payment_intent_id: string | null
           stripe_session_id: string | null
@@ -648,8 +628,6 @@ export type Database = {
           dossier_ref: string
           id?: string
           payment_method: string
-          option_choisie?: string | null
-          pricing_details?: Json
           status?: string
           stripe_payment_intent_id?: string | null
           stripe_session_id?: string | null
@@ -664,8 +642,6 @@ export type Database = {
           dossier_ref?: string
           id?: string
           payment_method?: string
-          option_choisie?: string | null
-          pricing_details?: Json
           status?: string
           stripe_payment_intent_id?: string | null
           stripe_session_id?: string | null
