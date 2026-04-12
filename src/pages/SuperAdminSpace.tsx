@@ -41,8 +41,10 @@ const SuperAdminSpace = () => {
         .from("profiles")
         .select("id, first_name, last_name, phone")
         .in("id", userIds);
-      const merged = data.map(r => ({
-        ...r,
+      const merged: AdminListItem[] = data.map(r => ({
+        id: (r as any).id ?? r.user_id,
+        user_id: r.user_id,
+        role: r.role,
         profile: profiles?.find(p => p.id === r.user_id),
       }));
       setAdmins(merged);
