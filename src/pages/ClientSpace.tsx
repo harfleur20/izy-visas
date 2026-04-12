@@ -426,8 +426,17 @@ const ClientSpace = () => {
       setStep(8); return;
     }
 
-    // Step 9: needs option choisie + lettre finalisée
+    // Step 9: needs lettre générée + option choisie
     if (target === 9) {
+      const motifs = d.motifs_refus as string[] | null;
+      if (!motifs || motifs.length === 0 || !d.consulat_nom) {
+        block("Décision de refus incomplète", "Complétez d'abord votre décision de refus.", 2);
+        return;
+      }
+      if (!d.lettre_neutre_contenu) {
+        block("Lettre non générée", "Générez d'abord votre lettre de recours avant de payer.", 7);
+        return;
+      }
       if (!d.option_choisie) {
         block("Mode d'envoi manquant", "Choisissez d'abord votre mode d'envoi.", 8);
         return;
