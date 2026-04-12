@@ -437,7 +437,16 @@ const ClientSpace = () => {
   };
 
   const handlePayment = async () => {
-    if (!cguAccepted || !selectedOption || !activeDossier) return;
+    if (!selectedOption) {
+      toast({ title: "Option manquante", description: "Retournez à l'étape « Mode d'envoi » pour choisir votre option.", variant: "destructive" });
+      setStep(8);
+      return;
+    }
+    if (!cguAccepted) {
+      toast({ title: "CGU requises", description: "Vous devez accepter les conditions générales avant de payer.", variant: "destructive" });
+      return;
+    }
+    if (!activeDossier) return;
 
     setPaymentLoading(true);
     setTaraPaymentLinks(null);
@@ -452,7 +461,7 @@ const ClientSpace = () => {
       setActiveDossier((prev) => prev ? { ...prev, lrar_status: "paiement_en_attente" } : prev);
 
       if (paymentMethod === "stripe") {
-        if (!data?.url) throw new Error("Lien Stripe indisponible");
+        if (!data?.url) throw new Error("Lien de paiement indisponible");
         window.open(data.url, "_blank");
         return;
       }
@@ -467,9 +476,20 @@ const ClientSpace = () => {
         description: "Choisissez WhatsApp, Telegram, Dikalo ou SMS pour finaliser le paiement.",
       });
     } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : "";
+      let userMessage = "Impossible de lancer le paiement. Vérifiez votre connexion et réessayez.";
+
+      if (msg.includes("secrets") || msg.includes("configured")) {
+        userMessage = "Le service de paiement est temporairement indisponible. Réessayez dans quelques minutes.";
+      } else if (msg.includes("Dossier introuvable")) {
+        userMessage = "Votre dossier est introuvable. Rechargez la page et réessayez.";
+      } else if (msg.includes("Non autorise") || msg.includes("Non authentifie")) {
+        userMessage = "Votre session a expiré. Reconnectez-vous pour continuer.";
+      }
+
       toast({
         title: "Erreur de paiement",
-        description: getErrorMessage(err, "Impossible de créer la session de paiement."),
+        description: userMessage,
         variant: "destructive",
       });
     } finally {
