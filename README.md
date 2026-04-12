@@ -92,30 +92,6 @@ If this project is managed by Lovable Cloud, the underlying Supabase project may
 
 Configure these secrets in the project's Cloud/Secrets settings.
 
-Required for the current backend:
-
-```env
-OPENLEGI_MCP_TOKEN=
-ANTHROPIC_API_KEY=
-MISTRAL_API_KEY=
-YOUSIGN_API_KEY=
-STRIPE_SECRET_KEY=
-STRIPE_WEBHOOK_SECRET=
-PISTE_CLIENT_ID=
-PISTE_CLIENT_SECRET=
-MSB_API_KEY_TEST=
-```
-
-Required after the block 1 security hardening:
-
-```env
-APP_BASE_URL=https://izy-visas.lovable.app
-CAPDEMARCHES_WEBHOOK_SECRET=
-YOUSIGN_API_URL=https://api-sandbox.yousign.app/v3
-YOUSIGN_ALLOW_TEST_OTP=false
-MSB_ENV=test
-```
-
 `CAPDEMARCHES_WEBHOOK_SECRET` is also accepted for protected CAPDEMARCHES maintenance calls.
 
 Optional / feature-dependent:
@@ -140,14 +116,5 @@ When backend files under `supabase/functions/` change:
 2. sync/publish the project from Lovable
 3. verify the affected flows in the published app
 
-### Block 1 reminder
 
-Before considering the security block closed:
-
-- add `OPENLEGI_MCP_TOKEN` in Lovable Cloud secrets
-- add `APP_BASE_URL`
-- add `CAPDEMARCHES_WEBHOOK_SECRET`
-- add `STRIPE_WEBHOOK_SECRET` after creating the Stripe webhook endpoint
-- keep `YOUSIGN_ALLOW_TEST_OTP=false`
-- rotate the previously exposed OpenLégi token
 # LogicielDeContestationVisa
