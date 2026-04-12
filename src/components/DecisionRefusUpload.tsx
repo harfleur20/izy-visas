@@ -434,14 +434,34 @@ export function DecisionRefusUpload({ dossierId, userId, onComplete, onBack }: D
           </div>
         </div>
 
-        {extractedData.delai_restant_jours !== null && extractedData.delai_restant_jours < 0 && (
-          <Box variant="alert" title="🚫 Délai expiré">
-            Le délai de recours de 30 jours est dépassé. Consultez un avocat pour explorer d'autres options.
+        {/* Name mismatch warning */}
+        {extractedData.nom_mismatch && (
+          <Box variant="alert" title="⚠️ Nom différent du dossier">
+            Le nom sur cette décision ({extractedData.demandeur.nom} {extractedData.demandeur.prenom}) ne correspond pas au titulaire de votre dossier. Vérifiez que vous avez bien uploadé votre propre décision de refus.
           </Box>
         )}
 
-        <Button onClick={handleConfirm} className="w-full min-h-[52px] mb-3">
-          ✓ Ces informations sont correctes → Continuer
+        {/* Warnings from backend */}
+        {extractedData.warnings?.filter(w => w.type !== "name_mismatch" && w.type !== "deadline_expired").map((w, i) => (
+          <Box key={i} variant="alert" title="⚠️ Attention">
+            {w.message}
+          </Box>
+        ))}
+
+        {extractedData.delai_restant_jours !== null && extractedData.delai_restant_jours < 0 && (
+          <Box variant="alert" title="🚫 Délai expiré">
+            Le délai de recours de 30 jours est dépassé depuis {Math.abs(extractedData.delai_restant_jours)} jour{Math.abs(extractedData.delai_restant_jours) > 1 ? "s" : ""}. Le recours gracieux n'est plus recevable. Consultez un avocat pour explorer d'autres options.
+          </Box>
+        )}
+
+        <Button
+          onClick={handleConfirm}
+          disabled={extractedData.delai_restant_jours !== null && extractedData.delai_restant_jours < 0}
+          className="w-full min-h-[52px] mb-3"
+        >
+          {extractedData.delai_restant_jours !== null && extractedData.delai_restant_jours < 0
+            ? "🚫 Recours impossible — Délai expiré"
+            : "✓ Ces informations sont correctes → Continuer"}
         </Button>
         <button
           onClick={() => {
@@ -452,6 +472,14 @@ export function DecisionRefusUpload({ dossierId, userId, onComplete, onBack }: D
         >
           Modifier une information
         </button>
+        {extractedData.delai_restant_jours !== null && extractedData.delai_restant_jours < 0 && (
+          <button
+            onClick={resetToUpload}
+            className="w-full text-center text-xs text-muted-foreground hover:underline font-syne font-semibold mt-2"
+          >
+            Uploader un autre document
+          </button>
+        )}
       </div>
     );
   }
