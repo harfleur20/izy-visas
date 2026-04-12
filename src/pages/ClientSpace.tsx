@@ -116,7 +116,7 @@ const ClientSpace = () => {
 
     if (error) {
       console.error("Dossier update error:", error);
-      toast({ title: "Erreur", description: "Impossible de sauvegarder l'étape du dossier.", variant: "destructive" });
+      toast({ title: "Sauvegarde impossible", description: "Vérifiez votre connexion internet et réessayez.", variant: "destructive" });
       return false;
     }
 
