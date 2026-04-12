@@ -2,6 +2,7 @@ import { useState, useCallback, useEffect } from "react";
 import ShellLayout from "@/components/ShellLayout";
 import { useAuth } from "@/hooks/useAuth";
 import { supabase } from "@/integrations/supabase/client";
+import type { Database } from "@/integrations/supabase/types";
 
 import { toast } from "@/hooks/use-toast";
 import { NavItem, NavGroup } from "@/components/NavItem";
@@ -15,6 +16,57 @@ import { LetterPreview } from "@/components/LetterPreview";
 import { SendOptionChooser } from "@/components/SendOptionChooser";
 import { LrarCompositionWrapper } from "@/components/LrarCompositionWrapper";
 import { LrarTrackingSuivi } from "@/components/LrarTrackingSuivi";
+
+type SendOption = "A" | "B" | "C";
+type DossierUpdate = Database["public"]["Tables"]["dossiers"]["Update"];
+
+type OcrDetails = {
+  canAutoCorrect?: boolean;
+  typeMismatchWarning?: string;
+  decisionWarning?: string;
+  languageNotice?: string;
+};
+
+type PieceOcrRow = {
+  id: string;
+  nom_piece: string;
+  statut_ocr: string;
+  score_qualite: number | null;
+  nombre_pages: number | null;
+  motif_rejet: string | null;
+  url_fichier_original: string | null;
+  type_document_detecte: string | null;
+  langue_detectee: string | null;
+  ocr_details: OcrDetails | null;
+};
+
+type ActiveDossier = {
+  id: string;
+  dossier_ref: string;
+  date_notification_refus?: string | null;
+  lrar_status?: string | null;
+  option_choisie?: string | null;
+  option_envoi?: string | null;
+  procuration_signee?: boolean | null;
+  date_signature_procuration?: string | null;
+  procuration_expiration?: string | null;
+};
+
+const OPTION_LABELS: Record<SendOption, string> = {
+  A: "Téléchargement direct",
+  B: "Envoi MySendingBox automatique",
+  C: "Avocat relit, signe et envoie",
+};
+
+const normalizeStoredOption = (value?: string | null): SendOption | null => {
+  if (!value) return null;
+  const normalized = value.charAt(0).toUpperCase();
+  return normalized === "A" || normalized === "B" || normalized === "C" ? normalized : null;
+};
+
+const getErrorMessage = (error: unknown, fallback: string) => (
+  error instanceof Error ? error.message : fallback
+);
 
 const cTitles: Record<number, string> = {
   0: "Vérification de recevabilité", 1: "Création de compte", 2: "Décision de refus",
@@ -33,7 +85,7 @@ const ClientSpace = () => {
   const [uploadedPieces, setUploadedPieces] = useState<UploadedPiece[]>([]);
   const [selectedVisaType, setSelectedVisaType] = useState("");
   const [selectedMotif, setSelectedMotif] = useState("");
-  const [activeDossier, setActiveDossier] = useState<{ id: string; dossier_ref: string; date_notification_refus?: string } | null>(null);
+  const [activeDossier, setActiveDossier] = useState<ActiveDossier | null>(null);
   const [procurationModalOpen, setProcurationModalOpen] = useState(false);
   const [procurationSignee, setProcurationSignee] = useState(false);
   const [procurationDate, setProcurationDate] = useState<string | null>(null);
@@ -41,7 +93,24 @@ const ClientSpace = () => {
   const [profileForm, setProfileForm] = useState({ first_name: "", last_name: "", phone: "", prefixe_telephone: "+237" });
   const [profileLoaded, setProfileLoaded] = useState(false);
   const { generate: generateRecours, loading: generatingRecours, result: recoursResult } = useGenerateRecours();
-  const [selectedOption, setSelectedOption] = useState<"A" | "B" | "C" | null>(null);
+  const [selectedOption, setSelectedOption] = useState<SendOption | null>(null);
+
+  const updateActiveDossier = useCallback(async (patch: DossierUpdate) => {
+    if (!activeDossier) return false;
+    const { error } = await supabase
+      .from("dossiers")
+      .update(patch)
+      .eq("id", activeDossier.id);
+
+    if (error) {
+      console.error("Dossier update error:", error);
+      toast({ title: "Erreur", description: "Impossible de sauvegarder l'étape du dossier.", variant: "destructive" });
+      return false;
+    }
+
+    setActiveDossier((prev) => (prev ? { ...prev, ...patch } : prev));
+    return true;
+  }, [activeDossier]);
 
   // Load profile data
   useEffect(() => {
@@ -71,17 +140,21 @@ const ClientSpace = () => {
     const loadOrCreateDossier = async () => {
       const { data } = await supabase
         .from("dossiers")
-        .select("id, dossier_ref, procuration_signee, date_signature_procuration, procuration_expiration, date_notification_refus")
+        .select("id, dossier_ref, procuration_signee, date_signature_procuration, procuration_expiration, date_notification_refus, lrar_status, option_choisie, option_envoi")
         .eq("user_id", user.id)
         .order("created_at", { ascending: false })
         .limit(1)
         .maybeSingle();
 
       if (data) {
-        setActiveDossier(data as any);
+        setActiveDossier(data as ActiveDossier);
         setProcurationSignee(data.procuration_signee || false);
         setProcurationDate(data.date_signature_procuration || null);
         setProcurationExpiry(data.procuration_expiration || null);
+        setSelectedOption(normalizeStoredOption(data.option_choisie || data.option_envoi));
+        if (data.date_notification_refus) {
+          setRefDate(data.date_notification_refus);
+        }
       } else {
         const ref = `IZY-${new Date().getFullYear()}-${String(Date.now()).slice(-6)}`;
         const { data: newDossier, error } = await supabase
@@ -98,16 +171,35 @@ const ClientSpace = () => {
             recipient_postal_code: "44036",
             recipient_city: "Nantes Cedex 1",
           })
-          .select("id, dossier_ref")
+          .select("id, dossier_ref, procuration_signee, date_signature_procuration, procuration_expiration, date_notification_refus, lrar_status, option_choisie, option_envoi")
           .single();
 
         if (!error && newDossier) {
-          setActiveDossier(newDossier);
+          setActiveDossier(newDossier as ActiveDossier);
         }
       }
     };
     loadOrCreateDossier();
   }, [user]);
+
+  useEffect(() => {
+    if (!activeDossier) return;
+    const params = new URLSearchParams(window.location.search);
+    const paymentStatus = params.get("payment");
+    if (!paymentStatus) return;
+
+    if (paymentStatus === "success") {
+      toast({ title: "✅ Paiement confirmé", description: "Vous pouvez passer à la signature YouSign." });
+      setStep(10);
+    } else if (paymentStatus === "cancelled") {
+      toast({ title: "Paiement annulé", description: "Aucun paiement n'a été enregistré." });
+      setStep(9);
+    }
+
+    params.delete("payment");
+    const nextQuery = params.toString();
+    window.history.replaceState({}, "", `${window.location.pathname}${nextQuery ? `?${nextQuery}` : ""}`);
+  }, [activeDossier]);
 
   // Load existing pieces from DB and subscribe to realtime OCR updates
   useEffect(() => {
@@ -124,7 +216,7 @@ const ClientSpace = () => {
 
       if (data && data.length > 0) {
         const mapped: UploadedPiece[] = data.map((row) => {
-          const details = (row.ocr_details || {}) as Record<string, any>;
+          const details = (row.ocr_details || {}) as OcrDetails;
           let status: UploadedPiece["status"] = "analyzing";
           if (row.statut_ocr === "accepte") status = "accepted";
           else if (row.statut_ocr === "rejete" || row.statut_ocr === "erreur") status = "rejected";
@@ -162,10 +254,10 @@ const ClientSpace = () => {
           filter: `dossier_id=eq.${dossierId}`,
         },
         (payload) => {
-          const row = payload.new as any;
+          const row = payload.new as PieceOcrRow;
           if (!row || row.statut_ocr === "en_cours") return;
 
-          const details = (row.ocr_details || {}) as Record<string, any>;
+          const details = (row.ocr_details || {}) as OcrDetails;
           let status: UploadedPiece["status"] = "analyzing";
           if (row.statut_ocr === "accepte") status = "accepted";
           else if (row.statut_ocr === "rejete" || row.statut_ocr === "erreur") status = "rejected";
@@ -241,8 +333,27 @@ const ClientSpace = () => {
     else setDlResult({ type: "ok", days: diff, deadline });
   };
 
-  const handleOptionSelect = async (option: "A" | "B" | "C") => {
+  const handleReceivabilityContinue = async () => {
+    if (refDate && activeDossier) {
+      const saved = await updateActiveDossier({
+        date_notification_refus: refDate,
+        lrar_status: "recevabilite_verifiee",
+      });
+      if (!saved) return;
+    }
+    setStep(1);
+  };
+
+  const handleOptionSelect = async (option: SendOption) => {
     setSelectedOption(option);
+    if (activeDossier) {
+      const saved = await updateActiveDossier({
+        option_choisie: option,
+        option_envoi: option,
+        lrar_status: "option_selectionnee",
+      });
+      if (!saved) return;
+    }
     setStep(9);
   };
 
@@ -321,7 +432,7 @@ const ClientSpace = () => {
             {dlResult && dlResult.type === "urgent" && <Box variant="alert" title={`⚠️ URGENCE — ${dlResult.days} jour(s) restant(s)`}>Date limite : <strong>{dlResult.deadline}</strong>. Agissez immédiatement.</Box>}
             {dlResult && dlResult.type === "ok" && <Box variant="ok" title={`✓ Recevable — ${dlResult.days} jours restants`}>Date limite : <strong>{dlResult.deadline}</strong>.</Box>}
             <div className="flex gap-2.5 mt-7 flex-wrap">
-              <button className="font-syne font-bold text-[0.78rem] px-5 py-2.5 rounded-[7px] bg-primary-hover text-foreground hover:bg-[#5585ff] hover:-translate-y-px transition-all" onClick={() => setStep(1)}>Mon recours est recevable →</button>
+              <button className="font-syne font-bold text-[0.78rem] px-5 py-2.5 rounded-[7px] bg-primary-hover text-foreground hover:bg-[#5585ff] hover:-translate-y-px transition-all" onClick={handleReceivabilityContinue}>Mon recours est recevable →</button>
             </div>
           </div>
         )}
@@ -347,7 +458,17 @@ const ClientSpace = () => {
                   phone: profileForm.phone, prefixe_telephone: profileForm.prefixe_telephone,
                 }).eq("id", user.id);
                 if (error) { toast({ title: "Erreur", description: "Impossible de sauvegarder le profil.", variant: "destructive" }); }
-                else { toast({ title: "✅ Profil sauvegardé" }); setProcurationModalOpen(true); }
+                else {
+                  const profilePatch: DossierUpdate = {
+                    client_first_name: profileForm.first_name,
+                    client_last_name: profileForm.last_name,
+                    client_phone: profileForm.phone,
+                    lrar_status: "profil_complete",
+                  };
+                  await updateActiveDossier(profilePatch);
+                  toast({ title: "✅ Profil sauvegardé" });
+                  setProcurationModalOpen(true);
+                }
               }}>Sauvegarder & continuer →</button>
             </div>
             {!procurationSignee && (
@@ -368,14 +489,23 @@ const ClientSpace = () => {
             userEmail={user.email || ""}
             userId={user.id}
             onComplete={() => {
-              setProcurationSignee(true);
-              setProcurationDate(new Date().toISOString());
+              const signedAt = new Date().toISOString();
               const expiry = new Date();
               expiry.setMonth(expiry.getMonth() + 12);
-              setProcurationExpiry(expiry.toISOString().split("T")[0]);
-              setStep(2);
+              const expiryDate = expiry.toISOString().split("T")[0];
+              setProcurationSignee(true);
+              setProcurationDate(signedAt);
+              setProcurationExpiry(expiryDate);
+              setActiveDossier((prev) => prev ? {
+                ...prev,
+                procuration_signee: true,
+                date_signature_procuration: signedAt,
+                procuration_expiration: expiryDate,
+                lrar_status: "procuration_signee",
+              } : prev);
+              setStep(step === 10 || step === 13 ? step : 2);
             }}
-            onSkip={() => setStep(2)}
+            onSkip={() => setStep(step === 10 || step === 13 ? step : 2)}
           />
         )}
 
@@ -386,41 +516,48 @@ const ClientSpace = () => {
             userId={user.id}
             onComplete={async (data) => {
               try {
+                const parsedNotificationDate = data.refus.date_notification ? (() => {
+                  const p = data.refus.date_notification!.match(/(\d{1,2})\/(\d{1,2})\/(\d{4})/);
+                  return p ? `${p[3]}-${p[2]}-${p[1]}` : null;
+                })() : null;
+                const decisionPatch: DossierUpdate = {
+                  client_first_name: data.demandeur.prenom || undefined,
+                  client_last_name: data.demandeur.nom || undefined,
+                  client_date_naissance: data.demandeur.date_naissance || undefined,
+                  client_lieu_naissance: data.demandeur.lieu_naissance || undefined,
+                  client_nationalite: data.demandeur.nationalite || undefined,
+                  client_passport_number: data.demandeur.numero_passeport || undefined,
+                  visa_type: data.visa.type_visa,
+                  type_visa_texte_original: data.visa.type_visa_texte_original,
+                  consulat_nom: data.consulat.nom,
+                  consulat_ville: data.consulat.ville,
+                  consulat_pays: data.consulat.pays,
+                  date_notification_refus: parsedNotificationDate,
+                  motifs_refus: data.refus.motifs_coches,
+                  motifs_texte_original: data.refus.motifs_texte_original,
+                  numero_decision: data.refus.numero_decision,
+                  destinataire_recours: data.destinataire_recours,
+                  langue_document: data.langue_document,
+                  url_decision_refus: data.url_fichier,
+                  score_ocr_decision: data.confiance_extraction,
+                  date_qualification: new Date().toISOString(),
+                  lrar_status: "qualification_complete",
+                };
                 const { error } = await supabase
                   .from("dossiers")
-                  .update({
-                    client_first_name: data.demandeur.prenom || undefined,
-                    client_last_name: data.demandeur.nom || undefined,
-                    client_date_naissance: data.demandeur.date_naissance || undefined,
-                    client_lieu_naissance: data.demandeur.lieu_naissance || undefined,
-                    client_nationalite: data.demandeur.nationalite || undefined,
-                    client_passport_number: data.demandeur.numero_passeport || undefined,
-                    visa_type: data.visa.type_visa,
-                    type_visa_texte_original: data.visa.type_visa_texte_original,
-                    consulat_nom: data.consulat.nom,
-                    consulat_ville: data.consulat.ville,
-                    consulat_pays: data.consulat.pays,
-                    date_notification_refus: data.refus.date_notification ? (() => {
-                      const p = data.refus.date_notification!.match(/(\d{1,2})\/(\d{1,2})\/(\d{4})/);
-                      return p ? `${p[3]}-${p[2]}-${p[1]}` : null;
-                    })() : null,
-                    motifs_refus: data.refus.motifs_coches,
-                    motifs_texte_original: data.refus.motifs_texte_original,
-                    numero_decision: data.refus.numero_decision,
-                    destinataire_recours: data.destinataire_recours,
-                    langue_document: data.langue_document,
-                    url_decision_refus: data.url_fichier,
-                    score_ocr_decision: data.confiance_extraction,
-                    date_qualification: new Date().toISOString(),
-                    lrar_status: "qualification_complete",
-                  } as any)
+                  .update(decisionPatch)
                   .eq("id", activeDossier.id);
 
                 if (error) throw error;
                 setSelectedVisaType(data.visa.type_visa);
                 setSelectedMotif(data.refus.motifs_coches[0] || "F");
+                setActiveDossier((prev) => prev ? {
+                  ...prev,
+                  date_notification_refus: parsedNotificationDate,
+                  lrar_status: "qualification_complete",
+                } : prev);
                 setStep(5);
-              } catch (err: any) {
+              } catch (err: unknown) {
                 console.error("Save error:", err);
                 toast({ title: "Erreur", description: "Impossible d'enregistrer les données. Réessayez.", variant: "destructive" });
               }
@@ -457,7 +594,10 @@ const ClientSpace = () => {
                   hasRejectedPieces || hasAnalyzingPieces ? "bg-muted text-muted-foreground cursor-not-allowed opacity-50" : "bg-primary-hover text-foreground hover:bg-[#5585ff]"
                 }`}
                 disabled={hasRejectedPieces || hasAnalyzingPieces}
-                onClick={() => setStep(7)}
+                onClick={async () => {
+                  const saved = await updateActiveDossier({ lrar_status: "pieces_validees" });
+                  if (saved) setStep(7);
+                }}
               >
                 {hasAnalyzingPieces ? "Analyse en cours…" : "Valider les pièces →"}
               </button>
@@ -499,11 +639,17 @@ const ClientSpace = () => {
               <div className="bg-panel border border-border rounded-xl p-4 mb-4">
                 <div className="font-syne text-[0.65rem] font-bold tracking-wider uppercase text-muted mb-2">Option sélectionnée</div>
                 <div className="font-syne font-bold text-sm">
-                  {selectedOption === "A" && "📥 Téléchargement direct"}
-                  {selectedOption === "B" && "📬 Envoi MySendingBox automatique"}
-                  {selectedOption === "C" && "⚖️ Avocat relit, signe et envoie"}
+                  {selectedOption === "A" && "📥 "}
+                  {selectedOption === "B" && "📬 "}
+                  {selectedOption === "C" && "⚖️ "}
+                  {OPTION_LABELS[selectedOption]}
                 </div>
               </div>
+            )}
+            {!selectedOption && (
+              <Box variant="alert" title="Option d'envoi manquante">
+                Revenez au choix du mode d'envoi avant de payer.
+              </Box>
             )}
 
             {/* Card visual */}
@@ -526,20 +672,27 @@ const ClientSpace = () => {
             </Box>
 
             <button
-              disabled={!cguAccepted}
+              disabled={!cguAccepted || !selectedOption || !activeDossier}
               onClick={async () => {
-                if (!cguAccepted) return;
+                if (!cguAccepted || !selectedOption || !activeDossier) return;
                 try {
                   const { data, error } = await supabase.functions.invoke("create-payment", {
-                    body: { dossier_ref: activeDossier?.dossier_ref || "", option: selectedOption },
+                    body: { dossier_ref: activeDossier.dossier_ref, option: selectedOption },
                   });
                   if (error) throw error;
-                  if (data?.url) window.open(data.url, "_blank");
-                } catch (err: any) {
-                  toast({ title: "Erreur de paiement", description: err.message || "Impossible de créer la session de paiement.", variant: "destructive" });
+                  if (data?.url) {
+                    setActiveDossier((prev) => prev ? { ...prev, lrar_status: "paiement_en_attente" } : prev);
+                    window.open(data.url, "_blank");
+                  }
+                } catch (err: unknown) {
+                  toast({
+                    title: "Erreur de paiement",
+                    description: getErrorMessage(err, "Impossible de créer la session de paiement."),
+                    variant: "destructive",
+                  });
                 }
               }}
-              className={`w-full rounded-xl py-4 font-syne font-extrabold text-[0.92rem] transition-all flex items-center justify-center gap-2 mt-5 ${cguAccepted ? "cursor-pointer bg-gradient-to-br from-primary to-[#2258CC] text-foreground shadow-[0_8px_24px_rgba(26,80,220,0.32)] hover:shadow-[0_12px_32px_rgba(26,80,220,0.48)] hover:-translate-y-0.5" : "cursor-not-allowed opacity-50 bg-muted text-muted-foreground"}`}
+              className={`w-full rounded-xl py-4 font-syne font-extrabold text-[0.92rem] transition-all flex items-center justify-center gap-2 mt-5 ${cguAccepted && selectedOption && activeDossier ? "cursor-pointer bg-gradient-to-br from-primary to-[#2258CC] text-foreground shadow-[0_8px_24px_rgba(26,80,220,0.32)] hover:shadow-[0_12px_32px_rgba(26,80,220,0.48)] hover:-translate-y-0.5" : "cursor-not-allowed opacity-50 bg-muted text-muted-foreground"}`}
             >
               🔒 Payer par carte
             </button>
@@ -566,13 +719,77 @@ const ClientSpace = () => {
           </div>
         )}
 
+        {/* Step 10 — Signature YouSign / Procuration */}
+        {step === 10 && activeDossier && (
+          <div>
+            <Eyebrow>Signature YouSign</Eyebrow>
+            <BigTitle>Validation de la procuration</BigTitle>
+            <Desc>
+              Cette étape vérifie que la procuration CAPDEMARCHES est signée avant l'envoi suivi du dossier.
+            </Desc>
+
+            {selectedOption && (
+              <div className="bg-panel border border-border rounded-xl p-4 mb-4">
+                <div className="font-syne text-[0.65rem] font-bold tracking-wider uppercase text-muted mb-2">Option payée ou sélectionnée</div>
+                <div className="font-syne font-bold text-sm">{OPTION_LABELS[selectedOption]}</div>
+              </div>
+            )}
+
+            <div className="bg-panel border border-border rounded-xl p-5 mb-4">
+              <h3 className="font-syne font-bold text-sm mb-3">Procuration CAPDEMARCHES</h3>
+              {procurationSignee ? (
+                <Box variant="ok" title="✓ Procuration signée">
+                  Signée le {procurationDate ? new Date(procurationDate).toLocaleDateString("fr-FR") : "date non disponible"}.
+                  {procurationExpiry ? ` Valide jusqu'au ${new Date(procurationExpiry).toLocaleDateString("fr-FR")}.` : ""}
+                </Box>
+              ) : (
+                <Box variant={selectedOption === "A" ? "info" : "alert"} title="Procuration non signée">
+                  {selectedOption === "A"
+                    ? "Elle n'est pas obligatoire si le client télécharge et envoie lui-même son recours."
+                    : "Elle est nécessaire pour que CAPDEMARCHES puisse réceptionner et transmettre les courriers officiels."}
+                </Box>
+              )}
+
+              <button
+                onClick={() => setProcurationModalOpen(true)}
+                className="mt-4 font-syne font-bold text-xs px-4 py-2 rounded-lg bg-primary text-primary-foreground"
+              >
+                {procurationSignee ? "Voir ou renouveler la procuration" : "Signer la procuration via YouSign"}
+              </button>
+            </div>
+
+            <div className="flex gap-2.5 mt-7">
+              <button className="font-syne font-bold text-[0.78rem] px-5 py-2.5 rounded-[7px] bg-foreground/[0.07] text-muted-foreground border border-border-2 transition-all" onClick={() => setStep(9)}>← Retour paiement</button>
+              <button
+                disabled={!selectedOption || (selectedOption !== "A" && !procurationSignee)}
+                className={`font-syne font-bold text-[0.78rem] px-5 py-2.5 rounded-[7px] transition-all ${
+                  !selectedOption || (selectedOption !== "A" && !procurationSignee)
+                    ? "bg-muted text-muted-foreground cursor-not-allowed opacity-50"
+                    : "bg-primary-hover text-foreground hover:bg-[#5585ff]"
+                }`}
+                onClick={async () => {
+                  if (!selectedOption) return;
+                  const saved = await updateActiveDossier({ lrar_status: "signature_verifiee" });
+                  if (saved) setStep(selectedOption === "A" ? 13 : 11);
+                }}
+              >
+                {selectedOption === "A" ? "Continuer vers le suivi →" : "Continuer vers l'envoi LRAR →"}
+              </button>
+            </div>
+          </div>
+        )}
+
+        {step === 10 && !activeDossier && (
+          <div className="text-center py-12 text-muted-foreground"><p>Chargement de votre dossier…</p></div>
+        )}
+
         {/* Step 11 — Composition & Envoi LRAR */}
         {step === 11 && activeDossier && (
           <LrarCompositionWrapper
             dossierId={activeDossier.id}
             dossierRef={activeDossier.dossier_ref}
             onConfirm={() => setStep(13)}
-            onBack={() => setStep(9)}
+            onBack={() => setStep(10)}
           />
         )}
 

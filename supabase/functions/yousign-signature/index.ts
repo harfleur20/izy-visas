@@ -17,6 +17,7 @@ const corsHeaders = {
 const YOUSIGN_API_URL = Deno.env.get("YOUSIGN_API_URL") || "https://api-sandbox.yousign.app/v3";
 const IS_SANDBOX = YOUSIGN_API_URL.includes("sandbox");
 const ALLOW_TEST_OTP = IS_SANDBOX && isTruthy(Deno.env.get("YOUSIGN_ALLOW_TEST_OTP"));
+const PROCURATION_VALIDITY_MONTHS = 12;
 
 function getRequiredEnv(name: string): string {
   const value = Deno.env.get(name);
@@ -229,6 +230,14 @@ async function handleCreate(req: Request) {
     console.error("[YOUSIGN] DB insert error:", dbError);
   }
 
+  if (isProcurationDocument(documentName)) {
+    await supabase
+      .from("dossiers")
+      .update({ lrar_status: "signature_procuration_en_cours" })
+      .eq("dossier_ref", dossierRef)
+      .eq("user_id", authContext.user.id);
+  }
+
   return jsonResponse({
     signatureRequestId: sigReq.id,
     signerId: signer.id,
@@ -250,7 +259,7 @@ async function handleVerifyOtp(req: Request) {
 
   const { data: sig, error: sigError } = await supabase
     .from("signatures")
-    .select("user_id")
+    .select("user_id, dossier_ref, document_name")
     .eq("yousign_signature_request_id", signatureRequestId)
     .single();
 
@@ -267,6 +276,9 @@ async function handleVerifyOtp(req: Request) {
       .from("signatures")
       .update({ otp_verified: true, status: "signed", signed_at: new Date().toISOString() })
       .eq("yousign_signature_request_id", signatureRequestId);
+    if (isProcurationDocument(sig.document_name)) {
+      await markDossierProcurationSigned(supabase, sig.user_id, sig.dossier_ref);
+    }
     return jsonResponse({ success: true, message: "Signature completed (sandbox)" });
   }
 
@@ -288,8 +300,12 @@ async function handleVerifyOtp(req: Request) {
   // Update DB
   await supabase
     .from("signatures")
-    .update({ otp_verified: true, status: "signed" })
+    .update({ otp_verified: true, status: "signed", signed_at: new Date().toISOString() })
     .eq("yousign_signature_request_id", signatureRequestId);
+
+  if (isProcurationDocument(sig.document_name)) {
+    await markDossierProcurationSigned(supabase, sig.user_id, sig.dossier_ref);
+  }
 
   return jsonResponse({ success: true, message: "Signature completed" });
 }
@@ -315,6 +331,12 @@ async function handleWebhook(req: Request) {
 
   switch (eventType) {
     case "signature_request.done": {
+      const { data: sig } = await supabase
+        .from("signatures")
+        .select("user_id, dossier_ref, document_name")
+        .eq("yousign_signature_request_id", signatureRequestId)
+        .single();
+
       // Update status
       await supabase
         .from("signatures")
@@ -323,6 +345,9 @@ async function handleWebhook(req: Request) {
 
       // Download and archive the signed document + audit trail
       await archiveCertificate(supabase, signatureRequestId);
+      if (sig && isProcurationDocument(sig.document_name)) {
+        await markDossierProcurationSigned(supabase, sig.user_id, sig.dossier_ref);
+      }
       break;
     }
 
@@ -368,6 +393,8 @@ async function handleDownloadCertificate(req: Request) {
   if (error || !sig?.certificate_path) {
     return jsonResponse({ error: "Certificate not found" }, 404);
   }
+
+  assertDossierAccess(authContext, sig);
 
   const { data: urlData } = await supabase.storage
     .from("signature-certificates")
@@ -448,6 +475,37 @@ function formatPhone(phone: string): string {
   if (phone.startsWith("+")) return phone;
   if (phone.startsWith("0")) return `+33${phone.slice(1)}`;
   return `+${phone}`;
+}
+
+function isProcurationDocument(documentName?: string | null): boolean {
+  return (documentName || "").toLowerCase().includes("procuration");
+}
+
+async function markDossierProcurationSigned(
+  supabase: ReturnType<typeof getSupabaseAdmin>,
+  userId: string,
+  dossierRef: string,
+) {
+  const signedAt = new Date();
+  const expiresAt = new Date(signedAt);
+  expiresAt.setMonth(expiresAt.getMonth() + PROCURATION_VALIDITY_MONTHS);
+
+  const { error } = await supabase
+    .from("dossiers")
+    .update({
+      procuration_signee: true,
+      date_signature_procuration: signedAt.toISOString(),
+      procuration_active: true,
+      use_capdemarches: true,
+      procuration_expiration: expiresAt.toISOString().split("T")[0],
+      lrar_status: "procuration_signee",
+    })
+    .eq("dossier_ref", dossierRef)
+    .eq("user_id", userId);
+
+  if (error) {
+    console.error("[YOUSIGN] Failed to mark dossier procuration signed:", error);
+  }
 }
 
 function jsonResponse(data: unknown, status = 200) {

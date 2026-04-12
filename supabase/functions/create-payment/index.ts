@@ -24,6 +24,52 @@ function getAppBaseUrl(req: Request): string {
   return `${parsedOrigin.protocol}//${parsedOrigin.host}`;
 }
 
+type SendOption = "A" | "B" | "C";
+
+type Tarification = {
+  generation_lettre_eur?: number | null;
+  envoi_mysendingbox_eur?: number | null;
+  honoraires_avocat_eur?: number | null;
+};
+
+const OPTION_LABELS: Record<SendOption, string> = {
+  A: "Téléchargement direct",
+  B: "Envoi MySendingBox automatique",
+  C: "Relecture avocat, signature et envoi",
+};
+
+function assertSendOption(option: unknown): asserts option is SendOption {
+  if (option !== "A" && option !== "B" && option !== "C") {
+    throw new HttpError(400, "option must be A, B or C");
+  }
+}
+
+function eurToCents(value: number): number {
+  return Math.round(value * 100);
+}
+
+function getPriceBreakdown(option: SendOption, tarifs: Tarification | null) {
+  const generationLettre = Number(tarifs?.generation_lettre_eur ?? 49);
+  const envoiMysendingbox = Number(tarifs?.envoi_mysendingbox_eur ?? 30);
+  const honorairesAvocat = Number(tarifs?.honoraires_avocat_eur ?? 70);
+
+  const breakdown = {
+    generation_lettre_eur: generationLettre,
+    envoi_mysendingbox_eur: option === "A" ? 0 : envoiMysendingbox,
+    honoraires_avocat_eur: option === "C" ? honorairesAvocat : 0,
+  };
+  const totalEur =
+    breakdown.generation_lettre_eur +
+    breakdown.envoi_mysendingbox_eur +
+    breakdown.honoraires_avocat_eur;
+
+  return {
+    ...breakdown,
+    total_eur: totalEur,
+    total_cents: eurToCents(totalEur),
+  };
+}
+
 serve(async (req) => {
   if (req.method === "OPTIONS") {
     return new Response(null, { headers: corsHeaders });
@@ -47,8 +93,9 @@ serve(async (req) => {
     const authContext = await requireAuthenticatedContext(req, supabaseAdmin, supabaseUser);
     if (!authContext.user.email) throw new Error("User not authenticated or email not available");
 
-    const { dossier_ref } = await req.json();
+    const { dossier_ref, option } = await req.json();
     if (!dossier_ref) throw new Error("dossier_ref is required");
+    assertSendOption(option);
 
     const stripe = new Stripe(Deno.env.get("STRIPE_SECRET_KEY") || "", {
       apiVersion: "2025-08-27.basil",
@@ -61,22 +108,35 @@ serve(async (req) => {
       customerId = customers.data[0].id;
     }
 
-    // Fetch dossier to get LRAR cost
+    // Fetch dossier and verify ownership
     const { data: dossier, error: dossierError } = await supabaseAdmin
       .from("dossiers")
-      .select("user_id, cout_mysendingbox_total, visa_type, client_first_name, client_last_name")
+      .select("user_id, visa_type, client_first_name, client_last_name")
       .eq("dossier_ref", dossier_ref)
       .single();
 
     if (dossierError || !dossier) throw new Error("Dossier introuvable: " + dossier_ref);
     assertDossierAccess(authContext, dossier);
 
+    const { data: tarifs } = await supabaseAdmin
+      .from("tarification")
+      .select("generation_lettre_eur, envoi_mysendingbox_eur, honoraires_avocat_eur")
+      .order("updated_at", { ascending: false })
+      .limit(1)
+      .maybeSingle();
+
+    const price = getPriceBreakdown(option, tarifs);
     const appBaseUrl = getAppBaseUrl(req);
 
-    // Service fee: 150 € (15000 cents) + LRAR cost from MySendingBox
-    const SERVICE_FEE_CENTS = 15000;
-    const lrarCostCents = Math.round((dossier.cout_mysendingbox_total || 0) * 100);
-    const totalAmountCents = SERVICE_FEE_CENTS + lrarCostCents;
+    await supabaseAdmin
+      .from("dossiers")
+      .update({
+        option_choisie: option,
+        option_envoi: option,
+        lrar_status: "option_selectionnee",
+      })
+      .eq("dossier_ref", dossier_ref)
+      .eq("user_id", authContext.user.id);
 
     const session = await stripe.checkout.sessions.create({
       customer: customerId,
@@ -85,10 +145,10 @@ serve(async (req) => {
         {
           price_data: {
             currency: "eur",
-            unit_amount: totalAmountCents,
+            unit_amount: price.total_cents,
             product_data: {
-              name: `Recours Visa IZY — ${dossier_ref}`,
-              description: `Recours ${dossier.visa_type} pour ${dossier.client_first_name} ${dossier.client_last_name} (Service 150 € + LRAR ${((dossier.cout_mysendingbox_total || 0)).toFixed(2)} €)`,
+              name: `Recours Visa IZY — Option ${option}`,
+              description: `${OPTION_LABELS[option]} — dossier ${dossier_ref} (${dossier.visa_type}) pour ${dossier.client_first_name} ${dossier.client_last_name}`,
             },
           },
           quantity: 1,
@@ -98,6 +158,14 @@ serve(async (req) => {
       metadata: {
         user_id: authContext.user.id,
         dossier_ref,
+        option,
+      },
+      payment_intent_data: {
+        metadata: {
+          user_id: authContext.user.id,
+          dossier_ref,
+          option,
+        },
       },
       success_url: `${appBaseUrl}/client?payment=success`,
       cancel_url: `${appBaseUrl}/client?payment=cancelled`,
@@ -107,10 +175,12 @@ serve(async (req) => {
     await supabaseAdmin.from("payments").insert({
       user_id: authContext.user.id,
       dossier_ref,
-      amount: totalAmountCents,
+      amount: price.total_cents,
       currency: "eur",
       payment_method: "stripe",
       stripe_session_id: session.id,
+      option_choisie: option,
+      pricing_details: price,
       status: "pending",
     });
 

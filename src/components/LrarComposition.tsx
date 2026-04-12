@@ -5,6 +5,9 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Eyebrow, BigTitle, Desc, Box, SectionLabel } from "@/components/ui-custom";
 import { toast } from "sonner";
+import type { Database } from "@/integrations/supabase/types";
+
+type DossierUpdate = Database["public"]["Tables"]["dossiers"]["Update"];
 
 interface OptionalPiece {
   id: string;
@@ -137,16 +140,18 @@ export function LrarComposition({
     }
     setSubmitting(true);
     try {
+      const dossierPatch: DossierUpdate = {
+        pieces_selectionnees_ids: Array.from(selectedIds),
+        pieces_obligatoires_pages: mandatoryPages,
+        pieces_optionnelles_pages: selectedOptionalPages,
+        cout_mysendingbox_total: totalPricing ?? 0,
+        consentement_supplement: hasOptionalSelected ? consentChecked : true,
+        lrar_status: "composition_lrar_validee",
+      };
       // Save selection to dossier
       await supabase
         .from("dossiers")
-        .update({
-          pieces_selectionnees_ids: Array.from(selectedIds),
-          pieces_obligatoires_pages: mandatoryPages,
-          pieces_optionnelles_pages: selectedOptionalPages,
-          cout_mysendingbox_total: totalPricing ?? 0,
-          consentement_supplement: hasOptionalSelected ? consentChecked : true,
-        } as any)
+        .update(dossierPatch)
         .eq("id", dossierId);
 
       onConfirm({

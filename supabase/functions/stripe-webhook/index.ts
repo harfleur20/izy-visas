@@ -34,8 +34,9 @@ serve(async (req) => {
   try {
     event = await stripe.webhooks.constructEventAsync(body, signature, webhookSecret);
   } catch (err) {
-    console.error("Webhook signature verification failed:", err.message);
-    return new Response(JSON.stringify({ error: `Webhook Error: ${err.message}` }), {
+    const message = err instanceof Error ? err.message : "Invalid webhook signature";
+    console.error("Webhook signature verification failed:", message);
+    return new Response(JSON.stringify({ error: `Webhook Error: ${message}` }), {
       status: 400,
       headers: { "Content-Type": "application/json" },
     });
@@ -69,6 +70,26 @@ serve(async (req) => {
           throw error;
         }
 
+        const dossierRef = session.metadata?.dossier_ref;
+        const userId = session.metadata?.user_id;
+        const option = session.metadata?.option;
+
+        if (dossierRef && userId) {
+          const { error: dossierUpdateError } = await supabaseAdmin
+            .from("dossiers")
+            .update({
+              lrar_status: "paiement_confirme",
+              ...(option ? { option_choisie: option, option_envoi: option } : {}),
+            })
+            .eq("dossier_ref", dossierRef)
+            .eq("user_id", userId);
+
+          if (dossierUpdateError) {
+            console.error("[STRIPE-WEBHOOK] Error updating dossier after payment:", dossierUpdateError);
+            throw dossierUpdateError;
+          }
+        }
+
         console.log(`[STRIPE-WEBHOOK] Payment marked as paid for session ${session.id}`);
         break;
       }
@@ -83,6 +104,16 @@ serve(async (req) => {
           .eq("stripe_payment_intent_id", paymentIntent.id);
 
         if (error) console.error("[STRIPE-WEBHOOK] Error updating failed payment:", error);
+
+        const dossierRef = paymentIntent.metadata?.dossier_ref;
+        const userId = paymentIntent.metadata?.user_id;
+        if (dossierRef && userId) {
+          await supabaseAdmin
+            .from("dossiers")
+            .update({ lrar_status: "paiement_echoue" })
+            .eq("dossier_ref", dossierRef)
+            .eq("user_id", userId);
+        }
         break;
       }
 
@@ -96,6 +127,22 @@ serve(async (req) => {
           .eq("stripe_payment_intent_id", charge.payment_intent as string);
 
         if (error) console.error("[STRIPE-WEBHOOK] Error updating refunded payment:", error);
+
+        if (typeof charge.payment_intent === "string") {
+          const { data: payment } = await supabaseAdmin
+            .from("payments")
+            .select("dossier_ref, user_id")
+            .eq("stripe_payment_intent_id", charge.payment_intent)
+            .maybeSingle();
+
+          if (payment?.dossier_ref && payment?.user_id) {
+            await supabaseAdmin
+              .from("dossiers")
+              .update({ lrar_status: "paiement_rembourse" })
+              .eq("dossier_ref", payment.dossier_ref)
+              .eq("user_id", payment.user_id);
+          }
+        }
         break;
       }
 
