@@ -140,7 +140,7 @@ serve(async (req) => {
     // ── Read & upload file ────────────────────────────────────────────────
     const arrayBuffer = await file.arrayBuffer();
     const bytes = new Uint8Array(arrayBuffer);
-    const supabaseAdmin = getSupabaseAdmin();
+    // supabaseAdmin already declared above
 
     const ext = fileName.split(".").pop()?.toLowerCase() || "pdf";
     const storagePath = `${dossierId}/decision_refus/decision_${Date.now()}.${ext}`;
