@@ -633,12 +633,6 @@ export type Database = {
           id: string
           option_choisie: string | null
           payment_method: string
-          payment_links: Json
-          provider_checkout_url: string | null
-          provider_payload: Json
-          provider_payment_id: string | null
-          provider_status: string | null
-          provider_transaction_id: string | null
           pricing_details: Json
           status: string
           stripe_payment_intent_id: string | null
@@ -655,12 +649,6 @@ export type Database = {
           id?: string
           option_choisie?: string | null
           payment_method: string
-          payment_links?: Json
-          provider_checkout_url?: string | null
-          provider_payload?: Json
-          provider_payment_id?: string | null
-          provider_status?: string | null
-          provider_transaction_id?: string | null
           pricing_details?: Json
           status?: string
           stripe_payment_intent_id?: string | null
@@ -677,12 +665,6 @@ export type Database = {
           id?: string
           option_choisie?: string | null
           payment_method?: string
-          payment_links?: Json
-          provider_checkout_url?: string | null
-          provider_payload?: Json
-          provider_payment_id?: string | null
-          provider_status?: string | null
-          provider_transaction_id?: string | null
           pricing_details?: Json
           status?: string
           stripe_payment_intent_id?: string | null
