@@ -355,6 +355,110 @@ const ClientSpace = () => {
     else setDlResult({ type: "ok", days: diff, deadline });
   };
 
+  // ── Step navigation with guardrails ────────────────────────────
+  // Validates prerequisites before allowing navigation to a step.
+  // For steps requiring DB checks, fetches fresh data from the dossier.
+  const navigateToStep = useCallback(async (target: number) => {
+    // Steps 0 and 1 are always accessible
+    if (target <= 1) { setStep(target); return; }
+
+    if (!activeDossier) {
+      toast({ title: "Dossier non chargé", description: "Patientez le chargement de votre dossier.", variant: "destructive" });
+      return;
+    }
+
+    // Fetch fresh dossier state for reliable checks
+    const { data: d } = await supabase
+      .from("dossiers")
+      .select("date_notification_refus, motifs_refus, consulat_nom, lettre_neutre_contenu, option_choisie, lrar_status, url_lettre_definitive, validation_juridique_status")
+      .eq("id", activeDossier.id)
+      .single();
+
+    if (!d) {
+      toast({ title: "Dossier introuvable", description: "Rechargez la page.", variant: "destructive" });
+      return;
+    }
+
+    const block = (title: string, description: string, redirect: number) => {
+      toast({ title, description, variant: "destructive" });
+      setStep(redirect);
+    };
+
+    // Step 2: needs recevabilité (date set)
+    if (target === 2) {
+      if (!d.date_notification_refus && !refDate) {
+        block("Recevabilité requise", "Indiquez d'abord la date de notification du refus.", 0);
+        return;
+      }
+      setStep(2); return;
+    }
+
+    // Step 5: needs décision de refus analysée (motifs + consulat)
+    if (target === 5) {
+      const motifs = d.motifs_refus as string[] | null;
+      if (!motifs || motifs.length === 0 || !d.consulat_nom) {
+        block("Décision de refus incomplète", "Uploadez et validez votre décision de refus avant d'accéder aux pièces justificatives.", 2);
+        return;
+      }
+      setStep(5); return;
+    }
+
+    // Step 7: needs pieces step done (no rejected) + motifs present
+    if (target === 7) {
+      const motifs = d.motifs_refus as string[] | null;
+      if (!motifs || motifs.length === 0 || !d.consulat_nom) {
+        block("Décision de refus incomplète", "Les motifs de refus et le consulat doivent être renseignés.", 2);
+        return;
+      }
+      if (hasRejectedPieces) {
+        block("Pièces rejetées", "Corrigez les pièces rejetées avant de générer la lettre.", 5);
+        return;
+      }
+      setStep(7); return;
+    }
+
+    // Step 8: needs lettre générée
+    if (target === 8) {
+      if (!d.lettre_neutre_contenu) {
+        block("Lettre non générée", "Générez d'abord votre lettre de recours.", 7);
+        return;
+      }
+      setStep(8); return;
+    }
+
+    // Step 9: needs option choisie + lettre finalisée
+    if (target === 9) {
+      if (!d.option_choisie) {
+        block("Mode d'envoi manquant", "Choisissez d'abord votre mode d'envoi.", 8);
+        return;
+      }
+      setStep(9); return;
+    }
+
+    // Step 10: needs payment (lrar_status check)
+    if (target === 10) {
+      const paidStatuses = ["paiement_confirme", "lettre_finalisee", "signature_verifiee", "envoyee", "distribuee"];
+      if (!d.option_choisie || !paidStatuses.includes(d.lrar_status || "")) {
+        block("Paiement requis", "Finalisez le paiement avant de passer à la signature.", 9);
+        return;
+      }
+      setStep(10); return;
+    }
+
+    // Step 11: needs signature verified
+    if (target === 11) {
+      const opt = normalizeStoredOption(d.option_choisie);
+      if (opt === "A") {
+        block("Option A : pas d'envoi LRAR", "Avec l'option téléchargement, vous envoyez vous-même. Rendez-vous au suivi.", 13);
+        return;
+      }
+      setStep(11); return;
+    }
+
+    // Step 13: always accessible once dossier exists
+    setStep(target);
+  }, [activeDossier, refDate, hasRejectedPieces, toast]);
+
   const handleReceivabilityContinue = async () => {
     if (refDate && activeDossier) {
       const saved = await updateActiveDossier({
