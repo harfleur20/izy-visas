@@ -83,9 +83,22 @@ export function DecisionRefusUpload({ dossierId, userId, onComplete, onBack }: D
       formData.append("dossier_id", dossierId);
       formData.append("user_id", userId);
 
-      const { data, error } = await supabase.functions.invoke("analyze-decision-refus", {
+      const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
+      const anonKey = import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY;
+      const { data: { session } } = await supabase.auth.getSession();
+      const token = session?.access_token ?? anonKey;
+
+      const res = await fetch(`${supabaseUrl}/functions/v1/analyze-decision-refus`, {
+        method: "POST",
+        headers: {
+          "Authorization": `Bearer ${token}`,
+          "apikey": anonKey,
+        },
         body: formData,
       });
+
+      const data = await res.json();
+      const error = res.ok ? null : new Error(data?.message || "Erreur serveur");
 
       if (error) throw error;
 
