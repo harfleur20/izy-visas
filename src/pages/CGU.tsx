@@ -65,7 +65,7 @@ const CGU = () => (
             <Row d="Type de visa et motif de refus" f="Qualification du dossier et génération du recours" />
             <Row d="Pièces justificatives" f="Constitution du dossier de recours" />
             <Row d="Adresse du destinataire" f="Envoi de la lettre recommandée (LRAR)" />
-            <Row d="Données de paiement" f="Traitement sécurisé via Stripe (IZY Visa ne stocke aucune donnée bancaire)" />
+            <Row d="Données de paiement" f="Traitement sécurisé via Stripe ou Tara (IZY Visa ne stocke aucune donnée bancaire)" />
             <Row d="Signature électronique" f="Authentification du recours via YouSign" />
           </tbody>
         </table>
@@ -120,6 +120,7 @@ const CGU = () => (
       <Section title="8. Sous-traitants et services tiers">
         <ul className="list-disc pl-6 space-y-1 text-sm">
           <li><strong>Stripe</strong> – Traitement des paiements par carte bancaire.</li>
+          <li><strong>Tara</strong> – Traitement des paiements Mobile Money et liens de paiement.</li>
           <li><strong>MySendingBox</strong> – Envoi de lettres recommandées avec accusé de réception (LRAR).</li>
           <li><strong>YouSign</strong> – Signature électronique qualifiée.</li>
         </ul>

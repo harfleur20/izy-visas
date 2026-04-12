@@ -404,7 +404,7 @@ const AdminSpace = () => {
                 { key: "Chiffrement pièces jointes", val: "AES-256 · Accès limité avocat assigné", valClass: "text-green-2" },
                 { key: "Accès admin aux dossiers", val: "Journalisé · Motif requis", valClass: "text-green-2" },
                 { key: "Demandes de suppression", val: "2 en attente · Délai légal 30j", valClass: "text-amber-2" },
-                { key: "Données paiement (Stripe)", val: "Jamais stockées sur IZY · PCI-DSS Level 1", valClass: "text-green-2" },
+                { key: "Données paiement", val: "Stripe/Tara · jamais stockées sur IZY", valClass: "text-green-2" },
                 { key: "Journalisation réassignations", val: "Immuable · Exportable pour audit", valClass: "text-green-2" },
               ].map((r) => (
                 <div key={r.key} className="flex justify-between px-4 py-3 border-b border-foreground/[0.04] last:border-b-0 text-sm gap-3">

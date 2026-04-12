@@ -18,6 +18,7 @@ import { LrarCompositionWrapper } from "@/components/LrarCompositionWrapper";
 import { LrarTrackingSuivi } from "@/components/LrarTrackingSuivi";
 
 type SendOption = "A" | "B" | "C";
+type PaymentMethod = "stripe" | "taramoney";
 type DossierUpdate = Database["public"]["Tables"]["dossiers"]["Update"];
 
 type OcrDetails = {
@@ -52,6 +53,13 @@ type ActiveDossier = {
   procuration_signee?: boolean | null;
   date_signature_procuration?: string | null;
   procuration_expiration?: string | null;
+};
+
+type TaraPaymentLinks = {
+  whatsappLink?: string | null;
+  telegramLink?: string | null;
+  dikaloLink?: string | null;
+  smsLink?: string | null;
 };
 
 const OPTION_LABELS: Record<SendOption, string> = {
@@ -97,6 +105,9 @@ const ClientSpace = () => {
   const { generate: generateRecours, loading: generatingRecours, result: recoursResult } = useGenerateRecours();
   const [selectedOption, setSelectedOption] = useState<SendOption | null>(null);
   const [finalizingOption, setFinalizingOption] = useState(false);
+  const [paymentMethod, setPaymentMethod] = useState<PaymentMethod>("stripe");
+  const [paymentLoading, setPaymentLoading] = useState(false);
+  const [taraPaymentLinks, setTaraPaymentLinks] = useState<TaraPaymentLinks | null>(null);
 
   const updateActiveDossier = useCallback(async (patch: DossierUpdate) => {
     if (!activeDossier) return false;
@@ -194,6 +205,9 @@ const ClientSpace = () => {
     if (paymentStatus === "success") {
       toast({ title: "✅ Paiement confirmé", description: "Vous pouvez passer à la signature YouSign." });
       setStep(10);
+    } else if (paymentStatus === "taramoney_pending") {
+      toast({ title: "Paiement Mobile Money en attente", description: "La suite sera débloquée après confirmation Tara." });
+      setStep(9);
     } else if (paymentStatus === "cancelled") {
       toast({ title: "Paiement annulé", description: "Aucun paiement n'a été enregistré." });
       setStep(9);
@@ -376,6 +390,47 @@ const ClientSpace = () => {
       });
     } finally {
       setFinalizingOption(false);
+    }
+  };
+
+  const handlePayment = async () => {
+    if (!cguAccepted || !selectedOption || !activeDossier) return;
+
+    setPaymentLoading(true);
+    setTaraPaymentLinks(null);
+    try {
+      const functionName = paymentMethod === "stripe" ? "create-payment" : "create-taramoney-payment";
+      const { data, error } = await supabase.functions.invoke(functionName, {
+        body: { dossier_ref: activeDossier.dossier_ref, option: selectedOption },
+      });
+      if (error) throw error;
+      if (data?.error) throw new Error(data.error);
+
+      setActiveDossier((prev) => prev ? { ...prev, lrar_status: "paiement_en_attente" } : prev);
+
+      if (paymentMethod === "stripe") {
+        if (!data?.url) throw new Error("Lien Stripe indisponible");
+        window.open(data.url, "_blank");
+        return;
+      }
+
+      const links = (data?.links || {}) as TaraPaymentLinks;
+      setTaraPaymentLinks(links);
+      if (data?.primaryLink) {
+        window.open(data.primaryLink, "_blank");
+      }
+      toast({
+        title: "Lien Mobile Money créé",
+        description: "Choisissez WhatsApp, Telegram, Dikalo ou SMS pour finaliser le paiement.",
+      });
+    } catch (err: unknown) {
+      toast({
+        title: "Erreur de paiement",
+        description: getErrorMessage(err, "Impossible de créer la session de paiement."),
+        variant: "destructive",
+      });
+    } finally {
+      setPaymentLoading(false);
     }
   };
 
@@ -690,40 +745,77 @@ const ClientSpace = () => {
               </div>
             </div>
 
-            <Box variant="info" title="Paiement sécurisé Stripe">
-              Vous serez redirigé vers la page de paiement sécurisée Stripe. Vos données bancaires ne transitent jamais par nos serveurs.
+            <div className="grid md:grid-cols-2 gap-3 mb-4">
+              <button
+                type="button"
+                onClick={() => setPaymentMethod("stripe")}
+                className={`text-left rounded-xl border p-4 transition-all ${
+                  paymentMethod === "stripe"
+                    ? "border-primary bg-primary/[0.08]"
+                    : "border-border bg-background-2 hover:border-primary/60"
+                }`}
+              >
+                <div className="font-syne font-bold text-sm">Carte bancaire</div>
+                <div className="text-xs text-muted-foreground mt-1">Stripe · Visa · Mastercard · Amex</div>
+              </button>
+              <button
+                type="button"
+                onClick={() => setPaymentMethod("taramoney")}
+                className={`text-left rounded-xl border p-4 transition-all ${
+                  paymentMethod === "taramoney"
+                    ? "border-primary bg-primary/[0.08]"
+                    : "border-border bg-background-2 hover:border-primary/60"
+                }`}
+              >
+                <div className="font-syne font-bold text-sm">Mobile Money</div>
+                <div className="text-xs text-muted-foreground mt-1">Tara · WhatsApp · Telegram · SMS</div>
+              </button>
+            </div>
+
+            <Box variant="info" title={paymentMethod === "stripe" ? "Paiement sécurisé Stripe" : "Paiement Mobile Money via Tara"}>
+              {paymentMethod === "stripe"
+                ? "Vous serez redirigé vers la page de paiement sécurisée Stripe. Vos données bancaires ne transitent jamais par nos serveurs."
+                : "Tara génère un lien de paiement Mobile Money. Le dossier passera à l'étape suivante après confirmation du paiement."}
             </Box>
 
             <button
-              disabled={!cguAccepted || !selectedOption || !activeDossier}
-              onClick={async () => {
-                if (!cguAccepted || !selectedOption || !activeDossier) return;
-                try {
-                  const { data, error } = await supabase.functions.invoke("create-payment", {
-                    body: { dossier_ref: activeDossier.dossier_ref, option: selectedOption },
-                  });
-                  if (error) throw error;
-                  if (data?.url) {
-                    setActiveDossier((prev) => prev ? { ...prev, lrar_status: "paiement_en_attente" } : prev);
-                    window.open(data.url, "_blank");
-                  }
-                } catch (err: unknown) {
-                  toast({
-                    title: "Erreur de paiement",
-                    description: getErrorMessage(err, "Impossible de créer la session de paiement."),
-                    variant: "destructive",
-                  });
-                }
-              }}
-              className={`w-full rounded-xl py-4 font-syne font-extrabold text-[0.92rem] transition-all flex items-center justify-center gap-2 mt-5 ${cguAccepted && selectedOption && activeDossier ? "cursor-pointer bg-gradient-to-br from-primary to-[#2258CC] text-foreground shadow-[0_8px_24px_rgba(26,80,220,0.32)] hover:shadow-[0_12px_32px_rgba(26,80,220,0.48)] hover:-translate-y-0.5" : "cursor-not-allowed opacity-50 bg-muted text-muted-foreground"}`}
+              disabled={!cguAccepted || !selectedOption || !activeDossier || paymentLoading}
+              onClick={handlePayment}
+              className={`w-full rounded-xl py-4 font-syne font-extrabold text-[0.92rem] transition-all flex items-center justify-center gap-2 mt-5 ${cguAccepted && selectedOption && activeDossier && !paymentLoading ? "cursor-pointer bg-gradient-to-br from-primary to-[#2258CC] text-foreground shadow-[0_8px_24px_rgba(26,80,220,0.32)] hover:shadow-[0_12px_32px_rgba(26,80,220,0.48)] hover:-translate-y-0.5" : "cursor-not-allowed opacity-50 bg-muted text-muted-foreground"}`}
             >
-              🔒 Payer par carte
+              {paymentLoading
+                ? "Préparation du paiement…"
+                : paymentMethod === "stripe"
+                  ? "🔒 Payer par carte"
+                  : "📱 Payer par Mobile Money"}
             </button>
 
+            {taraPaymentLinks && (
+              <div className="mt-4 rounded-xl border border-border bg-background-2 p-4">
+                <div className="font-syne font-bold text-sm mb-2">Liens de paiement Tara</div>
+                <div className="grid sm:grid-cols-2 gap-2">
+                  {taraPaymentLinks.whatsappLink && <a href={taraPaymentLinks.whatsappLink} target="_blank" rel="noreferrer" className="rounded-lg border border-border px-3 py-2 text-sm hover:border-primary">WhatsApp</a>}
+                  {taraPaymentLinks.telegramLink && <a href={taraPaymentLinks.telegramLink} target="_blank" rel="noreferrer" className="rounded-lg border border-border px-3 py-2 text-sm hover:border-primary">Telegram</a>}
+                  {taraPaymentLinks.dikaloLink && <a href={taraPaymentLinks.dikaloLink} target="_blank" rel="noreferrer" className="rounded-lg border border-border px-3 py-2 text-sm hover:border-primary">Dikalo</a>}
+                  {taraPaymentLinks.smsLink && <a href={taraPaymentLinks.smsLink} className="rounded-lg border border-border px-3 py-2 text-sm hover:border-primary">SMS</a>}
+                </div>
+              </div>
+            )}
+
             <div className="mt-4 text-center text-[0.72rem] text-muted-foreground leading-relaxed">
-              💳 Paiement sécurisé par <strong>Stripe</strong><br />
-              Visa · Mastercard · American Express<br />
-              Chiffrement TLS 1.3 · PCI-DSS Level 1
+              {paymentMethod === "stripe" ? (
+                <>
+                  💳 Paiement sécurisé par <strong>Stripe</strong><br />
+                  Visa · Mastercard · American Express<br />
+                  Chiffrement TLS 1.3 · PCI-DSS Level 1
+                </>
+              ) : (
+                <>
+                  📱 Paiement sécurisé par <strong>Tara</strong><br />
+                  Mobile Money selon le pays et le canal choisi<br />
+                  Confirmation par webhook après paiement
+                </>
+              )}
             </div>
 
             <label className="flex items-start gap-3 mt-5 p-4 rounded-xl border border-border bg-background-2 cursor-pointer select-none">
