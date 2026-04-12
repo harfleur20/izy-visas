@@ -639,6 +639,7 @@ export type Database = {
           provider_payload: Json | null
           provider_payment_id: string | null
           provider_status: string | null
+          provider_transaction_id: string | null
           status: string
           stripe_payment_intent_id: string | null
           stripe_session_id: string | null
@@ -660,6 +661,7 @@ export type Database = {
           provider_payload?: Json | null
           provider_payment_id?: string | null
           provider_status?: string | null
+          provider_transaction_id?: string | null
           status?: string
           stripe_payment_intent_id?: string | null
           stripe_session_id?: string | null
@@ -681,6 +683,7 @@ export type Database = {
           provider_payload?: Json | null
           provider_payment_id?: string | null
           provider_status?: string | null
+          provider_transaction_id?: string | null
           status?: string
           stripe_payment_intent_id?: string | null
           stripe_session_id?: string | null
