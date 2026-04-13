@@ -194,7 +194,7 @@ function formatDateToLetters(dateStr: string): string {
   return `${d.getDate()} ${months[d.getMonth()]} ${d.getFullYear()}`;
 }
 
-function generateProcurationText(p: ProfileData, dossierRef: string): string {
+function generateProcurationText(p: ProfileData, dossierRef: string, email?: string): string {
   const nom = (p.last_name || "").toUpperCase();
   const prenom = p.first_name || "";
   const adresseLigne2 = p.adresse_ligne2 ? `\n${p.adresse_ligne2}` : "";
@@ -202,30 +202,31 @@ function generateProcurationText(p: ProfileData, dossierRef: string): string {
   const ville = p.ville || "";
   const tel = p.phone ? `${p.prefixe_telephone || "+237"} ${p.phone}` : "";
   const today = formatDateToLetters(new Date().toISOString());
+  const emailStr = email || "";
 
   return `PROCURATION POSTALE
 
-Je soussigné(e),
+Je soussigne(e),
 
-Nom et prénom : ${nom} ${prenom}
+Nom et prenom : ${nom} ${prenom}
 Date de naissance : ${p.date_naissance || ""}
 Lieu de naissance : ${p.lieu_naissance || ""}
-Nationalité : ${p.nationalite || ""}
-Numéro de passeport : ${p.passport_number || ""}
+Nationalite : ${p.nationalite || ""}
+Numero de passeport : ${p.passport_number || ""}
 Adresse personnelle :
 ${p.adresse_ligne1 || ""}${adresseLigne2}
 ${ville}, ${pays}
-Téléphone : ${tel}
-Email : ${p.last_name ? "" : ""}
+Telephone : ${tel}
+Email : ${emailStr}
 
-DONNE PROCURATION à :
+DONNE PROCURATION a :
 
-La société CAPDEMARCHES
+La societe CAPDEMARCHES
 Sise au 105 rue des Moines
-75017 Paris — FRANCE
+75017 Paris - FRANCE
 Email : contact@capdemarches.fr
 
-pour réceptionner, retirer et prendre connaissance en mon nom de tout courrier recommandé avec accusé de réception, de tout avis de passage et de toute correspondance officielle qui me seraient adressés à l'adresse suivante :
+pour receptionner, retirer et prendre connaissance en mon nom de tout courrier recommande avec accuse de reception, de tout avis de passage et de toute correspondance officielle qui me seraient adresses a l'adresse suivante :
 
 ${nom} ${prenom}
 c/o CAPDEMARCHES
@@ -233,24 +234,24 @@ c/o CAPDEMARCHES
 75017 Paris
 FRANCE
 
-dans le cadre de la procédure de recours contre la décision de refus de visa introduite auprès de la Commission de recours contre les décisions de refus de visa d'entrée en France ou du Sous-directeur des visas, selon le type de visa concerné.
+dans le cadre de la procedure de recours contre la decision de refus de visa introduite aupres de la Commission de recours contre les decisions de refus de visa d'entree en France ou du Sous-directeur des visas, selon le type de visa concerne.
 
-Référence dossier IZY : ${dossierRef}
+Reference dossier IZY : ${dossierRef}
 
-Durée de validité : douze (12) mois à compter de la date de signature, renouvelable.
+Duree de validite : douze (12) mois a compter de la date de signature, renouvelable.
 
 Cette procuration couvre :
-- La réception des courriers recommandés avec accusé de réception
-- La signature des accusés de réception au nom du mandant
-- Le retrait des courriers en instance auprès des bureaux de La Poste
-- La transmission numérique des documents reçus au mandant dans un délai de 24 heures
+- La reception des courriers recommandes avec accuse de reception
+- La signature des accuses de reception au nom du mandant
+- Le retrait des courriers en instance aupres des bureaux de La Poste
+- La transmission numerique des documents recus au mandant dans un delai de 24 heures
 
 Cette procuration ne couvre pas :
-- La représentation du mandant devant toute juridiction
+- La representation du mandant devant toute juridiction
 - La signature de tout acte juridique engageant le mandant
-- Toute action étrangère à la procédure de recours visa
+- Toute action etrangere a la procedure de recours visa
 
-Fait à ${ville},
+Fait a ${ville},
 le ${today}
 
 Signature du mandant :
