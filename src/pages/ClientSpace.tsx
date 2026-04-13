@@ -1203,12 +1203,6 @@ const ClientSpace = () => {
                             }
                           }
 
-                          // Fallback: check dossier url_procuration_pdf
-                          if (activeDossier?.url_procuration_pdf) {
-                            window.open(activeDossier.url_procuration_pdf, "_blank");
-                            return;
-                          }
-
                           toast.error("Le PDF de procuration n'est pas encore disponible.");
                         } catch (err) {
                           console.error("Download procuration error:", err);
