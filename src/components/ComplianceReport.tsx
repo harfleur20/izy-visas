@@ -28,6 +28,7 @@ export interface GenerationResult {
   modele_ia?: string;
   provider_ia?: string;
   generation_label?: string;
+  _restored?: boolean;
 }
 
 interface ComplianceReportPanelProps {
