@@ -374,7 +374,7 @@ export const ProcurationFlow = ({
     setEditValues({});
   };
 
-  const procurationText = generateProcurationText(profile, dossierRef);
+  const procurationText = generateProcurationText(profile, dossierRef, userEmail);
 
   const triggerSignature = async () => {
     setLoading(true);
