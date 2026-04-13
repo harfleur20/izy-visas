@@ -88,6 +88,23 @@ export function LrarTrackingSuivi({ dossierId, dossierRef }: LrarTrackingSuiviPr
 
   const statusIdx = STATUS_INDEX[dossier.lrar_status] ?? -1;
   const isError = statusIdx === -2;
+  const isDelivered = dossier.lrar_status === "livre" || dossier.lrar_status === "ar_signe";
+  const progressPercent = isError ? 0 : Math.max(0, ((statusIdx + 1) / STEPS.length) * 100);
+
+  const handleStatutFinal = async (statut: "visa_obtenu" | "visa_refuse") => {
+    setSavingFinal(true);
+    const { error } = await supabase
+      .from("dossiers")
+      .update({ statut_final: statut } as any)
+      .eq("id", dossierId);
+    setSavingFinal(false);
+    if (error) {
+      toast.error("Erreur lors de la mise à jour du statut");
+    } else {
+      setDossier((prev: any) => ({ ...prev, statut_final: statut }));
+      toast.success(statut === "visa_obtenu" ? "🎉 Félicitations !" : "Statut enregistré");
+    }
+  };
   const progressPercent = isError ? 0 : Math.max(0, ((statusIdx + 1) / STEPS.length) * 100);
 
   // Compute estimated decision date (60 days after delivery)
