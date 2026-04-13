@@ -28,7 +28,8 @@ function getRequiredEnv(name: string): string {
 }
 
 function isTruthy(value: string | undefined): boolean {
-  return value === "true" || value === "1" || value === "yes";
+  const v = (value || "").toLowerCase();
+  return v === "true" || v === "1" || v === "yes";
 }
 
 function getYouSignHeaders() {
