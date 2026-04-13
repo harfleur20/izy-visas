@@ -420,8 +420,17 @@ const ClientSpace = () => {
   // Validates prerequisites before allowing navigation to a step.
   // For steps requiring DB checks, fetches fresh data from the dossier.
   const navigateToStep = useCallback(async (target: number) => {
-    // Steps 0 and 1 are always accessible
-    if (target <= 1) { setStep(target); return; }
+    // Step 0 is always accessible
+    if (target === 0) { setStep(target); return; }
+
+    // Step 1 requires recevabilité validated
+    if (target === 1) {
+      if (!dlResult || dlResult.type === "expired") {
+        block("Recevabilité requise", "Vérifiez d'abord la recevabilité de votre recours (date de notification).", 0);
+        return;
+      }
+      setStep(target); return;
+    }
 
     // Block all navigation if deadline is expired
     if (dlResult && dlResult.type === "expired") {
