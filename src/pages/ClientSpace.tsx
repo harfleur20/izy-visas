@@ -701,25 +701,27 @@ const ClientSpace = () => {
     }
   };
 
+  const isExpired = dlResult?.type === "expired";
+
   const sidebar = (
     <>
       <NavGroup label="Qualification">
         <NavItem icon="⚠️" label="Recevabilité" active={step === 0} badge={{ text: "!", color: "red" }} onClick={() => navigateToStep(0)} />
-        <NavItem icon="👤" label="Création de compte" active={step === 1} suffixIcon={procurationSignee ? "✅" : "⚠️"} onClick={() => navigateToStep(1)} />
+        <NavItem icon="👤" label="Création de compte" active={step === 1} suffixIcon={procurationSignee ? "✅" : "⚠️"} onClick={() => navigateToStep(1)} disabled={isExpired} />
       </NavGroup>
       <NavGroup label="Dossier">
-        <NavItem icon="📄" label="Décision de refus" active={step === 2} onClick={() => navigateToStep(2)} />
+        <NavItem icon="📄" label="Décision de refus" active={step === 2} onClick={() => navigateToStep(2)} disabled={isExpired} />
       </NavGroup>
       <NavGroup label="Constitution">
-        <NavItem icon="📎" label="Pièces justificatives" active={step === 5} onClick={() => navigateToStep(5)} />
-        <NavItem icon="📄" label="Lettre de recours" active={step === 7} onClick={() => navigateToStep(7)} />
+        <NavItem icon="📎" label="Pièces justificatives" active={step === 5} onClick={() => navigateToStep(5)} disabled={isExpired} />
+        <NavItem icon="📄" label="Lettre de recours" active={step === 7} onClick={() => navigateToStep(7)} disabled={isExpired} />
       </NavGroup>
       <NavGroup label="Finalisation">
-        <NavItem icon="🔀" label="Mode d'envoi" active={step === 8} gold onClick={() => navigateToStep(8)} />
-        <NavItem icon="💳" label="Paiement" active={step === 9} onClick={() => navigateToStep(9)} />
-        <NavItem icon="✍️" label="Signature YouSign" active={step === 10} onClick={() => navigateToStep(10)} />
-        <NavItem icon="📬" label="Envoi LRAR" active={step === 11} onClick={() => navigateToStep(11)} />
-        <NavItem icon="📊" label="Suivi & décision" active={step === 13} onClick={() => navigateToStep(13)} />
+        <NavItem icon="🔀" label="Mode d'envoi" active={step === 8} gold onClick={() => navigateToStep(8)} disabled={isExpired} />
+        <NavItem icon="💳" label="Paiement" active={step === 9} onClick={() => navigateToStep(9)} disabled={isExpired} />
+        <NavItem icon="✍️" label="Signature YouSign" active={step === 10} onClick={() => navigateToStep(10)} disabled={isExpired} />
+        <NavItem icon="📬" label="Envoi LRAR" active={step === 11} onClick={() => navigateToStep(11)} disabled={isExpired} />
+        <NavItem icon="📊" label="Suivi & décision" active={step === 13} onClick={() => navigateToStep(13)} disabled={isExpired} />
       </NavGroup>
     </>
   );
