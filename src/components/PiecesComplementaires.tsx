@@ -94,7 +94,6 @@ export function PiecesComplementaires({
 
   const handlePieceRemoved = useCallback(async (id: string) => {
     // Remove from UI immediately
-    const piece = newPieces.find((p) => p.id === id);
     setNewPieces((prev) => prev.filter((p) => p.id !== id));
 
     // Skip DB/storage cleanup for temp pieces (not yet saved)
