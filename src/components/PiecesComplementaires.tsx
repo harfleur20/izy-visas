@@ -92,9 +92,41 @@ export function PiecesComplementaires({
     });
   }, []);
 
-  const handlePieceRemoved = useCallback((id: string) => {
+  const handlePieceRemoved = useCallback(async (id: string) => {
+    // Remove from UI immediately
+    const piece = newPieces.find((p) => p.id === id);
     setNewPieces((prev) => prev.filter((p) => p.id !== id));
-  }, []);
+
+    // Skip DB/storage cleanup for temp pieces (not yet saved)
+    if (id.startsWith("temp-")) return;
+
+    try {
+      // Get storage path before deleting DB record
+      const { data: dbPiece } = await supabase
+        .from("pieces_justificatives")
+        .select("url_fichier_original")
+        .eq("id", id)
+        .single();
+
+      // Delete from storage if file exists
+      if (dbPiece?.url_fichier_original) {
+        await supabase.storage
+          .from("dossiers")
+          .remove([dbPiece.url_fichier_original]);
+      }
+
+      // Delete DB record
+      await supabase
+        .from("pieces_justificatives")
+        .delete()
+        .eq("id", id);
+
+      toast.success("Document supprimé");
+    } catch (err) {
+      console.error("Delete piece error:", err);
+      toast.error("Erreur lors de la suppression");
+    }
+  }, [newPieces]);
 
   // Realtime listener for OCR results on new pieces
   useEffect(() => {
