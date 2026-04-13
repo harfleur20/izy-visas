@@ -291,6 +291,14 @@ serve(async (req) => {
       throw new Error(`Upload lettre définitive impossible: ${uploadError.message}`);
     }
 
+    // Invalidate payments for previous options (if user switched)
+    await supabase
+      .from("payments")
+      .update({ status: "superseded" })
+      .eq("dossier_ref", typedDossier.dossier_ref)
+      .eq("status", "paid")
+      .neq("option_choisie", option);
+
     await supabase
       .from("dossiers")
       .update({
