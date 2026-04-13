@@ -86,8 +86,10 @@ serve(async (req) => {
         return await handleWebhook(req);
       case "download-certificate":
         return await handleDownloadCertificate(req);
+      case "download":
+        return await handleDownload(req);
       default:
-        return jsonResponse({ error: "Unknown action. Use: create, verify-otp, webhook, download-certificate" }, 400);
+        return jsonResponse({ error: "Unknown action. Use: create, verify-otp, webhook, download-certificate, download" }, 400);
     }
   } catch (error) {
     console.error("[YOUSIGN] Error:", error);
