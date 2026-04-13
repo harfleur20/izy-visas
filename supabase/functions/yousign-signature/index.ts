@@ -16,7 +16,7 @@ const corsHeaders = {
 
 const YOUSIGN_API_URL = Deno.env.get("YOUSIGN_API_URL") || "https://api-sandbox.yousign.app/v3";
 const IS_SANDBOX = YOUSIGN_API_URL.includes("sandbox");
-const ALLOW_TEST_OTP = IS_SANDBOX && isTruthy(Deno.env.get("YOUSIGN_ALLOW_TEST_OTP"));
+const ALLOW_TEST_OTP = isTruthy(Deno.env.get("YOUSIGN_ALLOW_TEST_OTP"));
 const PROCURATION_VALIDITY_MONTHS = 12;
 
 function getRequiredEnv(name: string): string {
