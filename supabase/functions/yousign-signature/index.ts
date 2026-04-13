@@ -282,12 +282,21 @@ async function handleVerifyOtp(req: Request) {
     return jsonResponse({ success: true, message: "Signature completed (sandbox)" });
   }
 
+  // YouSign requires ip_address and consent_given_at for the sign endpoint
+  const clientIp = req.headers.get("x-forwarded-for")?.split(",")[0]?.trim()
+    || req.headers.get("x-real-ip")
+    || "127.0.0.1";
+
   const res = await fetch(
     `${YOUSIGN_API_URL}/signature_requests/${signatureRequestId}/signers/${signerId}/sign`,
     {
       method: "POST",
       headers: getYouSignHeaders(),
-      body: JSON.stringify({ otp }),
+      body: JSON.stringify({
+        otp,
+        ip_address: clientIp,
+        consent_given_at: new Date().toISOString(),
+      }),
     }
   );
 
