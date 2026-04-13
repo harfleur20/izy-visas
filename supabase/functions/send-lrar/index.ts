@@ -12,26 +12,26 @@ const MSB_API_URL = "https://api.mysendingbox.fr";
 
 const DESTINATIONS: Record<string, { name: string; address: string; postal_code: string; city: string }> = {
   crrv_nantes: {
-    name: "Commission de recours contre les décisions de refus de visa d'entrée en France",
+    name: "CRRV - Refus de visa",
     address: "BP 83609",
     postal_code: "44036",
     city: "Nantes",
   },
   sous_directeur_visas: {
-    name: "Sous-directeur des visas — Ministère de l'Europe et des Affaires Étrangères",
+    name: "Sous-dir. visas - MEAE",
     address: "BP 83609",
     postal_code: "44036",
     city: "Nantes",
   },
   // Legacy mappings
   long_sejour: {
-    name: "Commission de recours contre les décisions de refus de visa d'entrée en France",
+    name: "CRRV - Refus de visa",
     address: "BP 83609",
     postal_code: "44036",
     city: "Nantes",
   },
   court_sejour: {
-    name: "Sous-directeur des visas — Ministère de l'Europe et des Affaires Étrangères",
+    name: "Sous-dir. visas - MEAE",
     address: "BP 83609",
     postal_code: "44036",
     city: "Nantes",
@@ -248,7 +248,8 @@ async function handleSend(req: Request) {
   formData.append("to[address_country]", "France");
 
   // Expéditeur — toujours c/o CAPDEMARCHES
-  formData.append("from[name]", `${dossier.client_last_name} ${dossier.client_first_name} c/o CAPDEMARCHES`);
+  const fromName = `${dossier.client_last_name} ${dossier.client_first_name} c/o CAPDEMARCHES`.substring(0, 45);
+  formData.append("from[name]", fromName);
   formData.append("from[address_line1]", "105 rue des Moines");
   formData.append("from[address_city]", "Paris");
   formData.append("from[address_postalcode]", "75017");
