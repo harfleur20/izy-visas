@@ -352,7 +352,7 @@ const AvocatSpace = () => {
                             {format(new Date(dossier.created_at), "dd/MM", { locale: fr })}
                           </td>
                           <td className="px-3.5 py-2.5 border-b border-border">
-                            <Pill variant={dossier.validation_juridique_status === "en_cours" ? "new" : "default"}>
+                            <Pill variant={dossier.validation_juridique_status === "en_cours" ? "new" : "muted"}>
                               {dossier.validation_juridique_status === "en_cours" ? "En cours" : "À relire"}
                             </Pill>
                           </td>
