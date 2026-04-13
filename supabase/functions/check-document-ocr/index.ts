@@ -22,9 +22,44 @@ const TYPE_LABELS: Record<string, string> = {
   acte_mariage: "Acte de mariage",
   acte_naissance: "Acte de naissance",
   justificatif_hebergement: "Justificatif d'hébergement",
+  billet_avion: "Billet d'avion",
+  assurance_voyage: "Assurance voyage",
+  attestation_emploi: "Attestation d'emploi",
+  certificat_scolarite: "Certificat de scolarité",
+  photo_identite: "Photo d'identité",
+  formulaire_visa: "Formulaire de demande de visa",
+  justificatif_domicile: "Justificatif de domicile",
+  lettre_motivation: "Lettre de motivation",
+  lettre_invitation: "Lettre d'invitation",
+  attestation_hebergement: "Attestation d'hébergement",
+  reservation_hotel: "Réservation d'hôtel",
   autre: "Autre document",
   inconnu: "Document non identifié",
 };
+
+// Map piece names (from pieces_requises) to expected document types for mismatch detection
+function guessExpectedType(nomPiece: string): string {
+  const n = nomPiece.toLowerCase();
+  if (/passeport|passport/.test(n)) return "passeport";
+  if (/décision.*refus|refus.*visa/.test(n)) return "decision_refus";
+  if (/relevé.*banc|bank.*statement|relevé.*compte/.test(n)) return "releve_bancaire";
+  if (/contrat.*travail|employment/.test(n)) return "contrat_travail";
+  if (/campus\s*france/.test(n)) return "attestation_campus_france";
+  if (/acte.*mariage|marriage/.test(n)) return "acte_mariage";
+  if (/acte.*naissance|birth/.test(n)) return "acte_naissance";
+  if (/hébergement|attestation.*accueil/.test(n)) return "justificatif_hebergement";
+  if (/billet.*avion|flight.*ticket|boarding|itinéraire.*vol/.test(n)) return "billet_avion";
+  if (/assurance.*voyage|travel.*insurance/.test(n)) return "assurance_voyage";
+  if (/attestation.*emploi|certificat.*travail/.test(n)) return "attestation_emploi";
+  if (/scolarité|inscription.*université|student/.test(n)) return "certificat_scolarite";
+  if (/photo.*identité/.test(n)) return "photo_identite";
+  if (/formulaire.*visa/.test(n)) return "formulaire_visa";
+  if (/justificatif.*domicile|facture|quittance/.test(n)) return "justificatif_domicile";
+  if (/lettre.*motivation/.test(n)) return "lettre_motivation";
+  if (/lettre.*invitation|invitation/.test(n)) return "lettre_invitation";
+  if (/réservation.*hôtel|hotel.*booking/.test(n)) return "reservation_hotel";
+  return "autre";
+}
 
 function getSupabaseAdmin() {
   return createClient(
