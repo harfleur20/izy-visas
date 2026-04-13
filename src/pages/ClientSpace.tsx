@@ -462,12 +462,30 @@ const ClientSpace = () => {
       setStep(9); return;
     }
 
-    // Step 10: needs payment (lrar_status check)
+    // Step 10: needs payment (check payments table as fallback)
     if (target === 10) {
       const paidStatuses = ["paiement_confirme", "lettre_finalisee", "signature_verifiee", "envoyee", "distribuee"];
-      if (!d.option_choisie || !paidStatuses.includes(d.lrar_status || "")) {
-        block("Paiement requis", "Finalisez le paiement avant de passer à la signature.", 9);
+      const statusOk = paidStatuses.includes(d.lrar_status || "");
+
+      if (!d.option_choisie) {
+        block("Option manquante", "Choisissez d'abord un mode d'envoi.", 8);
         return;
+      }
+
+      if (!statusOk) {
+        // Fallback: check payments table directly
+        const { data: paidRow } = await supabase
+          .from("payments")
+          .select("id")
+          .eq("dossier_ref", activeDossier.dossier_ref)
+          .eq("status", "paid")
+          .limit(1)
+          .maybeSingle();
+
+        if (!paidRow) {
+          block("Paiement requis", "Finalisez le paiement avant de passer à la signature.", 9);
+          return;
+        }
       }
       setStep(10); return;
     }
