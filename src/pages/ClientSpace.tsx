@@ -248,6 +248,14 @@ const ClientSpace = () => {
       if (data) {
         const opts = [...new Set(data.map((p) => p.option_choisie).filter(Boolean))] as SendOption[];
         setPaidOptions(opts);
+
+        // Sync option_choisie: highest paid option wins (C > B > A)
+        const optionRank: Record<string, number> = { A: 1, B: 2, C: 3 };
+        const highestPaid = opts.sort((a, b) => (optionRank[b] || 0) - (optionRank[a] || 0))[0];
+        const currentOpt = activeDossier.option_choisie as SendOption | null;
+        if (highestPaid && currentOpt !== highestPaid) {
+          await updateActiveDossier({ option_choisie: highestPaid });
+        }
       }
     };
     fetchPaidOptions();
