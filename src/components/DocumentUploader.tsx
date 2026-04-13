@@ -1,4 +1,4 @@
-import { useState, useRef, useCallback } from "react";
+import { useState, useRef, useCallback, useEffect } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
 import { Progress } from "@/components/ui/progress";
@@ -255,6 +255,32 @@ export function DocumentUploader({
   );
 }
 
+// ── Animated progress for loading states ────────────────────────────────────
+
+function AnimatedProgress({ label, targetPct, durationMs }: { label: string; targetPct: number; durationMs: number }) {
+  const [value, setValue] = useState(0);
+  useEffect(() => {
+    const start = Date.now();
+    const tick = () => {
+      const elapsed = Date.now() - start;
+      const ratio = Math.min(elapsed / durationMs, 1);
+      // Ease-out curve: fast start, slow end
+      const eased = 1 - Math.pow(1 - ratio, 3);
+      setValue(Math.round(eased * targetPct));
+      if (ratio < 1) requestAnimationFrame(tick);
+    };
+    const raf = requestAnimationFrame(tick);
+    return () => cancelAnimationFrame(raf);
+  }, [targetPct, durationMs]);
+
+  return (
+    <div className="mt-2">
+      <p className="text-xs text-muted-foreground mb-1">{label}</p>
+      <Progress value={value} className="h-1" />
+    </div>
+  );
+}
+
 // ── Individual piece card ───────────────────────────────────────────────────
 
 function PieceCard({
@@ -307,22 +333,13 @@ function PieceCard({
 
           {/* Loading states */}
           {piece.status === "uploading" && (
-            <div className="mt-2">
-              <p className="text-xs text-muted-foreground mb-1">Upload en cours…</p>
-              <Progress value={30} className="h-1" />
-            </div>
+            <AnimatedProgress label="Upload en cours…" targetPct={90} durationMs={3000} />
           )}
           {piece.status === "analyzing" && (
-            <div className="mt-2">
-              <p className="text-xs text-muted-foreground mb-1">Analyse OCR en cours…</p>
-              <Progress value={70} className="h-1" />
-            </div>
+            <AnimatedProgress label="Analyse OCR en cours…" targetPct={90} durationMs={8000} />
           )}
           {piece.status === "correcting" && (
-            <div className="mt-2">
-              <p className="text-xs text-muted-foreground mb-1">Correction automatique en cours…</p>
-              <Progress value={50} className="h-1" />
-            </div>
+            <AnimatedProgress label="Correction automatique en cours…" targetPct={90} durationMs={6000} />
           )}
 
           {/* Accepted */}
