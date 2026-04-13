@@ -229,6 +229,23 @@ const ClientSpace = () => {
     checkPayment();
   }, [activeDossier, step, selectedOption]);
 
+  // Fetch all paid options for this dossier (for change-option warning)
+  useEffect(() => {
+    if (!activeDossier) return;
+    const fetchPaidOptions = async () => {
+      const { data } = await supabase
+        .from("payments")
+        .select("option_choisie")
+        .eq("dossier_ref", activeDossier.dossier_ref)
+        .eq("status", "paid");
+      if (data) {
+        const opts = [...new Set(data.map((p) => p.option_choisie).filter(Boolean))] as SendOption[];
+        setPaidOptions(opts);
+      }
+    };
+    fetchPaidOptions();
+  }, [activeDossier, step]);
+
   useEffect(() => {
     if (!activeDossier) return;
     const params = new URLSearchParams(window.location.search);
