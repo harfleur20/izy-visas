@@ -53,6 +53,68 @@ export function DocumentUploader({
   pieces,
   maxFiles = 20,
 }: DocumentUploaderProps) {
+  // ── Poll for OCR completion on pieces stuck in analyzing/correcting ──
+  useEffect(() => {
+    const pendingPieces = pieces.filter(
+      (p) => p.status === "analyzing" || p.status === "correcting"
+    );
+    if (pendingPieces.length === 0) return;
+
+    const pollInterval = setInterval(async () => {
+      const pendingIds = pieces
+        .filter((p) => p.status === "analyzing" || p.status === "correcting")
+        .map((p) => p.id)
+        .filter((id) => !id.startsWith("temp-"));
+
+      if (pendingIds.length === 0) return;
+
+      const { data, error } = await supabase
+        .from("pieces_justificatives")
+        .select("id, nom_piece, statut_ocr, score_qualite, nombre_pages, motif_rejet, url_fichier_original, type_document_detecte, langue_detectee, ocr_details")
+        .in("id", pendingIds);
+
+      if (error || !data) return;
+
+      for (const row of data) {
+        if (row.statut_ocr === "pending" || row.statut_ocr === "analyzing") continue;
+
+        const details = row.ocr_details as any || {};
+        const matchingPiece = pieces.find((p) => p.id === row.id);
+
+        if (row.statut_ocr === "accepte") {
+          onPieceUploaded({
+            id: row.id,
+            name: row.nom_piece,
+            status: "accepted",
+            score: row.score_qualite || 0,
+            pages: row.nombre_pages || 1,
+            fileUrl: row.url_fichier_original || undefined,
+            typeDocumentDetecte: row.type_document_detecte || undefined,
+            languageNotice: details.languageNotice || undefined,
+            typeMismatchWarning: details.typeMismatchWarning || undefined,
+            decisionWarning: details.decisionWarning || undefined,
+            canAutoCorrect: details.canAutoCorrect || false,
+            file: matchingPiece?.file,
+          });
+          toast.success(`${row.nom_piece} — Analyse terminée ✓`);
+        } else if (row.statut_ocr === "rejete") {
+          onPieceUploaded({
+            id: row.id,
+            name: row.nom_piece,
+            status: "rejected",
+            score: row.score_qualite || 0,
+            pages: row.nombre_pages || 0,
+            rejectionMessage: row.motif_rejet || "Document rejeté",
+            canAutoCorrect: details.canAutoCorrect || false,
+            file: matchingPiece?.file,
+          });
+          toast.error(`${row.nom_piece} — Document rejeté`);
+        }
+      }
+    }, 3000); // Poll every 3 seconds
+
+    return () => clearInterval(pollInterval);
+  }, [pieces, onPieceUploaded]);
   const [dragOver, setDragOver] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
   const cameraRef = useRef<HTMLInputElement>(null);
