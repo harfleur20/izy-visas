@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
 import type { GenerationResult } from "@/components/ComplianceReport";
@@ -12,6 +12,37 @@ const FIELD_LABELS: Record<string, string> = {
 export function useGenerateRecours() {
   const [loading, setLoading] = useState(false);
   const [result, setResult] = useState<GenerationResult | null>(null);
+  const [restoredFor, setRestoredFor] = useState<string | null>(null);
+
+  // Restore previously generated letter from database
+  const restore = useCallback(async (dossierId: string) => {
+    if (restoredFor === dossierId && result) return; // already restored
+    const { data } = await supabase
+      .from("dossiers")
+      .select("lettre_neutre_contenu, references_verifiees, references_a_verifier, validation_juridique_status")
+      .eq("id", dossierId)
+      .single();
+
+    if (data?.lettre_neutre_contenu) {
+      // Rebuild a minimal GenerationResult from saved data
+      const refs = (data.references_verifiees as any[]) || [];
+      const refsToCheck = (data.references_a_verifier as any[]) || [];
+      const hasAVerifier = refsToCheck.length > 0;
+      const hasNonTrouve = refs.some((r: any) => r.statut === "non_trouve_openlegi");
+
+      const restored: GenerationResult = {
+        letter: data.lettre_neutre_contenu,
+        bloc_report: [],
+        references_status: refs,
+        can_send: data.validation_juridique_status === "validee_ia" || data.validation_juridique_status === "validee_avocat",
+        has_red_blocs: false,
+        has_non_trouve_refs: hasNonTrouve,
+        has_a_verifier_refs: hasAVerifier,
+      };
+      setResult(restored);
+    }
+    setRestoredFor(dossierId);
+  }, [restoredFor, result]);
 
   const generate = async (dossierId: string) => {
     setLoading(true);
@@ -45,6 +76,7 @@ export function useGenerateRecours() {
       }
 
       setResult(data);
+      setRestoredFor(dossierId);
 
       if (data.can_send) {
         toast.success("Lettre générée — 12 blocs conformes, toutes références validées");
@@ -71,5 +103,5 @@ export function useGenerateRecours() {
     }
   };
 
-  return { generate, loading, result, setResult };
+  return { generate, loading, result, setResult, restore };
 }

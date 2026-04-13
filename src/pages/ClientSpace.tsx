@@ -110,7 +110,7 @@ const ClientSpace = () => {
   const [procurationExpiry, setProcurationExpiry] = useState<string | null>(null);
   const [profileForm, setProfileForm] = useState({ first_name: "", last_name: "", phone: "", prefixe_telephone: "+237" });
   const [profileLoaded, setProfileLoaded] = useState(false);
-  const { generate: generateRecours, loading: generatingRecours, result: recoursResult } = useGenerateRecours();
+  const { generate: generateRecours, loading: generatingRecours, result: recoursResult, restore: restoreRecours } = useGenerateRecours();
   const [selectedOption, setSelectedOption] = useState<SendOption | null>(null);
   const [finalizingOption, setFinalizingOption] = useState(false);
   const [paymentMethod, setPaymentMethod] = useState<PaymentMethod>("stripe");
@@ -119,6 +119,13 @@ const ClientSpace = () => {
   const [paymentConfirmed, setPaymentConfirmed] = useState(false);
   const [paidOptions, setPaidOptions] = useState<SendOption[]>([]);
   const [downloadingProcuration, setDownloadingProcuration] = useState(false);
+
+  // Restore previously generated letter when entering step 7
+  useEffect(() => {
+    if (step === 7 && activeDossier && !recoursResult && !generatingRecours) {
+      restoreRecours(activeDossier.id);
+    }
+  }, [step, activeDossier?.id]);
 
   const updateActiveDossier = useCallback(async (patch: DossierUpdate) => {
     if (!activeDossier) return false;
