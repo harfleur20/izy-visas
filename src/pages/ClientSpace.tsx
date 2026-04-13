@@ -110,7 +110,7 @@ const ClientSpace = () => {
   const [procurationExpiry, setProcurationExpiry] = useState<string | null>(null);
   const [profileForm, setProfileForm] = useState({ first_name: "", last_name: "", phone: "", prefixe_telephone: "+237" });
   const [profileLoaded, setProfileLoaded] = useState(false);
-  const { generate: generateRecours, loading: generatingRecours, result: recoursResult } = useGenerateRecours();
+  const { generate: generateRecours, loading: generatingRecours, result: recoursResult, restore: restoreRecours } = useGenerateRecours();
   const [selectedOption, setSelectedOption] = useState<SendOption | null>(null);
   const [finalizingOption, setFinalizingOption] = useState(false);
   const [paymentMethod, setPaymentMethod] = useState<PaymentMethod>("stripe");
