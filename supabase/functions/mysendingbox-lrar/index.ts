@@ -251,7 +251,7 @@ async function handleWebhook(req: Request) {
     return jsonResponse({ received: true });
   }
 
-  // Map MSB event types to our statuses
+  // Map MSB event types to envois_lrar statuses
   const statusMap: Record<string, string> = {
     "letter.created": "created",
     "letter.filing_proof": "filing_proof",
@@ -264,7 +264,21 @@ async function handleWebhook(req: Request) {
     "letter.error": "error",
   };
 
+  // Map MSB event types to dossiers.lrar_status (for the UI timeline)
+  const dossierStatusMap: Record<string, string> = {
+    "letter.created": "lrar_cree",
+    "letter.filing_proof": "depose_poste",
+    "letter.sent": "en_transit",
+    "letter.in_transit": "en_transit",
+    "letter.waiting_to_be_withdrawn": "attente_retrait",
+    "letter.delivered": "livre",
+    "letter.returned_to_sender": "retourne",
+    "letter.wrong_address": "adresse_incorrecte",
+    "letter.error": "erreur",
+  };
+
   const newStatus = statusMap[eventType] || envoi.status;
+  const newDossierStatus = dossierStatusMap[eventType];
   const trackingNumber = payload.letter?.tracking_number || envoi.tracking_number;
 
   // Append webhook event to history
@@ -285,6 +299,47 @@ async function handleWebhook(req: Request) {
     .eq("mysendingbox_letter_id", letterId);
 
   console.log(`[MSB-WEBHOOK] Updated envoi ${envoi.id}: status=${newStatus}`);
+
+  // ── Synchronize dossiers table for the UI timeline ────────────────────
+  if (newDossierStatus) {
+    const dossierUpdate: Record<string, unknown> = {
+      lrar_status: newDossierStatus,
+    };
+
+    if (trackingNumber) {
+      dossierUpdate.tracking_number = trackingNumber;
+    }
+
+    if (eventType === "letter.delivered") {
+      dossierUpdate.delivered_at = new Date().toISOString();
+    }
+
+    // Also sync webhook_events on dossiers for audit
+    const { data: dossierRow } = await supabase
+      .from("dossiers")
+      .select("webhook_events")
+      .eq("dossier_ref", envoi.dossier_ref)
+      .single();
+
+    const dossierWebhookEvents = Array.isArray(dossierRow?.webhook_events) ? dossierRow.webhook_events : [];
+    dossierWebhookEvents.push({
+      type: eventType,
+      received_at: new Date().toISOString(),
+      source: "mysendingbox",
+    });
+    dossierUpdate.webhook_events = dossierWebhookEvents;
+
+    const { error: dossierError } = await supabase
+      .from("dossiers")
+      .update(dossierUpdate)
+      .eq("dossier_ref", envoi.dossier_ref);
+
+    if (dossierError) {
+      console.error(`[MSB-WEBHOOK] Failed to update dossier ${envoi.dossier_ref}:`, dossierError);
+    } else {
+      console.log(`[MSB-WEBHOOK] Synced dossier ${envoi.dossier_ref}: lrar_status=${newDossierStatus}`);
+    }
+  }
 
   // Send WhatsApp notification on status change
   if (newStatus !== envoi.status) {
