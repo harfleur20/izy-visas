@@ -1216,10 +1216,6 @@ const ClientSpace = () => {
               />
             </div>
 
-            {/* Visa obtenu placeholder */}
-            <div className="flex gap-2.5 mt-4 flex-wrap">
-              <button className="font-syne font-bold text-[0.78rem] px-5 py-2.5 rounded-[7px] bg-success/20 text-success border border-success/30 transition-all">Visa obtenu ✓</button>
-            </div>
             {/* Procuration section */}
             <div className="mt-8 bg-panel border border-border rounded-xl p-5">
               <h3 className="font-syne font-bold text-sm mb-3">📬 Ma procuration CAPDEMARCHES</h3>
