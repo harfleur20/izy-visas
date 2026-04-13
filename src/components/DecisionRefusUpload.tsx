@@ -1,4 +1,4 @@
-import { useState, useRef } from "react";
+import { useState, useRef, useEffect } from "react";
 import exempleDecisionRefus from "@/assets/exemple-decision-refus.png";
 import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
@@ -238,18 +238,7 @@ export function DecisionRefusUpload({ dossierId, userId, onComplete, onBack }: D
 
   // ═══ ANALYZING PHASE ═══
   if (phase === "analyzing") {
-    return (
-      <div className="text-center py-16">
-        <div className="text-5xl mb-4 animate-pulse">🔍</div>
-        <BigTitle>Analyse en cours…</BigTitle>
-        <Desc>IZY lit votre décision de refus. Cela prend quelques secondes.</Desc>
-        <div className="w-48 mx-auto mt-4">
-          <div className="h-1.5 bg-muted rounded-full overflow-hidden">
-            <div className="h-full bg-primary rounded-full animate-pulse" style={{ width: "60%" }} />
-          </div>
-        </div>
-      </div>
-    );
+    return <AnalyzingView />;
   }
 
   // ═══ NOT RECOGNIZED ═══
@@ -510,6 +499,46 @@ function EditField({ label, value, onChange, placeholder }: { label: string; val
         onChange={(e) => onChange(e.target.value)}
         placeholder={placeholder}
       />
+    </div>
+  );
+}
+
+const ANALYSIS_STEPS = [
+  { label: "Envoi du document…", pct: 10, delay: 0 },
+  { label: "Extraction du texte (OCR)…", pct: 35, delay: 1500 },
+  { label: "Identification des motifs…", pct: 60, delay: 4000 },
+  { label: "Vérification des données…", pct: 85, delay: 6000 },
+];
+
+function AnalyzingView() {
+  const [progress, setProgress] = useState(0);
+  const [stepLabel, setStepLabel] = useState(ANALYSIS_STEPS[0].label);
+
+  useEffect(() => {
+    const timers: ReturnType<typeof setTimeout>[] = [];
+    ANALYSIS_STEPS.forEach((step) => {
+      timers.push(setTimeout(() => {
+        setProgress(step.pct);
+        setStepLabel(step.label);
+      }, step.delay));
+    });
+    return () => timers.forEach(clearTimeout);
+  }, []);
+
+  return (
+    <div className="text-center py-16">
+      <div className="text-5xl mb-4 animate-pulse">🔍</div>
+      <BigTitle>Analyse en cours…</BigTitle>
+      <Desc>{stepLabel}</Desc>
+      <div className="w-64 mx-auto mt-4">
+        <div className="h-1.5 bg-muted rounded-full overflow-hidden">
+          <div
+            className="h-full bg-primary rounded-full transition-all duration-1000 ease-out"
+            style={{ width: `${progress}%` }}
+          />
+        </div>
+        <div className="text-xs text-muted-foreground mt-2">{progress}%</div>
+      </div>
     </div>
   );
 }
