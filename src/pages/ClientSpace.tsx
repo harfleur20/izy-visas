@@ -206,21 +206,27 @@ const ClientSpace = () => {
     loadOrCreateDossier();
   }, [user]);
 
-  // Check payment status from DB
+  // Check payment status from DB — only for the currently selected option
   useEffect(() => {
     if (!activeDossier) return;
+    const currentOption = selectedOption || normalizeStoredOption(activeDossier.option_choisie);
+    if (!currentOption) {
+      setPaymentConfirmed(false);
+      return;
+    }
     const checkPayment = async () => {
       const { data } = await supabase
         .from("payments")
-        .select("status, verified_by_webhook")
+        .select("status, option_choisie")
         .eq("dossier_ref", activeDossier.dossier_ref)
         .eq("status", "paid")
+        .eq("option_choisie", currentOption)
         .limit(1)
         .maybeSingle();
       setPaymentConfirmed(!!data);
     };
     checkPayment();
-  }, [activeDossier, step]);
+  }, [activeDossier, step, selectedOption]);
 
   useEffect(() => {
     if (!activeDossier) return;
@@ -477,14 +483,17 @@ const ClientSpace = () => {
       }
 
       if (!statusOk) {
-        // Fallback: check payments table directly
-        const { data: paidRow } = await supabase
+        // Fallback: check payments table directly — filter by current option
+        const currentOpt = normalizeStoredOption(d.option_choisie);
+        let paymentQuery = supabase
           .from("payments")
           .select("id")
           .eq("dossier_ref", activeDossier.dossier_ref)
-          .eq("status", "paid")
-          .limit(1)
-          .maybeSingle();
+          .eq("status", "paid");
+        if (currentOpt) {
+          paymentQuery = paymentQuery.eq("option_choisie", currentOpt);
+        }
+        const { data: paidRow } = await paymentQuery.limit(1).maybeSingle();
 
         if (!paidRow) {
           block("Paiement requis", "Finalisez le paiement avant de passer à la signature.", 9);
