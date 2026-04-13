@@ -390,7 +390,7 @@ const ClientSpace = () => {
     // Fetch fresh dossier state for reliable checks
     const { data: d } = await supabase
       .from("dossiers")
-      .select("date_notification_refus, motifs_refus, consulat_nom, lettre_neutre_contenu, option_choisie, lrar_status, url_lettre_definitive, validation_juridique_status")
+      .select("date_notification_refus, motifs_refus, consulat_nom, lettre_neutre_contenu, option_choisie, lrar_status, sent_at, url_lettre_definitive, validation_juridique_status")
       .eq("id", activeDossier.id)
       .single();
 
@@ -499,7 +499,7 @@ const ClientSpace = () => {
         block("Option A : pas d'envoi LRAR", "Avec l'option téléchargement, vous envoyez vous-même. Rendez-vous au suivi.", 13);
         return;
       }
-      if (d.lrar_status === "lrar_envoye") {
+      if (d.lrar_status === "lrar_envoye" || d.sent_at) {
         block("LRAR déjà envoyée", "Votre envoi LRAR a déjà été effectué. Consultez le suivi.", 13);
         return;
       }
