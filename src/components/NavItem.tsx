@@ -7,10 +7,11 @@ interface NavItemProps {
   badge?: { text: string; color: "red" | "amber" | "blue" };
   gold?: boolean;
   suffixIcon?: string;
+  disabled?: boolean;
   onClick: () => void;
 }
 
-export const NavItem = ({ icon, label, active, badge, gold, suffixIcon, onClick }: NavItemProps) => {
+export const NavItem = ({ icon, label, active, badge, gold, suffixIcon, disabled, onClick }: NavItemProps) => {
   const activeBase = gold
     ? "bg-gold/15 text-gold-2 border-gold-2/25"
     : "bg-primary/[0.17] text-primary-hover border-primary-hover/20";
@@ -23,8 +24,12 @@ export const NavItem = ({ icon, label, active, badge, gold, suffixIcon, onClick 
 
   return (
     <div
-      onClick={onClick}
-      className={`flex items-center gap-2.5 px-2.5 py-2 rounded-[7px] cursor-pointer transition-all text-[0.8rem] text-muted-foreground mb-px border border-transparent whitespace-nowrap relative hover:bg-foreground/[0.04] hover:text-foreground ${active ? activeBase : ""}`}
+      onClick={disabled ? undefined : onClick}
+      className={`flex items-center gap-2.5 px-2.5 py-2 rounded-[7px] transition-all text-[0.8rem] text-muted-foreground mb-px border border-transparent whitespace-nowrap relative ${
+        disabled
+          ? "opacity-40 cursor-not-allowed"
+          : "cursor-pointer hover:bg-foreground/[0.04] hover:text-foreground"
+      } ${active && !disabled ? activeBase : ""}`}
     >
       {active && (
         <span
