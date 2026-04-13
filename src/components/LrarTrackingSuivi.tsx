@@ -220,6 +220,46 @@ export function LrarTrackingSuivi({ dossierId, dossierRef }: LrarTrackingSuiviPr
           </Button>
         )}
       </div>
+
+      {/* Visa outcome buttons — only when delivered and no final status yet */}
+      {isDelivered && !dossier.statut_final && (
+        <div className="mt-6 border border-border rounded-xl p-5 bg-panel">
+          <h3 className="font-syne font-bold text-sm mb-3">📌 Quelle est l'issue de votre recours ?</h3>
+          <p className="text-sm text-muted-foreground mb-4">
+            Une fois la décision reçue, indiquez le résultat pour clôturer votre dossier.
+          </p>
+          <div className="flex gap-3">
+            <Button
+              variant="success"
+              size="sm"
+              disabled={savingFinal}
+              onClick={() => handleStatutFinal("visa_obtenu")}
+            >
+              ✅ Visa obtenu
+            </Button>
+            <Button
+              variant="destructive"
+              size="sm"
+              disabled={savingFinal}
+              onClick={() => handleStatutFinal("visa_refuse")}
+            >
+              ❌ Visa refusé
+            </Button>
+          </div>
+        </div>
+      )}
+
+      {/* Final status display */}
+      {dossier.statut_final === "visa_obtenu" && (
+        <Box variant="ok" title="🎉 Félicitations — Visa obtenu !">
+          Votre recours gracieux a abouti. Le consulat a accordé votre visa. Bon voyage !
+        </Box>
+      )}
+      {dossier.statut_final === "visa_refuse" && (
+        <Box variant="alert" title="⚖️ Visa refusé après recours">
+          Le consulat a maintenu son refus. Vous pouvez envisager un recours contentieux devant le tribunal administratif de Nantes.
+        </Box>
+      )}
     </div>
   );
 }
