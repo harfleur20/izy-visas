@@ -268,7 +268,7 @@ export function PiecesComplementaires({
                 <DocumentUploader
                   dossierId={dossierId}
                   userId={userId}
-                  typePiece="optionnelle"
+                  typePiece="complementaire"
                   nomPiece=""
                   onPieceUploaded={handlePieceUploaded}
                   onPieceRemoved={handlePieceRemoved}
