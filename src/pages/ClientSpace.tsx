@@ -6,6 +6,7 @@ import { supabase } from "@/integrations/supabase/client";
 import type { Database } from "@/integrations/supabase/types";
 
 import { toast } from "@/hooks/use-toast";
+import { toast as sonnerToast } from "sonner";
 import { NavItem, NavGroup } from "@/components/NavItem";
 import { Eyebrow, BigTitle, Desc, Box } from "@/components/ui-custom";
 import { ProcurationFlow } from "@/components/ProcurationFlow";
@@ -500,7 +501,8 @@ const ClientSpace = () => {
         return;
       }
       if (d.lrar_status === "lrar_envoye" || d.sent_at) {
-        block("LRAR déjà envoyée", "Votre envoi LRAR a déjà été effectué. Consultez le suivi.", 13);
+        sonnerToast.success("LRAR déjà envoyée", { description: "Votre envoi LRAR a déjà été effectué. Consultez le suivi." });
+        setStep(13);
         return;
       }
       setStep(11); return;
