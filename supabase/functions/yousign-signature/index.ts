@@ -270,6 +270,7 @@ async function handleVerifyOtp(req: Request) {
   assertDossierAccess(authContext, sig);
 
   // Explicit test bypass for sandbox only.
+  console.log(`[YOUSIGN-DEBUG] ALLOW_TEST_OTP=${ALLOW_TEST_OTP}, otp=${otp}, YOUSIGN_ALLOW_TEST_OTP_ENV=${Deno.env.get("YOUSIGN_ALLOW_TEST_OTP")}`);
   if (ALLOW_TEST_OTP && otp === "123456") {
     console.log("[YOUSIGN-SANDBOX] Auto-accepting OTP 123456 for sandbox mode");
     await supabase
