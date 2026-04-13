@@ -257,10 +257,15 @@ export function PiecesComplementaires({
                             size="sm"
                             className="text-xs"
                             onClick={async () => {
-                              const { data } = await supabase.storage
-                                .from("dossiers")
-                                .createSignedUrl(p.url_fichier_original!, 300);
-                              if (data?.signedUrl) window.open(data.signedUrl, "_blank");
+                              const url = p.url_fichier_original!;
+                              if (url.startsWith("http")) {
+                                window.open(url, "_blank");
+                              } else {
+                                const { data } = await supabase.storage
+                                  .from("dossiers")
+                                  .createSignedUrl(url, 300);
+                                if (data?.signedUrl) window.open(data.signedUrl, "_blank");
+                              }
                             }}
                           >
                             ⬇️ Télécharger
@@ -297,10 +302,15 @@ export function PiecesComplementaires({
                             size="sm"
                             className="text-xs"
                             onClick={async () => {
-                              const { data } = await supabase.storage
-                                .from("dossiers")
-                                .createSignedUrl(p.url_fichier_original!, 300);
-                              if (data?.signedUrl) window.open(data.signedUrl, "_blank");
+                              const url = p.url_fichier_original!;
+                              if (url.startsWith("http")) {
+                                window.open(url, "_blank");
+                              } else {
+                                const { data } = await supabase.storage
+                                  .from("dossiers")
+                                  .createSignedUrl(url, 300);
+                                if (data?.signedUrl) window.open(data.signedUrl, "_blank");
+                              }
                             }}
                           >
                             ⬇️ Télécharger
