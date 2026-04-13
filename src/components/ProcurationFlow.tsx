@@ -194,7 +194,7 @@ function formatDateToLetters(dateStr: string): string {
   return `${d.getDate()} ${months[d.getMonth()]} ${d.getFullYear()}`;
 }
 
-function generateProcurationText(p: ProfileData, dossierRef: string, email?: string): string {
+function generateProcurationData(p: ProfileData, dossierRef: string, email?: string) {
   const nom = (p.last_name || "").toUpperCase();
   const prenom = p.first_name || "";
   const adresseLigne2 = p.adresse_ligne2 ? `\n${p.adresse_ligne2}` : "";
@@ -204,29 +204,30 @@ function generateProcurationText(p: ProfileData, dossierRef: string, email?: str
   const today = formatDateToLetters(new Date().toISOString());
   const emailStr = email || "";
 
-  return `PROCURATION POSTALE
+  // Display version (with accents for UI)
+  const display = `PROCURATION POSTALE
 
-Je soussigne(e),
+Je soussigné(e),
 
-Nom et prenom : ${nom} ${prenom}
+Nom et prénom : ${nom} ${prenom}
 Date de naissance : ${p.date_naissance || ""}
 Lieu de naissance : ${p.lieu_naissance || ""}
-Nationalite : ${p.nationalite || ""}
-Numero de passeport : ${p.passport_number || ""}
+Nationalité : ${p.nationalite || ""}
+Numéro de passeport : ${p.passport_number || ""}
 Adresse personnelle :
 ${p.adresse_ligne1 || ""}${adresseLigne2}
 ${ville}, ${pays}
-Telephone : ${tel}
+Téléphone : ${tel}
 Email : ${emailStr}
 
-DONNE PROCURATION a :
+DONNE PROCURATION à :
 
-La societe CAPDEMARCHES
+La société CAPDEMARCHES
 Sise au 105 rue des Moines
 75017 Paris - FRANCE
 Email : contact@capdemarches.fr
 
-pour receptionner, retirer et prendre connaissance en mon nom de tout courrier recommande avec accuse de reception, de tout avis de passage et de toute correspondance officielle qui me seraient adresses a l'adresse suivante :
+pour réceptionner, retirer et prendre connaissance en mon nom de tout courrier recommandé avec accusé de réception, de tout avis de passage et de toute correspondance officielle qui me seraient adressés à l'adresse suivante :
 
 ${nom} ${prenom}
 c/o CAPDEMARCHES
@@ -234,30 +235,47 @@ c/o CAPDEMARCHES
 75017 Paris
 FRANCE
 
-dans le cadre de la procedure de recours contre la decision de refus de visa introduite aupres de la Commission de recours contre les decisions de refus de visa d'entree en France ou du Sous-directeur des visas, selon le type de visa concerne.
+dans le cadre de la procédure de recours contre la décision de refus de visa introduite auprès de la Commission de recours contre les décisions de refus de visa d'entrée en France ou du Sous-directeur des visas, selon le type de visa concerné.
 
-Reference dossier IZY : ${dossierRef}
+Référence dossier IZY : ${dossierRef}
 
-Duree de validite : douze (12) mois a compter de la date de signature, renouvelable.
+Durée de validité : douze (12) mois à compter de la date de signature, renouvelable.
 
 Cette procuration couvre :
-- La reception des courriers recommandes avec accuse de reception
-- La signature des accuses de reception au nom du mandant
-- Le retrait des courriers en instance aupres des bureaux de La Poste
-- La transmission numerique des documents recus au mandant dans un delai de 24 heures
+- La réception des courriers recommandés avec accusé de réception
+- La signature des accusés de réception au nom du mandant
+- Le retrait des courriers en instance auprès des bureaux de La Poste
+- La transmission numérique des documents reçus au mandant dans un délai de 24 heures
 
 Cette procuration ne couvre pas :
-- La representation du mandant devant toute juridiction
+- La représentation du mandant devant toute juridiction
 - La signature de tout acte juridique engageant le mandant
-- Toute action etrangere a la procedure de recours visa
+- Toute action étrangère à la procédure de recours visa
 
-Fait a ${ville},
+Fait à ${ville},
 le ${today}
 
 Signature du mandant :
 [ZONE DE SIGNATURE YOUSIGN]
 
 Nom lisible : ${nom} ${prenom}`;
+
+  // PDF-safe version (ASCII only for Helvetica/WinAnsi)
+  const pdf = display
+    .replace(/é/g, "e").replace(/è/g, "e").replace(/ê/g, "e").replace(/ë/g, "e")
+    .replace(/à/g, "a").replace(/â/g, "a")
+    .replace(/ù/g, "u").replace(/û/g, "u")
+    .replace(/ô/g, "o").replace(/î/g, "i").replace(/ï/g, "i")
+    .replace(/ç/g, "c")
+    .replace(/É/g, "E").replace(/È/g, "E").replace(/Ê/g, "E")
+    .replace(/À/g, "A").replace(/Ô/g, "O").replace(/Ù/g, "U")
+    .replace(/Ç/g, "C")
+    .replace(/œ/g, "oe").replace(/Œ/g, "OE")
+    .replace(/—/g, "-").replace(/–/g, "-")
+    .replace(/'/g, "'").replace(/'/g, "'")
+    .replace(/"/g, '"').replace(/"/g, '"');
+
+  return { display, pdf };
 }
 
 export const ProcurationFlow = ({
