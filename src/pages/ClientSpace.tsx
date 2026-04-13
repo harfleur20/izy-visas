@@ -499,6 +499,10 @@ const ClientSpace = () => {
         block("Option A : pas d'envoi LRAR", "Avec l'option téléchargement, vous envoyez vous-même. Rendez-vous au suivi.", 13);
         return;
       }
+      if (d.lrar_status === "lrar_envoye") {
+        block("LRAR déjà envoyée", "Votre envoi LRAR a déjà été effectué. Consultez le suivi.", 13);
+        return;
+      }
       setStep(11); return;
     }
 
