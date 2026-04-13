@@ -202,6 +202,22 @@ const ClientSpace = () => {
     loadOrCreateDossier();
   }, [user]);
 
+  // Check payment status from DB
+  useEffect(() => {
+    if (!activeDossier) return;
+    const checkPayment = async () => {
+      const { data } = await supabase
+        .from("payments")
+        .select("status, verified_by_webhook")
+        .eq("dossier_ref", activeDossier.dossier_ref)
+        .eq("status", "paid")
+        .limit(1)
+        .maybeSingle();
+      setPaymentConfirmed(!!data);
+    };
+    checkPayment();
+  }, [activeDossier, step]);
+
   useEffect(() => {
     if (!activeDossier) return;
     const params = new URLSearchParams(window.location.search);
@@ -209,6 +225,7 @@ const ClientSpace = () => {
     if (!paymentStatus) return;
 
     if (paymentStatus === "success") {
+      setPaymentConfirmed(true);
       toast({ title: "✅ Paiement confirmé", description: "Vous pouvez passer à la signature YouSign." });
       setStep(10);
     } else if (paymentStatus === "taramoney_pending") {
