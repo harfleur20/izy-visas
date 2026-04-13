@@ -642,12 +642,22 @@ export const ProcurationFlow = ({
                   </pre>
                 </div>
               ) : (
-                <div className="border border-border rounded-xl overflow-hidden" style={{ height: "45vh" }}>
-                  <iframe
-                    src={`data:application/pdf;base64,${textToPdfBase64(procurationData.pdf)}`}
-                    className="w-full h-full"
-                    title="Aperçu PDF de la procuration"
-                  />
+                <div className="border border-border rounded-xl overflow-auto bg-muted/30 flex justify-center p-4" style={{ maxHeight: "45vh" }}>
+                  <div
+                    className="bg-white text-black rounded shadow-lg"
+                    style={{
+                      width: "595px",
+                      minHeight: "842px",
+                      padding: "50px",
+                      fontFamily: "Helvetica, Arial, sans-serif",
+                      fontSize: "11px",
+                      lineHeight: "1.6",
+                      whiteSpace: "pre-wrap",
+                      wordBreak: "break-word",
+                    }}
+                  >
+                    {procurationData.display}
+                  </div>
                 </div>
               )}
 
