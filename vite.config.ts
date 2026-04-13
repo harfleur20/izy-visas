@@ -66,21 +66,7 @@ export default defineConfig(({ mode }) => ({
   build: {
     rollupOptions: {
       output: {
-        manualChunks(id) {
-          const normalizedId = id.replace(/\\/g, "/");
-
-          if (!normalizedId.includes("/node_modules/")) {
-            return;
-          }
-
-          for (const group of vendorChunkGroups) {
-            if (group.packages.some((packageName) => normalizedId.includes(packagePath(packageName)))) {
-              return group.name;
-            }
-          }
-
-          return "vendor";
-        },
+        manualChunks: undefined,
       },
     },
   },
