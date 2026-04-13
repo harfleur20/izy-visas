@@ -1,8 +1,25 @@
 import { useNavigate } from "react-router-dom";
+import { useAuth } from "@/hooks/useAuth";
+import { useEffect } from "react";
+
+const roleToPath: Record<string, string> = {
+  client: "/client",
+  avocat: "/avocat",
+  admin_delegue: "/admin",
+  super_admin: "/super-admin",
+  admin_juridique: "/admin-juridique",
+};
 
 const Portal = () => {
   const navigate = useNavigate();
+  const { user, role, loading } = useAuth();
 
+  useEffect(() => {
+    if (!loading && user && role) {
+      const path = roleToPath[role] || "/client";
+      navigate(path, { replace: true });
+    }
+  }, [loading, user, role, navigate]);
   const cards = [
     {
       key: "client",
