@@ -77,13 +77,18 @@ export function PiecesComplementaires({
 
   const handlePieceUploaded = useCallback((piece: UploadedPiece) => {
     setNewPieces((prev) => {
-      const idx = prev.findIndex((p) => p.id === piece.id);
+      // Remove any temp- entry when the real ID arrives
+      const withoutTemp = piece.id.startsWith("temp-")
+        ? prev
+        : prev.filter((p) => !p.id.startsWith("temp-") || p.name !== piece.name);
+
+      const idx = withoutTemp.findIndex((p) => p.id === piece.id);
       if (idx >= 0) {
-        const updated = [...prev];
+        const updated = [...withoutTemp];
         updated[idx] = piece;
         return updated;
       }
-      return [...prev, piece];
+      return [...withoutTemp, piece];
     });
   }, []);
 
