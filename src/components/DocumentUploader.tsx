@@ -255,6 +255,32 @@ export function DocumentUploader({
   );
 }
 
+// ── Animated progress for loading states ────────────────────────────────────
+
+function AnimatedProgress({ label, targetPct, durationMs }: { label: string; targetPct: number; durationMs: number }) {
+  const [value, setValue] = useState(0);
+  useEffect(() => {
+    const start = Date.now();
+    const tick = () => {
+      const elapsed = Date.now() - start;
+      const ratio = Math.min(elapsed / durationMs, 1);
+      // Ease-out curve: fast start, slow end
+      const eased = 1 - Math.pow(1 - ratio, 3);
+      setValue(Math.round(eased * targetPct));
+      if (ratio < 1) requestAnimationFrame(tick);
+    };
+    const raf = requestAnimationFrame(tick);
+    return () => cancelAnimationFrame(raf);
+  }, [targetPct, durationMs]);
+
+  return (
+    <div className="mt-2">
+      <p className="text-xs text-muted-foreground mb-1">{label}</p>
+      <Progress value={value} className="h-1" />
+    </div>
+  );
+}
+
 // ── Individual piece card ───────────────────────────────────────────────────
 
 function PieceCard({
