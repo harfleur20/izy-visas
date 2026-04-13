@@ -765,12 +765,27 @@ const ClientSpace = () => {
                 </select>
               </div>
             </div>
-            {dlResult && dlResult.type === "expired" && <Box variant="alert" title={`🚫 Recours irrecevable — Délai expiré depuis ${dlResult.days} jours`}>Consultez un avocat pour d'autres options.</Box>}
+            {dlResult && dlResult.type === "expired" && (
+              <Box variant="alert" title={`🚫 Recours irrecevable — Délai expiré depuis ${dlResult.days} jours`}>
+                Votre délai de recours gracieux est dépassé. Aucun recours administratif n'est possible. Consultez un avocat pour explorer d'autres voies (recours contentieux, etc.).
+              </Box>
+            )}
             {dlResult && dlResult.type === "urgent" && <Box variant="alert" title={`⚠️ URGENCE — ${dlResult.days} jour(s) restant(s)`}>Date limite : <strong>{dlResult.deadline}</strong>. Agissez immédiatement.</Box>}
             {dlResult && dlResult.type === "ok" && <Box variant="ok" title={`✓ Recevable — ${dlResult.days} jours restants`}>Date limite : <strong>{dlResult.deadline}</strong>.</Box>}
-            <div className="flex gap-2.5 mt-7 flex-wrap">
-              <button className="font-syne font-bold text-[0.78rem] px-5 py-2.5 rounded-[7px] bg-primary-hover text-foreground hover:bg-[#5585ff] hover:-translate-y-px transition-all" onClick={handleReceivabilityContinue}>Mon recours est recevable →</button>
-            </div>
+            {dlResult && dlResult.type === "expired" ? (
+              <div className="mt-7 rounded-[9px] p-4 bg-destructive/[0.08] border border-destructive/25 text-center">
+                <p className="font-syne font-bold text-[0.85rem] text-red-2 mb-1">⛔ Parcours bloqué</p>
+                <p className="text-[0.75rem] text-muted-foreground">Le recours gracieux n'est plus possible pour ce dossier. Vous pouvez consulter un avocat pour un recours contentieux devant le tribunal administratif.</p>
+              </div>
+            ) : (
+              <div className="flex gap-2.5 mt-7 flex-wrap">
+                <button
+                  className="font-syne font-bold text-[0.78rem] px-5 py-2.5 rounded-[7px] bg-primary-hover text-foreground hover:bg-[#5585ff] hover:-translate-y-px transition-all disabled:opacity-40 disabled:cursor-not-allowed"
+                  onClick={handleReceivabilityContinue}
+                  disabled={!dlResult || dlResult.type === "expired"}
+                >Mon recours est recevable →</button>
+              </div>
+            )}
           </div>
         )}
 
