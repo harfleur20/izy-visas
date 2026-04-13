@@ -148,8 +148,6 @@ export function DocumentUploader({
 
       if (error) throw error;
 
-      // The edge function now returns 202 with just the piece ID
-      // The piece is in "analyzing" status — realtime will update it
       const analyzingPiece: UploadedPiece = {
         id: data.id || tempId,
         name,
@@ -162,6 +160,9 @@ export function DocumentUploader({
       };
 
       onPieceUploaded(analyzingPiece);
+      if (data.id && onPieceRemoved) {
+        onPieceRemoved(tempId);
+      }
       toast.info(`${name} — Analyse OCR en cours…`);
     } catch (err: any) {
       console.error("Upload error:", err);
