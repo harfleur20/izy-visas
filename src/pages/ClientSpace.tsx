@@ -1203,10 +1203,10 @@ const ClientSpace = () => {
                             }
                           }
 
-                          toast.error("Le PDF de procuration n'est pas encore disponible.");
+                          toast({ title: "PDF indisponible", description: "Le PDF de procuration n'est pas encore disponible.", variant: "destructive" });
                         } catch (err) {
                           console.error("Download procuration error:", err);
-                          toast.error("Erreur lors du téléchargement de la procuration.");
+                          toast({ title: "Erreur", description: "Erreur lors du téléchargement de la procuration.", variant: "destructive" });
                         }
                       }}
                       className="font-syne font-bold text-xs px-3 py-1.5 rounded-lg bg-foreground/[0.07] text-muted-foreground border border-border hover:bg-foreground/[0.12] transition-colors"
