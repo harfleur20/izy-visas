@@ -1,4 +1,5 @@
 import { useState, useCallback, useEffect } from "react";
+import { Loader2 } from "lucide-react";
 import ShellLayout from "@/components/ShellLayout";
 import { useAuth } from "@/hooks/useAuth";
 import { supabase } from "@/integrations/supabase/client";
@@ -114,6 +115,7 @@ const ClientSpace = () => {
   const [paymentLoading, setPaymentLoading] = useState(false);
   const [taraPaymentLinks, setTaraPaymentLinks] = useState<TaraPaymentLinks | null>(null);
   const [paymentConfirmed, setPaymentConfirmed] = useState(false);
+  const [downloadingProcuration, setDownloadingProcuration] = useState(false);
 
   const updateActiveDossier = useCallback(async (patch: DossierUpdate) => {
     if (!activeDossier) return false;
@@ -1181,7 +1183,9 @@ const ClientSpace = () => {
                   </div>
                   <div className="flex gap-2 mt-3">
                     <button
+                      disabled={downloadingProcuration}
                       onClick={async () => {
+                        setDownloadingProcuration(true);
                         try {
                           const { data: sig } = await supabase
                             .from("signatures")
@@ -1202,7 +1206,6 @@ const ClientSpace = () => {
                             }
                           }
 
-                          // Fallback: try fetching signed document from YouSign via edge function
                           if (sig?.yousign_signature_request_id) {
                             const { data: dlData } = await supabase.functions.invoke("yousign-signature/download", {
                               body: { signatureRequestId: sig.yousign_signature_request_id },
@@ -1217,10 +1220,12 @@ const ClientSpace = () => {
                         } catch (err) {
                           console.error("Download procuration error:", err);
                           toast({ title: "Erreur", description: "Erreur lors du téléchargement.", variant: "destructive" });
+                        } finally {
+                          setDownloadingProcuration(false);
                         }
                       }}
-                      className="font-syne font-bold text-xs px-3 py-1.5 rounded-lg bg-foreground/[0.07] text-muted-foreground border border-border hover:bg-foreground/[0.12] transition-colors"
-                    >⬇️ Télécharger</button>
+                      className="font-syne font-bold text-xs px-3 py-1.5 rounded-lg bg-foreground/[0.07] text-muted-foreground border border-border hover:bg-foreground/[0.12] transition-colors disabled:opacity-50 disabled:cursor-not-allowed inline-flex items-center gap-1.5"
+                    >{downloadingProcuration ? <><Loader2 className="h-3 w-3 animate-spin" /> Chargement…</> : "⬇️ Télécharger"}</button>
                     {procurationExpiry && (() => {
                       const daysLeft = Math.ceil((new Date(procurationExpiry).getTime() - Date.now()) / 86400000);
                       return daysLeft <= 30 ? (
