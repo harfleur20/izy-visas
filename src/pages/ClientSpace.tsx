@@ -18,6 +18,7 @@ import { LetterPreview } from "@/components/LetterPreview";
 import { SendOptionChooser } from "@/components/SendOptionChooser";
 import { LrarCompositionWrapper } from "@/components/LrarCompositionWrapper";
 import { LrarTrackingSuivi } from "@/components/LrarTrackingSuivi";
+import { PiecesComplementaires } from "@/components/PiecesComplementaires";
 
 type SendOption = "A" | "B" | "C";
 type PaymentMethod = "stripe" | "taramoney";
