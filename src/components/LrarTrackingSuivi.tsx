@@ -3,6 +3,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { Progress } from "@/components/ui/progress";
 import { Button } from "@/components/ui/button";
 import { Eyebrow, BigTitle, Box } from "@/components/ui-custom";
+import { toast } from "sonner";
 
 interface LrarTrackingSuiviProps {
   dossierId: string;
