@@ -347,15 +347,15 @@ async function processOcrInBackground(
   // ── Determine acceptance ────────────────────────────────────────────
   const accepted = ocrResult.lisible && ocrResult.score_qualite >= OCR_SCORE_MINIMUM;
   const rejectionMessage = !accepted ? getRejectionMessage(ocrResult) : null;
-  const effectiveTypeAttendu = isDecisionRefus ? "decision_refus" : "autre";
+  const effectiveTypeAttendu = isDecisionRefus ? "decision_refus" : guessExpectedType(nomPiece);
   const canAutoCorrectVal = !accepted && canAutoCorrectCheck(ocrResult, autoCorrect);
 
-  // Type mismatch warning
+  // Type mismatch warning — only when we have a specific expected type
   let typeMismatchWarning: string | null = null;
-  if (accepted && ocrResult.type_document_detecte !== effectiveTypeAttendu && effectiveTypeAttendu !== "autre") {
+  if (accepted && effectiveTypeAttendu !== "autre" && ocrResult.type_document_detecte !== effectiveTypeAttendu) {
     const detectedLabel = TYPE_LABELS[ocrResult.type_document_detecte] || ocrResult.type_document_detecte;
     const attenduLabel = TYPE_LABELS[effectiveTypeAttendu] || effectiveTypeAttendu;
-    typeMismatchWarning = `⚠️ Ce document semble être un ${detectedLabel} et non une ${attenduLabel}.`;
+    typeMismatchWarning = `⚠️ Ce document semble être un(e) "${detectedLabel}" alors que nous attendons un(e) "${attenduLabel}". Vérifiez que vous avez sélectionné le bon fichier.`;
   }
 
   // Decision refus validation
