@@ -392,12 +392,12 @@ export const ProcurationFlow = ({
     setEditValues({});
   };
 
-  const procurationText = generateProcurationText(profile, dossierRef, userEmail);
+  const procurationData = generateProcurationData(profile, dossierRef, userEmail);
 
   const triggerSignature = async () => {
     setLoading(true);
     try {
-      const documentBase64 = textToPdfBase64(procurationText);
+      const documentBase64 = textToPdfBase64(procurationData.pdf);
       const signerPhone = profile.phone ? `${profile.prefixe_telephone}${profile.phone}` : undefined;
 
       const { data, error } = await supabase.functions.invoke("yousign-signature/create", {
