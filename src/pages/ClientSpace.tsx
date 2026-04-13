@@ -113,6 +113,7 @@ const ClientSpace = () => {
   const [paymentMethod, setPaymentMethod] = useState<PaymentMethod>("stripe");
   const [paymentLoading, setPaymentLoading] = useState(false);
   const [taraPaymentLinks, setTaraPaymentLinks] = useState<TaraPaymentLinks | null>(null);
+  const [paymentConfirmed, setPaymentConfirmed] = useState(false);
 
   const updateActiveDossier = useCallback(async (patch: DossierUpdate) => {
     if (!activeDossier) return false;
@@ -201,6 +202,22 @@ const ClientSpace = () => {
     loadOrCreateDossier();
   }, [user]);
 
+  // Check payment status from DB
+  useEffect(() => {
+    if (!activeDossier) return;
+    const checkPayment = async () => {
+      const { data } = await supabase
+        .from("payments")
+        .select("status, verified_by_webhook")
+        .eq("dossier_ref", activeDossier.dossier_ref)
+        .eq("status", "paid")
+        .limit(1)
+        .maybeSingle();
+      setPaymentConfirmed(!!data);
+    };
+    checkPayment();
+  }, [activeDossier, step]);
+
   useEffect(() => {
     if (!activeDossier) return;
     const params = new URLSearchParams(window.location.search);
@@ -208,6 +225,7 @@ const ClientSpace = () => {
     if (!paymentStatus) return;
 
     if (paymentStatus === "success") {
+      setPaymentConfirmed(true);
       toast({ title: "✅ Paiement confirmé", description: "Vous pouvez passer à la signature YouSign." });
       setStep(10);
     } else if (paymentStatus === "taramoney_pending") {
@@ -1018,15 +1036,21 @@ const ClientSpace = () => {
         {/* Step 10 — Signature YouSign / Procuration */}
         {step === 10 && activeDossier && (
           <div>
-            <Eyebrow>Signature YouSign</Eyebrow>
+           <Eyebrow>Signature YouSign</Eyebrow>
             <BigTitle>Validation de la procuration</BigTitle>
             <Desc>
               Cette étape vérifie que la procuration CAPDEMARCHES est signée avant l'envoi suivi du dossier.
             </Desc>
 
+            {paymentConfirmed && (
+              <Box variant="ok" title="✅ Paiement confirmé">
+                Votre paiement a été validé. Vous pouvez continuer la procédure.
+              </Box>
+            )}
+
             {selectedOption && (
               <div className="bg-panel border border-border rounded-xl p-4 mb-4">
-                <div className="font-syne text-[0.65rem] font-bold tracking-wider uppercase text-muted mb-2">Option payée ou sélectionnée</div>
+                <div className="font-syne text-[0.65rem] font-bold tracking-wider uppercase text-muted mb-2">Option payée</div>
                 <div className="font-syne font-bold text-sm">{OPTION_LABELS[selectedOption]}</div>
               </div>
             )}
@@ -1061,7 +1085,7 @@ const ClientSpace = () => {
             )}
 
             <div className="flex gap-2.5 mt-7">
-              <button className="font-syne font-bold text-[0.78rem] px-5 py-2.5 rounded-[7px] bg-foreground/[0.07] text-muted-foreground border border-border-2 transition-all" onClick={() => setStep(9)}>← Retour paiement</button>
+              <button className="font-syne font-bold text-[0.78rem] px-5 py-2.5 rounded-[7px] bg-foreground/[0.07] text-muted-foreground border border-border-2 transition-all" onClick={() => setStep(8)}>← Retour mode d'envoi</button>
               <button
                 disabled={!selectedOption || (selectedOption !== "A" && !procurationSignee) || (selectedOption === "C" && activeDossier.validation_juridique_status !== "validee_avocat")}
                 className={`font-syne font-bold text-[0.78rem] px-5 py-2.5 rounded-[7px] transition-all ${
