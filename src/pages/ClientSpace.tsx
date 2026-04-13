@@ -956,6 +956,7 @@ const ClientSpace = () => {
             onSelect={handleOptionSelect}
             onBack={() => setStep(7)}
             loading={finalizingOption}
+            paidOptions={paidOptions}
           />
         )}
 
