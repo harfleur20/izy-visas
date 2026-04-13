@@ -183,6 +183,7 @@ export function PiecesComplementaires({
     };
   }, [dossierId, newPieces]);
 
+  const isOptionA = !optionChoisie || optionChoisie === "A";
   const optionLabel =
     optionChoisie === "B" || optionChoisie === "C"
       ? "L'administrateur CapDémarches sera notifié pour les transmettre."
