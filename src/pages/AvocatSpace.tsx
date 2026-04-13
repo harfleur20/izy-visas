@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from "react";
-import { useNavigate } from "react-router-dom";
+
 import ShellLayout from "@/components/ShellLayout";
 import { NavItem, NavGroup } from "@/components/NavItem";
 import { Eyebrow, BigTitle, Desc, Box, Pill } from "@/components/ui-custom";
@@ -65,7 +65,7 @@ const aTitles = ["Dossiers à relire", "Éditeur de recours", "Dossiers validés
 const AvocatSpace = () => {
   const [page, setPage] = useState(0);
   const { user } = useAuth();
-  const navigate = useNavigate();
+  
   const { generate, loading: generating, result: recoursResult, restore } = useGenerateRecours();
 
   const [avocatProfile, setAvocatProfile] = useState<AvocatProfile | null>(null);
@@ -556,7 +556,7 @@ const AvocatSpace = () => {
                           {format(new Date(d.updated_at), "dd/MM/yyyy", { locale: fr })}
                         </td>
                         <td className="px-3.5 py-2.5 border-b border-border">
-                          <Pill variant={d.lrar_status === "lrar_envoye" || d.lrar_status === "envoyee" ? "ok" : d.lrar_status === "distribuee" ? "ok" : "new"}>
+                          <Pill variant={d.lrar_status === "distribuee" || d.lrar_status === "lrar_envoye" || d.lrar_status === "envoyee" ? "ok" : "new"}>
                             {d.lrar_status === "lrar_envoye" || d.lrar_status === "envoyee" ? "Envoyé" : d.lrar_status === "distribuee" ? "Distribué" : "En attente"}
                           </Pill>
                         </td>
