@@ -420,6 +420,87 @@ async function handleDownloadCertificate(req: Request) {
   return jsonResponse({ url: urlData.signedUrl });
 }
 
+// ── 5. Download signed document ──────────────────────────────────────────────
+
+async function handleDownload(req: Request) {
+  const { authContext, supabase } = await getAuthenticatedContext(req);
+  const { signatureRequestId } = await req.json();
+
+  if (!signatureRequestId) {
+    return jsonResponse({ error: "Missing signatureRequestId" }, 400);
+  }
+
+  const { data: sig } = await supabase
+    .from("signatures")
+    .select("certificate_path, user_id, dossier_ref")
+    .eq("yousign_signature_request_id", signatureRequestId)
+    .single();
+
+  if (!sig) {
+    return jsonResponse({ error: "Signature not found" }, 404);
+  }
+
+  assertDossierAccess(authContext, sig);
+
+  // 1. Try stored certificate first
+  if (sig.certificate_path) {
+    const { data: urlData } = await supabase.storage
+      .from("signature-certificates")
+      .createSignedUrl(sig.certificate_path, 3600);
+    if (urlData?.signedUrl) {
+      return jsonResponse({ url: urlData.signedUrl });
+    }
+  }
+
+  // 2. Try downloading signed document from YouSign API
+  try {
+    const apiKey = getRequiredEnv("YOUSIGN_API_KEY");
+    const docListRes = await fetch(
+      `${YOUSIGN_API_URL}/signature_requests/${signatureRequestId}/documents`,
+      { headers: { Authorization: `Bearer ${apiKey}` } }
+    );
+
+    if (docListRes.ok) {
+      const docs = await docListRes.json();
+      if (docs?.length > 0) {
+        const docId = docs[0].id;
+        const downloadRes = await fetch(
+          `${YOUSIGN_API_URL}/signature_requests/${signatureRequestId}/documents/${docId}/download`,
+          { headers: { Authorization: `Bearer ${apiKey}` } }
+        );
+
+        if (downloadRes.ok) {
+          const pdfBlob = await downloadRes.blob();
+          const pdfBytes = new Uint8Array(await pdfBlob.arrayBuffer());
+          const storagePath = `${sig.user_id}/${sig.dossier_ref}_procuration_signee.pdf`;
+
+          await supabase.storage
+            .from("signature-certificates")
+            .upload(storagePath, pdfBytes, { contentType: "application/pdf", upsert: true });
+
+          // Update certificate_path for future downloads
+          await supabase
+            .from("signatures")
+            .update({ certificate_path: storagePath })
+            .eq("yousign_signature_request_id", signatureRequestId);
+
+          const { data: urlData } = await supabase.storage
+            .from("signature-certificates")
+            .createSignedUrl(storagePath, 3600);
+
+          if (urlData?.signedUrl) {
+            return jsonResponse({ url: urlData.signedUrl });
+          }
+        }
+      }
+    }
+  } catch (err) {
+    console.error("[YOUSIGN] Download from API failed:", err);
+  }
+
+  return jsonResponse({ error: "Signed document not available" }, 404);
+}
+
 // ── Helpers ──────────────────────────────────────────────────────────────────
 
 async function archiveCertificate(supabase: ReturnType<typeof getSupabaseAdmin>, signatureRequestId: string) {
