@@ -205,6 +205,21 @@ async function handleSend(req: Request) {
     console.error("[MSB] DB insert error:", dbError);
   }
 
+  // Sync dossiers table: mark as sent
+  const { error: dossierSyncErr } = await supabase
+    .from("dossiers")
+    .update({
+      lrar_status: "lrar_envoye",
+      mysendingbox_letter_id: letter.id,
+      tracking_number: letter.tracking_number || null,
+      sent_at: new Date().toISOString(),
+    })
+    .eq("dossier_ref", dossierRef);
+
+  if (dossierSyncErr) {
+    console.error("[MSB] Dossier sync error:", dossierSyncErr);
+  }
+
   // Send WhatsApp notification
   if (clientPhone) {
     await sendWhatsAppNotification(
