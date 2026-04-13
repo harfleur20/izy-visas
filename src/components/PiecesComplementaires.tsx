@@ -184,9 +184,9 @@ export function PiecesComplementaires({
   }, [dossierId, newPieces]);
 
   const optionLabel =
-    optionChoisie === "A"
-      ? "Téléchargez-les et envoyez-les vous-même à la CRRV."
-      : "L'administrateur CapDémarches sera notifié pour les transmettre.";
+    optionChoisie === "B" || optionChoisie === "C"
+      ? "L'administrateur CapDémarches sera notifié pour les transmettre."
+      : "Téléchargez-les et envoyez-les vous-même à la CRRV.";
 
   return (
     <div className="border border-border rounded-xl overflow-hidden">
