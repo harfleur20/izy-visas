@@ -5,3 +5,8 @@
 [build.environment]
   # These Vite variables are public browser configuration and are expected in the built JS.
   SECRETS_SCAN_OMIT_KEYS = "VITE_SUPABASE_PROJECT_ID,VITE_SUPABASE_PUBLISHABLE_KEY,VITE_SUPABASE_URL"
+
+[[redirects]]
+  from = "/*"
+  to = "/index.html"
+  status = 200
