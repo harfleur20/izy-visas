@@ -929,107 +929,128 @@ const ClientSpace = () => {
               </Box>
             )}
 
-            {/* Card visual */}
-            <div className="bg-gradient-to-br from-background-3 via-primary-hover/[0.12] to-gold/[0.08] border border-border-2 rounded-[13px] p-4 mb-4 font-mono relative overflow-hidden">
-              <div className="absolute -top-8 -right-5 w-28 h-28 rounded-full bg-[radial-gradient(circle,rgba(56,112,255,0.14),transparent_70%)]" />
-              <div className="w-8 h-6 rounded-[3px] bg-gradient-to-br from-[#D4AF37] to-[#F5D060] mb-3 flex items-center justify-center">
-                <div className="w-5 h-3.5 rounded-sm bg-gradient-to-br from-[#B8960A] to-[#E8C040]" />
+            {/* ── Paiement déjà confirmé ── */}
+            {paymentConfirmed ? (
+              <div>
+                <Box variant="ok" title="✅ Paiement confirmé">
+                  Votre paiement a été validé avec succès. Vous pouvez passer à l'étape suivante.
+                </Box>
+
+                <div className="flex gap-2.5 mt-7">
+                  <button className="font-syne font-bold text-[0.78rem] px-5 py-2.5 rounded-[7px] bg-foreground/[0.07] text-muted-foreground border border-border-2 transition-all" onClick={() => setStep(8)}>← Retour</button>
+                  <button
+                    onClick={() => setStep(10)}
+                    className="font-syne font-bold text-[0.78rem] px-5 py-2.5 rounded-[7px] bg-primary-hover text-foreground hover:bg-[#5585ff] transition-all"
+                  >
+                    Continuer vers la signature →
+                  </button>
+                </div>
               </div>
-              <div className="text-[0.95rem] tracking-[0.16em] text-foreground mb-2.5 flex gap-2.5">
-                <span className="opacity-40">••••</span><span className="opacity-40">••••</span><span className="opacity-40">••••</span><span className="opacity-40">••••</span>
-              </div>
-              <div className="flex justify-between">
-                <div><div className="text-[0.5rem] text-muted-foreground uppercase tracking-wider font-syne mb-0.5">Titulaire</div><div className="text-xs">NOM PRÉNOM</div></div>
-                <div><div className="text-[0.5rem] text-muted-foreground uppercase tracking-wider font-syne mb-0.5">Expire</div><div className="text-xs">MM/AA</div></div>
-              </div>
-            </div>
+            ) : (
+              <div>
+                {/* Card visual */}
+                <div className="bg-gradient-to-br from-background-3 via-primary-hover/[0.12] to-gold/[0.08] border border-border-2 rounded-[13px] p-4 mb-4 font-mono relative overflow-hidden">
+                  <div className="absolute -top-8 -right-5 w-28 h-28 rounded-full bg-[radial-gradient(circle,rgba(56,112,255,0.14),transparent_70%)]" />
+                  <div className="w-8 h-6 rounded-[3px] bg-gradient-to-br from-[#D4AF37] to-[#F5D060] mb-3 flex items-center justify-center">
+                    <div className="w-5 h-3.5 rounded-sm bg-gradient-to-br from-[#B8960A] to-[#E8C040]" />
+                  </div>
+                  <div className="text-[0.95rem] tracking-[0.16em] text-foreground mb-2.5 flex gap-2.5">
+                    <span className="opacity-40">••••</span><span className="opacity-40">••••</span><span className="opacity-40">••••</span><span className="opacity-40">••••</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <div><div className="text-[0.5rem] text-muted-foreground uppercase tracking-wider font-syne mb-0.5">Titulaire</div><div className="text-xs">NOM PRÉNOM</div></div>
+                    <div><div className="text-[0.5rem] text-muted-foreground uppercase tracking-wider font-syne mb-0.5">Expire</div><div className="text-xs">MM/AA</div></div>
+                  </div>
+                </div>
 
-            <div className="grid md:grid-cols-2 gap-3 mb-4">
-              <button
-                type="button"
-                onClick={() => setPaymentMethod("stripe")}
-                className={`text-left rounded-xl border p-4 transition-all ${
-                  paymentMethod === "stripe"
-                    ? "border-primary bg-primary/[0.08]"
-                    : "border-border bg-background-2 hover:border-primary/60"
-                }`}
-              >
-                <div className="font-syne font-bold text-sm">Carte bancaire</div>
-                <div className="text-xs text-muted-foreground mt-1">Stripe · Visa · Mastercard · Amex</div>
-              </button>
-              <button
-                type="button"
-                onClick={() => setPaymentMethod("taramoney")}
-                className={`text-left rounded-xl border p-4 transition-all ${
-                  paymentMethod === "taramoney"
-                    ? "border-primary bg-primary/[0.08]"
-                    : "border-border bg-background-2 hover:border-primary/60"
-                }`}
-              >
-                <div className="font-syne font-bold text-sm">Mobile Money</div>
-                <div className="text-xs text-muted-foreground mt-1">Tara · WhatsApp · Telegram · SMS</div>
-              </button>
-            </div>
+                <div className="grid md:grid-cols-2 gap-3 mb-4">
+                  <button
+                    type="button"
+                    onClick={() => setPaymentMethod("stripe")}
+                    className={`text-left rounded-xl border p-4 transition-all ${
+                      paymentMethod === "stripe"
+                        ? "border-primary bg-primary/[0.08]"
+                        : "border-border bg-background-2 hover:border-primary/60"
+                    }`}
+                  >
+                    <div className="font-syne font-bold text-sm">Carte bancaire</div>
+                    <div className="text-xs text-muted-foreground mt-1">Stripe · Visa · Mastercard · Amex</div>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setPaymentMethod("taramoney")}
+                    className={`text-left rounded-xl border p-4 transition-all ${
+                      paymentMethod === "taramoney"
+                        ? "border-primary bg-primary/[0.08]"
+                        : "border-border bg-background-2 hover:border-primary/60"
+                    }`}
+                  >
+                    <div className="font-syne font-bold text-sm">Mobile Money</div>
+                    <div className="text-xs text-muted-foreground mt-1">Tara · WhatsApp · Telegram · SMS</div>
+                  </button>
+                </div>
 
-            <Box variant="info" title={paymentMethod === "stripe" ? "Paiement sécurisé Stripe" : "Paiement Mobile Money via Tara"}>
-              {paymentMethod === "stripe"
-                ? "Vous serez redirigé vers la page de paiement sécurisée Stripe. Vos données bancaires ne transitent jamais par nos serveurs."
-                : "Tara génère un lien de paiement Mobile Money. Le dossier passera à l'étape suivante après confirmation du paiement."}
-            </Box>
+                <Box variant="info" title={paymentMethod === "stripe" ? "Paiement sécurisé Stripe" : "Paiement Mobile Money via Tara"}>
+                  {paymentMethod === "stripe"
+                    ? "Vous serez redirigé vers la page de paiement sécurisée Stripe. Vos données bancaires ne transitent jamais par nos serveurs."
+                    : "Tara génère un lien de paiement Mobile Money. Le dossier passera à l'étape suivante après confirmation du paiement."}
+                </Box>
 
-            <button
-              disabled={!cguAccepted || !selectedOption || !activeDossier || paymentLoading}
-              onClick={handlePayment}
-              className={`w-full rounded-xl py-4 font-syne font-extrabold text-[0.92rem] transition-all flex items-center justify-center gap-2 mt-5 ${cguAccepted && selectedOption && activeDossier && !paymentLoading ? "cursor-pointer bg-gradient-to-br from-primary to-[#2258CC] text-foreground shadow-[0_8px_24px_rgba(26,80,220,0.32)] hover:shadow-[0_12px_32px_rgba(26,80,220,0.48)] hover:-translate-y-0.5" : "cursor-not-allowed opacity-50 bg-muted text-muted-foreground"}`}
-            >
-              {paymentLoading
-                ? "Préparation du paiement…"
-                : paymentMethod === "stripe"
-                  ? "🔒 Payer par carte"
-                  : "📱 Payer par Mobile Money"}
-            </button>
+                <button
+                  disabled={!cguAccepted || !selectedOption || !activeDossier || paymentLoading}
+                  onClick={handlePayment}
+                  className={`w-full rounded-xl py-4 font-syne font-extrabold text-[0.92rem] transition-all flex items-center justify-center gap-2 mt-5 ${cguAccepted && selectedOption && activeDossier && !paymentLoading ? "cursor-pointer bg-gradient-to-br from-primary to-[#2258CC] text-foreground shadow-[0_8px_24px_rgba(26,80,220,0.32)] hover:shadow-[0_12px_32px_rgba(26,80,220,0.48)] hover:-translate-y-0.5" : "cursor-not-allowed opacity-50 bg-muted text-muted-foreground"}`}
+                >
+                  {paymentLoading
+                    ? "Préparation du paiement…"
+                    : paymentMethod === "stripe"
+                      ? "🔒 Payer par carte"
+                      : "📱 Payer par Mobile Money"}
+                </button>
 
-            {taraPaymentLinks && (
-              <div className="mt-4 rounded-xl border border-border bg-background-2 p-4">
-                <div className="font-syne font-bold text-sm mb-2">Liens de paiement Tara</div>
-                <div className="grid sm:grid-cols-2 gap-2">
-                  {taraPaymentLinks.whatsappLink && <a href={taraPaymentLinks.whatsappLink} target="_blank" rel="noreferrer" className="rounded-lg border border-border px-3 py-2 text-sm hover:border-primary">WhatsApp</a>}
-                  {taraPaymentLinks.telegramLink && <a href={taraPaymentLinks.telegramLink} target="_blank" rel="noreferrer" className="rounded-lg border border-border px-3 py-2 text-sm hover:border-primary">Telegram</a>}
-                  {taraPaymentLinks.dikaloLink && <a href={taraPaymentLinks.dikaloLink} target="_blank" rel="noreferrer" className="rounded-lg border border-border px-3 py-2 text-sm hover:border-primary">Dikalo</a>}
-                  {taraPaymentLinks.smsLink && <a href={taraPaymentLinks.smsLink} className="rounded-lg border border-border px-3 py-2 text-sm hover:border-primary">SMS</a>}
+                {taraPaymentLinks && (
+                  <div className="mt-4 rounded-xl border border-border bg-background-2 p-4">
+                    <div className="font-syne font-bold text-sm mb-2">Liens de paiement Tara</div>
+                    <div className="grid sm:grid-cols-2 gap-2">
+                      {taraPaymentLinks.whatsappLink && <a href={taraPaymentLinks.whatsappLink} target="_blank" rel="noreferrer" className="rounded-lg border border-border px-3 py-2 text-sm hover:border-primary">WhatsApp</a>}
+                      {taraPaymentLinks.telegramLink && <a href={taraPaymentLinks.telegramLink} target="_blank" rel="noreferrer" className="rounded-lg border border-border px-3 py-2 text-sm hover:border-primary">Telegram</a>}
+                      {taraPaymentLinks.dikaloLink && <a href={taraPaymentLinks.dikaloLink} target="_blank" rel="noreferrer" className="rounded-lg border border-border px-3 py-2 text-sm hover:border-primary">Dikalo</a>}
+                      {taraPaymentLinks.smsLink && <a href={taraPaymentLinks.smsLink} className="rounded-lg border border-border px-3 py-2 text-sm hover:border-primary">SMS</a>}
+                    </div>
+                  </div>
+                )}
+
+                <div className="mt-4 text-center text-[0.72rem] text-muted-foreground leading-relaxed">
+                  {paymentMethod === "stripe" ? (
+                    <>
+                      💳 Paiement sécurisé par <strong>Stripe</strong><br />
+                      Visa · Mastercard · American Express<br />
+                      Chiffrement TLS 1.3 · PCI-DSS Level 1
+                    </>
+                  ) : (
+                    <>
+                      📱 Paiement sécurisé par <strong>Tara</strong><br />
+                      Mobile Money selon le pays et le canal choisi<br />
+                      Confirmation par webhook après paiement
+                    </>
+                  )}
+                </div>
+
+                <label className="flex items-start gap-3 mt-5 p-4 rounded-xl border border-border bg-background-2 cursor-pointer select-none">
+                  <input type="checkbox" checked={cguAccepted} onChange={(e) => setCguAccepted(e.target.checked)} className="mt-0.5 w-4 h-4 rounded border-border accent-primary shrink-0" />
+                  <span className="text-xs text-muted-foreground leading-relaxed">
+                    J'accepte les{" "}
+                    <a href="/cgu" target="_blank" className="text-primary hover:underline font-medium">Conditions Générales d'Utilisation et la Politique de Confidentialité</a>.
+                    Je comprends qu'IZY Visa est un outil d'aide à la rédaction et ne se substitue pas à un avocat.
+                  </span>
+                </label>
+                {!cguAccepted && <p className="text-[0.7rem] text-destructive mt-1 ml-1">Vous devez accepter les CGU avant de procéder au paiement.</p>}
+
+                <div className="flex gap-2.5 mt-7">
+                  <button className="font-syne font-bold text-[0.78rem] px-5 py-2.5 rounded-[7px] bg-foreground/[0.07] text-muted-foreground border border-border-2 transition-all" onClick={() => setStep(8)}>← Retour</button>
                 </div>
               </div>
             )}
-
-            <div className="mt-4 text-center text-[0.72rem] text-muted-foreground leading-relaxed">
-              {paymentMethod === "stripe" ? (
-                <>
-                  💳 Paiement sécurisé par <strong>Stripe</strong><br />
-                  Visa · Mastercard · American Express<br />
-                  Chiffrement TLS 1.3 · PCI-DSS Level 1
-                </>
-              ) : (
-                <>
-                  📱 Paiement sécurisé par <strong>Tara</strong><br />
-                  Mobile Money selon le pays et le canal choisi<br />
-                  Confirmation par webhook après paiement
-                </>
-              )}
-            </div>
-
-            <label className="flex items-start gap-3 mt-5 p-4 rounded-xl border border-border bg-background-2 cursor-pointer select-none">
-              <input type="checkbox" checked={cguAccepted} onChange={(e) => setCguAccepted(e.target.checked)} className="mt-0.5 w-4 h-4 rounded border-border accent-primary shrink-0" />
-              <span className="text-xs text-muted-foreground leading-relaxed">
-                J'accepte les{" "}
-                <a href="/cgu" target="_blank" className="text-primary hover:underline font-medium">Conditions Générales d'Utilisation et la Politique de Confidentialité</a>.
-                Je comprends qu'IZY Visa est un outil d'aide à la rédaction et ne se substitue pas à un avocat.
-              </span>
-            </label>
-            {!cguAccepted && <p className="text-[0.7rem] text-destructive mt-1 ml-1">Vous devez accepter les CGU avant de procéder au paiement.</p>}
-
-            <div className="flex gap-2.5 mt-7">
-              <button className="font-syne font-bold text-[0.78rem] px-5 py-2.5 rounded-[7px] bg-foreground/[0.07] text-muted-foreground border border-border-2 transition-all" onClick={() => setStep(8)}>← Retour</button>
-            </div>
           </div>
         )}
 
