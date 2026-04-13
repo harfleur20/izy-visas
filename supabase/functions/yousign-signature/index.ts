@@ -295,7 +295,7 @@ async function handleVerifyOtp(req: Request) {
       body: JSON.stringify({
         otp,
         ip_address: clientIp,
-        consent_given_at: new Date().toISOString(),
+        consent_given_at: new Date().toISOString().replace(/\.\d{3}Z$/, "+00:00"),
       }),
     }
   );
