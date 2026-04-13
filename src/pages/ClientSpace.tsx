@@ -1180,7 +1180,37 @@ const ClientSpace = () => {
                     <p>Valide jusqu'au {procurationExpiry ? new Date(procurationExpiry).toLocaleDateString("fr-FR") : "—"}</p>
                   </div>
                   <div className="flex gap-2 mt-3">
-                    <button className="font-syne font-bold text-xs px-3 py-1.5 rounded-lg bg-foreground/[0.07] text-muted-foreground border border-border">⬇️ Télécharger</button>
+                    <button
+                      onClick={async () => {
+                        try {
+                          // Try to get the procuration PDF from signatures table
+                          const { data: sig } = await supabase
+                            .from("signatures")
+                            .select("certificate_path")
+                            .eq("dossier_ref", activeDossier!.dossier_ref)
+                            .eq("user_id", user!.id)
+                            .order("created_at", { ascending: false })
+                            .limit(1)
+                            .maybeSingle();
+
+                          if (sig?.certificate_path) {
+                            const { data: urlData } = await supabase.storage
+                              .from("signature-certificates")
+                              .createSignedUrl(sig.certificate_path, 300);
+                            if (urlData?.signedUrl) {
+                              window.open(urlData.signedUrl, "_blank");
+                              return;
+                            }
+                          }
+
+                          toast({ title: "PDF indisponible", description: "Le PDF de procuration n'est pas encore disponible.", variant: "destructive" });
+                        } catch (err) {
+                          console.error("Download procuration error:", err);
+                          toast({ title: "Erreur", description: "Erreur lors du téléchargement de la procuration.", variant: "destructive" });
+                        }
+                      }}
+                      className="font-syne font-bold text-xs px-3 py-1.5 rounded-lg bg-foreground/[0.07] text-muted-foreground border border-border hover:bg-foreground/[0.12] transition-colors"
+                    >⬇️ Télécharger</button>
                     {procurationExpiry && (() => {
                       const daysLeft = Math.ceil((new Date(procurationExpiry).getTime() - Date.now()) / 86400000);
                       return daysLeft <= 30 ? (
