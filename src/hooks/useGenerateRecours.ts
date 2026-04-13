@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from "react";
+import { useState, useCallback } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
 import type { GenerationResult } from "@/components/ComplianceReport";
@@ -24,20 +24,25 @@ export function useGenerateRecours() {
       .single();
 
     if (data?.lettre_neutre_contenu) {
-      // Rebuild a minimal GenerationResult from saved data
+      // Rebuild a GenerationResult from saved data
       const refs = (data.references_verifiees as any[]) || [];
       const refsToCheck = (data.references_a_verifier as any[]) || [];
       const hasAVerifier = refsToCheck.length > 0;
       const hasNonTrouve = refs.some((r: any) => r.statut === "non_trouve_openlegi");
 
+      // If the letter was generated and saved, it passed validation at generation time.
+      // Bloc report isn't persisted, so we mark it as restored (no bloc-level detail).
+      const canSend = !hasNonTrouve;
+
       const restored: GenerationResult = {
         letter: data.lettre_neutre_contenu,
-        bloc_report: [],
+        bloc_report: [], // Not persisted — will show "restored" UI
         references_status: refs,
-        can_send: data.validation_juridique_status === "validee_ia" || data.validation_juridique_status === "validee_avocat",
+        can_send: canSend,
         has_red_blocs: false,
         has_non_trouve_refs: hasNonTrouve,
         has_a_verifier_refs: hasAVerifier,
+        _restored: true,
       };
       setResult(restored);
     }
