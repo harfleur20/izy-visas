@@ -1,5 +1,7 @@
 import { ReactNode, useState, useEffect, useRef } from "react";
 import { useNavigate } from "react-router-dom";
+import { useAuth } from "@/hooks/useAuth";
+import { LogOut } from "lucide-react";
 
 interface ShellLayoutProps {
   role: string;
@@ -23,6 +25,7 @@ const ShellLayout = ({
   bottomNavItems,
 }: ShellLayoutProps) => {
   const navigate = useNavigate();
+  const { signOut } = useAuth();
   const [drawerOpen, setDrawerOpen] = useState(false);
   const drawerRef = useRef<HTMLDivElement>(null);
 
@@ -140,6 +143,14 @@ const ShellLayout = ({
           </div>
           <div className="flex items-center gap-2 sm:gap-2.5 flex-shrink-0">
             {topbarRight}
+            <button
+              onClick={async () => { await signOut(); navigate("/"); }}
+              className="w-[30px] h-[30px] rounded-md bg-foreground/[0.06] border border-border-2 flex items-center justify-center text-muted-foreground hover:text-destructive hover:bg-destructive/10 transition-all"
+              title="Se déconnecter"
+              aria-label="Se déconnecter"
+            >
+              <LogOut size={14} />
+            </button>
           </div>
         </div>
 
