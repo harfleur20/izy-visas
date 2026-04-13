@@ -174,7 +174,7 @@ export function DocumentUploader({
       });
       toast.error("Erreur lors de l'upload du document");
     }
-  }, [dossierId, userId, typePiece, isDecisionRefus, nomPiece, onPieceUploaded]);
+  }, [dossierId, userId, typePiece, isDecisionRefus, nomPiece, onPieceUploaded, onPieceRemoved]);
 
   const handleAutoCorrect = useCallback(async (piece: UploadedPiece) => {
     if (!piece.file) return;
