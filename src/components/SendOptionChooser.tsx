@@ -1,6 +1,16 @@
 import { useState, useEffect } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { Eyebrow, BigTitle, Desc, Box } from "@/components/ui-custom";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 
 interface Tarification {
   generation_lettre_eur: number;
@@ -8,17 +18,27 @@ interface Tarification {
   honoraires_avocat_eur: number;
 }
 
+type SendOption = "A" | "B" | "C";
+
 interface SendOptionChooserProps {
   dossierRef: string;
   dateNotification?: string;
-  onSelect: (option: "A" | "B" | "C") => void;
+  onSelect: (option: SendOption) => void;
   onBack: () => void;
   loading?: boolean;
+  paidOptions?: SendOption[];
 }
 
-export const SendOptionChooser = ({ dossierRef, dateNotification, onSelect, onBack, loading = false }: SendOptionChooserProps) => {
+const OPTION_NAMES: Record<SendOption, string> = {
+  A: "Téléchargement direct",
+  B: "Envoi MySendingBox",
+  C: "Avocat partenaire",
+};
+
+export const SendOptionChooser = ({ dossierRef, dateNotification, onSelect, onBack, loading = false, paidOptions = [] }: SendOptionChooserProps) => {
   const [tarifs, setTarifs] = useState<Tarification | null>(null);
   const [daysLeft, setDaysLeft] = useState<number | null>(null);
+  const [confirmOption, setConfirmOption] = useState<SendOption | null>(null);
 
   useEffect(() => {
     const fetchTarifs = async () => {
@@ -46,24 +66,47 @@ export const SendOptionChooser = ({ dossierRef, dateNotification, onSelect, onBa
   const totalB = genPrice + msbPrice;
   const totalC = genPrice + msbPrice + avocatPrice;
 
+  const handleOptionClick = (option: SendOption) => {
+    if (loading) return;
+    // If another option was already paid, warn the user
+    const otherPaidOptions = paidOptions.filter((o) => o !== option);
+    if (otherPaidOptions.length > 0) {
+      setConfirmOption(option);
+      return;
+    }
+    onSelect(option);
+  };
+
+  const paidBadge = (option: SendOption) => {
+    if (!paidOptions.includes(option)) return null;
+    return (
+      <span className="inline-block bg-green-600/20 text-green-400 border border-green-500/30 text-[0.6rem] font-syne font-bold px-2 py-0.5 rounded-full ml-2">
+        ✓ PAYÉ
+      </span>
+    );
+  };
+
   return (
     <div>
       <Eyebrow>Choix du mode d'envoi</Eyebrow>
       <BigTitle>Comment souhaitez-vous envoyer votre recours ?</BigTitle>
       <Desc>Votre lettre est prête. Choisissez votre mode d'envoi.</Desc>
 
-      {/* Option A — Téléchargement */}
       {loading && (
         <Box variant="info" title="Finalisation de la lettre">
           Préparation du PDF définitif avant paiement…
         </Box>
       )}
 
-      <div className={`bg-panel border border-border rounded-xl p-5 mb-4 transition-all group ${loading ? "opacity-60 pointer-events-none" : "cursor-pointer hover:border-primary-hover/40"}`} onClick={() => onSelect("A")}>
+      {/* Option A — Téléchargement */}
+      <div className={`bg-panel border border-border rounded-xl p-5 mb-4 transition-all group ${loading ? "opacity-60 pointer-events-none" : "cursor-pointer hover:border-primary-hover/40"}`} onClick={() => handleOptionClick("A")}>
         <div className="flex gap-4 items-start">
           <div className="text-3xl flex-shrink-0">📥</div>
           <div className="flex-1">
-            <h3 className="font-syne font-bold text-sm mb-1">Je télécharge et j'envoie moi-même</h3>
+            <h3 className="font-syne font-bold text-sm mb-1">
+              Je télécharge et j'envoie moi-même
+              {paidBadge("A")}
+            </h3>
             <p className="text-xs text-muted-foreground leading-relaxed mb-3">
               Je signe ma lettre électroniquement et je la télécharge en PDF. Je l'envoie par lettre recommandée depuis un bureau de poste.
             </p>
@@ -82,14 +125,17 @@ export const SendOptionChooser = ({ dossierRef, dateNotification, onSelect, onBa
       </div>
 
       {/* Option B — MySendingBox */}
-      <div className={`bg-gradient-to-br from-post-dark/20 to-gold-3/[0.08] border-[1.5px] border-post-dark/35 rounded-[14px] p-5 mb-4 transition-all group ${loading ? "opacity-60 pointer-events-none" : "cursor-pointer hover:border-primary-hover/50"}`} onClick={() => onSelect("B")}>
+      <div className={`bg-gradient-to-br from-post-dark/20 to-gold-3/[0.08] border-[1.5px] border-post-dark/35 rounded-[14px] p-5 mb-4 transition-all group ${loading ? "opacity-60 pointer-events-none" : "cursor-pointer hover:border-primary-hover/50"}`} onClick={() => handleOptionClick("B")}>
         <div className="flex gap-4 items-start">
           <div className="flex flex-col items-center gap-0.5 flex-shrink-0">
             <div className="bg-post-dark text-post font-syne font-extrabold text-sm px-2.5 py-1 rounded-t">LA POSTE</div>
             <div className="bg-post text-post-dark font-syne font-extrabold text-[0.65rem] px-2.5 py-0.5 rounded-b tracking-wider">MYSENDINGBOX</div>
           </div>
           <div className="flex-1">
-            <h3 className="font-syne font-bold text-sm mb-1">IZY envoie par courrier recommandé</h3>
+            <h3 className="font-syne font-bold text-sm mb-1">
+              IZY envoie par courrier recommandé
+              {paidBadge("B")}
+            </h3>
             <p className="text-xs text-muted-foreground leading-relaxed mb-3">
               Je signe ma lettre électroniquement et IZY l'envoie automatiquement en LRAR via MySendingBox.
             </p>
@@ -108,12 +154,15 @@ export const SendOptionChooser = ({ dossierRef, dateNotification, onSelect, onBa
       </div>
 
       {/* Option C — Avocat */}
-      <div className={`bg-gradient-to-br from-primary/10 to-gold/[0.07] border-[1.5px] border-gold-2/35 rounded-[14px] p-5 mb-4 relative overflow-hidden transition-all group ${loading ? "opacity-60 pointer-events-none" : "cursor-pointer hover:border-gold-2/60"}`} onClick={() => onSelect("C")}>
+      <div className={`bg-gradient-to-br from-primary/10 to-gold/[0.07] border-[1.5px] border-gold-2/35 rounded-[14px] p-5 mb-4 relative overflow-hidden transition-all group ${loading ? "opacity-60 pointer-events-none" : "cursor-pointer hover:border-gold-2/60"}`} onClick={() => handleOptionClick("C")}>
         <div className="absolute top-3 right-3 bg-gold-2 text-background font-syne text-[0.58rem] font-extrabold px-2 py-0.5 rounded tracking-wider">RECOMMANDÉ</div>
         <div className="flex gap-4 items-start">
           <div className="text-3xl flex-shrink-0">⚖️</div>
           <div className="flex-1">
-            <h3 className="font-syne font-bold text-[0.95rem] mb-1">Un avocat relit, signe et envoie</h3>
+            <h3 className="font-syne font-bold text-[0.95rem] mb-1">
+              Un avocat relit, signe et envoie
+              {paidBadge("C")}
+            </h3>
             <p className="text-xs text-gold leading-relaxed mb-3">
               Un avocat partenaire IZY relit votre lettre, la corrige si nécessaire, la signe en son nom et l'envoie par courrier recommandé.
             </p>
@@ -141,6 +190,40 @@ export const SendOptionChooser = ({ dossierRef, dateNotification, onSelect, onBa
       <div className="flex gap-2.5 mt-7">
         <button className="font-syne font-bold text-[0.78rem] px-5 py-2.5 rounded-[7px] bg-foreground/[0.07] text-muted-foreground border border-border-2 transition-all" onClick={onBack}>← Retour</button>
       </div>
+
+      {/* Confirmation dialog when switching from a paid option */}
+      <AlertDialog open={!!confirmOption} onOpenChange={(open) => !open && setConfirmOption(null)}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>⚠️ Changement d'option</AlertDialogTitle>
+            <AlertDialogDescription className="space-y-2">
+              <p>
+                Vous avez déjà payé pour l'option{" "}
+                <strong>{paidOptions.map((o) => OPTION_NAMES[o]).join(", ")}</strong>.
+              </p>
+              <p>
+                En choisissant <strong>{confirmOption ? OPTION_NAMES[confirmOption] : ""}</strong>, un nouveau paiement sera requis.
+                Le précédent paiement <strong>ne sera pas remboursé</strong>.
+              </p>
+              <p className="text-destructive font-medium">
+                Êtes-vous sûr de vouloir continuer ?
+              </p>
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Annuler</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={() => {
+                if (confirmOption) onSelect(confirmOption);
+                setConfirmOption(null);
+              }}
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+            >
+              Confirmer le changement
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 };
