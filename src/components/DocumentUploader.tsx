@@ -333,22 +333,13 @@ function PieceCard({
 
           {/* Loading states */}
           {piece.status === "uploading" && (
-            <div className="mt-2">
-              <p className="text-xs text-muted-foreground mb-1">Upload en cours…</p>
-              <Progress value={30} className="h-1" />
-            </div>
+            <AnimatedProgress label="Upload en cours…" targetPct={90} durationMs={3000} />
           )}
           {piece.status === "analyzing" && (
-            <div className="mt-2">
-              <p className="text-xs text-muted-foreground mb-1">Analyse OCR en cours…</p>
-              <Progress value={70} className="h-1" />
-            </div>
+            <AnimatedProgress label="Analyse OCR en cours…" targetPct={90} durationMs={8000} />
           )}
           {piece.status === "correcting" && (
-            <div className="mt-2">
-              <p className="text-xs text-muted-foreground mb-1">Correction automatique en cours…</p>
-              <Progress value={50} className="h-1" />
-            </div>
+            <AnimatedProgress label="Correction automatique en cours…" targetPct={90} durationMs={6000} />
           )}
 
           {/* Accepted */}
