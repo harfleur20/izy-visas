@@ -1183,10 +1183,9 @@ const ClientSpace = () => {
                     <button
                       onClick={async () => {
                         try {
-                          // Try to get the procuration PDF from signatures table
                           const { data: sig } = await supabase
                             .from("signatures")
-                            .select("certificate_path")
+                            .select("certificate_path, yousign_signature_request_id")
                             .eq("dossier_ref", activeDossier!.dossier_ref)
                             .eq("user_id", user!.id)
                             .order("created_at", { ascending: false })
@@ -1203,10 +1202,21 @@ const ClientSpace = () => {
                             }
                           }
 
-                          toast({ title: "PDF indisponible", description: "Le PDF de procuration n'est pas encore disponible.", variant: "destructive" });
+                          // Fallback: try fetching signed document from YouSign via edge function
+                          if (sig?.yousign_signature_request_id) {
+                            const { data: dlData } = await supabase.functions.invoke("yousign-signature/download", {
+                              body: { signatureRequestId: sig.yousign_signature_request_id },
+                            });
+                            if (dlData?.url) {
+                              window.open(dlData.url, "_blank");
+                              return;
+                            }
+                          }
+
+                          toast({ title: "PDF indisponible", description: "Le PDF de procuration n'est pas encore disponible. Veuillez réessayer plus tard.", variant: "destructive" });
                         } catch (err) {
                           console.error("Download procuration error:", err);
-                          toast({ title: "Erreur", description: "Erreur lors du téléchargement de la procuration.", variant: "destructive" });
+                          toast({ title: "Erreur", description: "Erreur lors du téléchargement.", variant: "destructive" });
                         }
                       }}
                       className="font-syne font-bold text-xs px-3 py-1.5 rounded-lg bg-foreground/[0.07] text-muted-foreground border border-border hover:bg-foreground/[0.12] transition-colors"
