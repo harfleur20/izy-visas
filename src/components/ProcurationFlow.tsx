@@ -642,24 +642,22 @@ export const ProcurationFlow = ({
                   </pre>
                 </div>
               ) : (
-                <div className="border border-border rounded-xl overflow-hidden flex flex-col items-center justify-center bg-muted/10" style={{ height: "45vh" }}>
-                  {(() => {
-                    const b64 = textToPdfBase64(procurationData.pdf);
-                    const binary = atob(b64);
-                    const bytes = new Uint8Array(binary.length);
-                    for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
-                    const blob = new Blob([bytes], { type: "application/pdf" });
-                    const blobUrl = URL.createObjectURL(blob);
-                    return (
-                      <>
-                        <iframe
-                          src={blobUrl + "#toolbar=0"}
-                          className="w-full h-full"
-                          title="Aperçu PDF de la procuration"
-                        />
-                      </>
-                    );
-                  })()}
+                <div className="border border-border rounded-xl overflow-auto bg-muted/30 flex justify-center p-4" style={{ maxHeight: "45vh" }}>
+                  <div
+                    className="bg-white text-black rounded shadow-lg"
+                    style={{
+                      width: "595px",
+                      minHeight: "842px",
+                      padding: "50px",
+                      fontFamily: "Helvetica, Arial, sans-serif",
+                      fontSize: "11px",
+                      lineHeight: "1.6",
+                      whiteSpace: "pre-wrap",
+                      wordBreak: "break-word",
+                    }}
+                  >
+                    {procurationData.display}
+                  </div>
                 </div>
               )}
 
