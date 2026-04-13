@@ -204,3 +204,53 @@
   font-size: 13px;
   font-weight: 600;
 }
+
+/* Phone input styling */
+.phone-input-custom {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  background: hsl(var(--background-2));
+  border: 1.5px solid hsl(var(--border-2));
+  border-radius: 9px;
+  padding: 6px 12px;
+  transition: all 0.2s;
+}
+.phone-input-custom:focus-within {
+  border-color: hsl(var(--primary-hover) / 0.55);
+  background: hsl(var(--primary) / 0.07);
+  box-shadow: 0 0 0 3px hsl(var(--primary) / 0.1);
+}
+.phone-input-custom .PhoneInputCountry {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+.phone-input-custom .PhoneInputCountryIcon {
+  width: 22px;
+  height: 16px;
+  border-radius: 2px;
+  overflow: hidden;
+}
+.phone-input-custom .PhoneInputCountrySelectArrow {
+  opacity: 0.5;
+  margin-left: 2px;
+}
+.phone-input-custom .PhoneInputCountrySelect {
+  position: absolute;
+  top: 0; left: 0; right: 0; bottom: 0;
+  opacity: 0;
+  cursor: pointer;
+}
+.phone-input-custom input {
+  flex: 1;
+  background: transparent;
+  border: none;
+  outline: none;
+  color: hsl(var(--foreground));
+  font-size: 14px;
+}
+.phone-input-custom input::placeholder {
+  color: hsl(var(--muted-foreground));
+}
