@@ -976,6 +976,7 @@ const ClientSpace = () => {
             onChooseOption={() => setStep(8)}
             onBack={() => setStep(5)}
             canGenerate={!!activeDossier}
+            isPaid={paidOptions.length > 0}
           />
         )}
 

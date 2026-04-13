@@ -1,3 +1,4 @@
+import { useRef } from "react";
 import { Eyebrow, BigTitle, Desc, Box } from "@/components/ui-custom";
 import { ComplianceReportPanel, type GenerationResult } from "@/components/ComplianceReport";
 
@@ -9,6 +10,7 @@ interface LetterPreviewProps {
   onChooseOption: () => void;
   onBack: () => void;
   canGenerate: boolean;
+  isPaid?: boolean;
 }
 
 export const LetterPreview = ({
@@ -19,7 +21,16 @@ export const LetterPreview = ({
   onChooseOption,
   onBack,
   canGenerate,
+  isPaid = false,
 }: LetterPreviewProps) => {
+  const letterRef = useRef<HTMLDivElement>(null);
+
+  const handleScrollAttempt = () => {
+    if (!isPaid) {
+      onChooseOption();
+    }
+  };
+
   return (
     <div>
       <Eyebrow>Lettre de recours</Eyebrow>
@@ -57,9 +68,33 @@ export const LetterPreview = ({
             Cette lettre contient tous vos arguments juridiques. Le signataire sera complété après votre choix de mode d'envoi.
           </Box>
 
-          {/* Letter content - first page preview */}
-          <div className="bg-panel border border-border rounded-xl p-5 text-[0.79rem] text-muted-foreground leading-relaxed mb-4 max-h-[500px] overflow-y-auto whitespace-pre-wrap">
-            {result.letter}
+          {/* Letter content — locked if not paid */}
+          <div className="relative mb-4">
+            <div
+              ref={letterRef}
+              className={`bg-panel border border-border rounded-xl p-5 text-[0.79rem] text-muted-foreground leading-relaxed whitespace-pre-wrap select-none ${
+                isPaid ? "max-h-[500px] overflow-y-auto" : "max-h-[220px] overflow-hidden"
+              }`}
+              onWheel={!isPaid ? (e) => { e.preventDefault(); handleScrollAttempt(); } : undefined}
+              onTouchMove={!isPaid ? (e) => { e.preventDefault(); handleScrollAttempt(); } : undefined}
+              style={!isPaid ? { userSelect: "none", WebkitUserSelect: "none" } : undefined}
+            >
+              {result.letter}
+            </div>
+
+            {/* Gradient overlay + lock message when not paid */}
+            {!isPaid && (
+              <div
+                className="absolute inset-0 top-[120px] rounded-b-xl flex flex-col items-center justify-end pb-5 cursor-pointer"
+                style={{ background: "linear-gradient(to bottom, transparent 0%, hsl(var(--background)) 70%)" }}
+                onClick={handleScrollAttempt}
+              >
+                <div className="bg-primary-hover/15 border border-primary-hover/30 rounded-lg px-5 py-3 text-center backdrop-blur-sm">
+                  <p className="font-syne font-bold text-[0.82rem] text-primary-hover mb-0.5">🔒 Contenu protégé</p>
+                  <p className="text-[0.7rem] text-muted-foreground">Choisissez votre mode d'envoi pour accéder à l'intégralité de la lettre</p>
+                </div>
+              </div>
+            )}
           </div>
 
           {/* Compliance Report */}
@@ -74,20 +109,6 @@ export const LetterPreview = ({
               disabled={loading}
             >
               🔄 Régénérer
-            </button>
-            <button
-              className="font-syne font-bold text-[0.78rem] px-5 py-2.5 rounded-[7px] bg-primary/[0.18] text-primary-hover border border-primary-hover/30 transition-all"
-              onClick={() => {
-                const blob = new Blob([result.letter], { type: "text/plain;charset=utf-8" });
-                const url = URL.createObjectURL(blob);
-                const a = document.createElement("a");
-                a.href = url;
-                a.download = `brouillon_recours.txt`;
-                a.click();
-                URL.revokeObjectURL(url);
-              }}
-            >
-              📥 Télécharger le brouillon
             </button>
             <button
               className={`font-syne font-bold text-[0.78rem] px-5 py-2.5 rounded-[7px] transition-all ${
