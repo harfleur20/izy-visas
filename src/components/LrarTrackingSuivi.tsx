@@ -41,7 +41,7 @@ export function LrarTrackingSuivi({ dossierId, dossierRef }: LrarTrackingSuiviPr
     const load = async () => {
       const { data } = await supabase
         .from("dossiers")
-        .select("lrar_status, tracking_number, sent_at, delivered_at, recipient_name, dossier_ref")
+        .select("lrar_status, tracking_number, sent_at, delivered_at, recipient_name, dossier_ref, statut_final")
         .eq("id", dossierId)
         .single();
       setDossier(data);
