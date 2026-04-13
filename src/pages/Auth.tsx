@@ -6,6 +6,7 @@ import { toast } from "@/hooks/use-toast";
 import { useAuth } from "@/hooks/useAuth";
 import { useEffect } from "react";
 import { homeRouteForRole, isAdminRole } from "@/lib/roles";
+import { PhoneInput, isValidPhoneNumber } from "@/components/PhoneInput";
 
 const Auth = () => {
   const navigate = useNavigate();
@@ -17,6 +18,7 @@ const Auth = () => {
   const [firstName, setFirstName] = useState("");
   const [lastName, setLastName] = useState("");
   const [phone, setPhone] = useState("");
+  const [phoneError, setPhoneError] = useState("");
   const [dateNaissance, setDateNaissance] = useState("");
   const [lieuNaissance, setLieuNaissance] = useState("");
   const [nationalite, setNationalite] = useState("");
@@ -46,6 +48,12 @@ const Auth = () => {
     setLoading(true);
     try {
       if (mode === "signup") {
+        if (phone && !isValidPhoneNumber(phone)) {
+          setPhoneError("Numéro de téléphone invalide");
+          setLoading(false);
+          return;
+        }
+        setPhoneError("");
         const { error } = await supabase.auth.signUp({
           email,
           password,
@@ -163,8 +171,8 @@ const Auth = () => {
           {mode === "signup" && (
             <>
               <div>
-                <label className={labelClass}>Téléphone WhatsApp (optionnel)</label>
-                <input type="tel" className={inputClass} value={phone} onChange={(e) => setPhone(e.target.value)} placeholder="+221 77 000 00 00" />
+                <label className={labelClass}>Téléphone WhatsApp – alertes, délais (optionnel)</label>
+                <PhoneInput value={phone} onChange={(v) => { setPhone(v); if (phoneError) setPhoneError(""); }} error={phoneError} />
               </div>
 
               <div className="pt-2">
