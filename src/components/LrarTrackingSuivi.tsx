@@ -34,6 +34,7 @@ const STATUS_INDEX: Record<string, number> = {
 
 export function LrarTrackingSuivi({ dossierId, dossierRef }: LrarTrackingSuiviProps) {
   const [dossier, setDossier] = useState<any>(null);
+  const [savingFinal, setSavingFinal] = useState(false);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
