@@ -642,12 +642,24 @@ export const ProcurationFlow = ({
                   </pre>
                 </div>
               ) : (
-                <div className="border border-border rounded-xl overflow-hidden" style={{ height: "45vh" }}>
-                  <iframe
-                    src={`data:application/pdf;base64,${textToPdfBase64(procurationData.pdf)}`}
-                    className="w-full h-full"
-                    title="Aperçu PDF de la procuration"
-                  />
+                <div className="border border-border rounded-xl overflow-hidden flex flex-col items-center justify-center bg-muted/10" style={{ height: "45vh" }}>
+                  {(() => {
+                    const b64 = textToPdfBase64(procurationData.pdf);
+                    const binary = atob(b64);
+                    const bytes = new Uint8Array(binary.length);
+                    for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
+                    const blob = new Blob([bytes], { type: "application/pdf" });
+                    const blobUrl = URL.createObjectURL(blob);
+                    return (
+                      <>
+                        <iframe
+                          src={blobUrl + "#toolbar=0"}
+                          className="w-full h-full"
+                          title="Aperçu PDF de la procuration"
+                        />
+                      </>
+                    );
+                  })()}
                 </div>
               )}
 
