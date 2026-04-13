@@ -301,6 +301,7 @@ export const ProcurationFlow = ({
   const [editValues, setEditValues] = useState<Partial<ProfileData>>({});
   const [draftMissing, setDraftMissing] = useState<Partial<ProfileData>>({});
   const [checks, setChecks] = useState({ lu: false, autorise: false, comprends: false });
+  const [certifie, setCertifie] = useState(false);
   const [signatureRequestId, setSignatureRequestId] = useState("");
   const [signerId, setSignerId] = useState("");
   const [otpValue, setOtpValue] = useState("");
@@ -344,6 +345,7 @@ export const ProcurationFlow = ({
     if (open) {
       setStep("verify");
       setChecks({ lu: false, autorise: false, comprends: false });
+      setCertifie(false);
       setOtpValue("");
       setEditingField(null);
     }
@@ -585,17 +587,35 @@ export const ProcurationFlow = ({
 
                 <div className="bg-primary/5 border border-primary/20 rounded-lg p-3 mt-4">
                   <p className="text-xs text-muted-foreground leading-relaxed">
-                    Ces informations figureront exactement telles quelles dans votre procuration.
-                    Vérifiez-les attentivement.
+                    Ces informations figureront <strong>exactement telles quelles</strong> dans votre procuration et votre lettre de recours.
+                    Toute erreur pourrait invalider votre dossier.
                   </p>
                 </div>
 
+                <label
+                  className={`flex items-start gap-3 p-3 rounded-lg border cursor-pointer transition-all mt-2 ${
+                    certifie
+                      ? "bg-green-500/5 border-green-500/25"
+                      : "bg-muted/10 border-border hover:border-muted-foreground/30"
+                  }`}
+                >
+                  <input
+                    type="checkbox"
+                    checked={certifie}
+                    onChange={(e) => setCertifie(e.target.checked)}
+                    className="mt-0.5 w-4 h-4 rounded accent-green-600"
+                  />
+                  <span className={`text-sm ${certifie ? "text-green-700 dark:text-green-400 font-medium" : "text-muted-foreground"}`}>
+                    Je certifie que les informations ci-dessus sont exactes et conformes à mes documents d'identité officiels.
+                  </span>
+                </label>
+
                 <button
                   onClick={() => setStep("consent")}
-                  disabled={!allFieldsFilled}
+                  disabled={!allFieldsFilled || !certifie}
                   className="w-full font-syne font-bold text-sm px-5 py-3 rounded-xl bg-primary text-primary-foreground disabled:opacity-50 mt-2"
                 >
-                  Ces informations sont correctes → Voir la procuration
+                  Continuer → Voir la procuration
                 </button>
               </div>
             )}
