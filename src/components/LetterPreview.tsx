@@ -70,7 +70,7 @@ export const LetterPreview = ({
             <button className="font-syne font-bold text-[0.78rem] px-5 py-2.5 rounded-[7px] bg-foreground/[0.07] text-muted-foreground border border-border-2 transition-all" onClick={onBack}>← Retour</button>
             <button
               className="font-syne font-bold text-[0.78rem] px-5 py-2.5 rounded-[7px] bg-primary/[0.18] text-primary-hover border border-primary-hover/30 transition-all"
-              onClick={onRegenerate}
+              onClick={() => { window.scrollTo({ top: 0, behavior: "smooth" }); onRegenerate(); }}
               disabled={loading}
             >
               🔄 Régénérer
