@@ -301,6 +301,7 @@ export const ProcurationFlow = ({
   const [editValues, setEditValues] = useState<Partial<ProfileData>>({});
   const [draftMissing, setDraftMissing] = useState<Partial<ProfileData>>({});
   const [checks, setChecks] = useState({ lu: false, autorise: false, comprends: false });
+  const [certifie, setCertifie] = useState(false);
   const [signatureRequestId, setSignatureRequestId] = useState("");
   const [signerId, setSignerId] = useState("");
   const [otpValue, setOtpValue] = useState("");
