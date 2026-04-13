@@ -274,7 +274,7 @@ export function PiecesComplementaires({
                   dossierId={dossierId}
                   userId={userId}
                   typePiece="complementaire"
-                  nomPiece=""
+                  nomPiece={undefined}
                   onPieceUploaded={handlePieceUploaded}
                   onPieceRemoved={handlePieceRemoved}
                   pieces={newPieces}
