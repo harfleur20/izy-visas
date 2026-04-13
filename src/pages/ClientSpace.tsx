@@ -297,31 +297,30 @@ const ClientSpace = () => {
         .eq("dossier_id", dossierId)
         .order("created_at", { ascending: true });
 
-      if (data && data.length > 0) {
-        const mapped: UploadedPiece[] = data.map((row) => {
-          const details = (row.ocr_details || {}) as OcrDetails;
-          let status: UploadedPiece["status"] = "analyzing";
-          if (row.statut_ocr === "accepte") status = "accepted";
-          else if (row.statut_ocr === "rejete" || row.statut_ocr === "erreur") status = "rejected";
-          else if (row.statut_ocr === "en_cours") status = "analyzing";
+      const mapped: UploadedPiece[] = (data || []).map((row) => {
+        const details = (row.ocr_details || {}) as OcrDetails;
+        let status: UploadedPiece["status"] = "analyzing";
+        if (row.statut_ocr === "accepte") status = "accepted";
+        else if (row.statut_ocr === "rejete" || row.statut_ocr === "erreur") status = "rejected";
+        else if (row.statut_ocr === "en_cours") status = "analyzing";
 
-          return {
-            id: row.id,
-            name: row.nom_piece,
-            status,
-            score: row.score_qualite || 0,
-            pages: row.nombre_pages || 1,
-            rejectionMessage: row.motif_rejet || undefined,
-            canAutoCorrect: details.canAutoCorrect || false,
-            fileUrl: row.url_fichier_original || undefined,
-            typeMismatchWarning: details.typeMismatchWarning || undefined,
-            decisionWarning: details.decisionWarning || undefined,
-            languageNotice: details.languageNotice || undefined,
-            typeDocumentDetecte: row.type_document_detecte || undefined,
-          };
-        });
-        setUploadedPieces(mapped);
-      }
+        return {
+          id: row.id,
+          name: row.nom_piece,
+          status,
+          score: row.score_qualite || 0,
+          pages: row.nombre_pages || 1,
+          rejectionMessage: row.motif_rejet || undefined,
+          canAutoCorrect: details.canAutoCorrect || false,
+          fileUrl: row.url_fichier_original || undefined,
+          typeMismatchWarning: details.typeMismatchWarning || undefined,
+          decisionWarning: details.decisionWarning || undefined,
+          languageNotice: details.languageNotice || undefined,
+          typeDocumentDetecte: row.type_document_detecte || undefined,
+        };
+      });
+
+      setUploadedPieces(mapped);
     };
     loadPieces();
 
@@ -386,18 +385,35 @@ const ClientSpace = () => {
 
   const handlePieceUploaded = useCallback((piece: UploadedPiece) => {
     setUploadedPieces((prev) => {
-      const idx = prev.findIndex((p) => p.id === piece.id);
+      const withoutTemp = piece.id.startsWith("temp-")
+        ? prev
+        : prev.filter((p) => !(p.id.startsWith("temp-") && p.name === piece.name));
+
+      const idx = withoutTemp.findIndex((p) => p.id === piece.id);
       if (idx >= 0) {
-        const next = [...prev];
-        next[idx] = piece;
+        const next = [...withoutTemp];
+        next[idx] = { ...next[idx], ...piece };
         return next;
       }
-      return [...prev, piece];
+      return [...withoutTemp, piece];
     });
   }, []);
 
-  const handlePieceRemoved = useCallback((id: string) => {
+  const handlePieceRemoved = useCallback(async (id: string) => {
     setUploadedPieces((prev) => prev.filter((p) => p.id !== id));
+
+    if (id.startsWith("temp-")) return;
+
+    try {
+      const { error } = await supabase
+        .from("pieces_justificatives")
+        .delete()
+        .eq("id", id);
+
+      if (error) throw error;
+    } catch (error) {
+      console.error("Delete piece error:", error);
+    }
   }, []);
 
   const hasRejectedPieces = uploadedPieces.some((p) => p.status === "rejected");
