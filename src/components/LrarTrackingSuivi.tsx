@@ -105,7 +105,6 @@ export function LrarTrackingSuivi({ dossierId, dossierRef }: LrarTrackingSuiviPr
       toast.success(statut === "visa_obtenu" ? "🎉 Félicitations !" : "Statut enregistré");
     }
   };
-  const progressPercent = isError ? 0 : Math.max(0, ((statusIdx + 1) / STEPS.length) * 100);
 
   // Compute estimated decision date (60 days after delivery)
   const deliveredAt = dossier.delivered_at ? new Date(dossier.delivered_at) : null;
