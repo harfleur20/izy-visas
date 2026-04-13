@@ -238,18 +238,7 @@ export function DecisionRefusUpload({ dossierId, userId, onComplete, onBack }: D
 
   // ═══ ANALYZING PHASE ═══
   if (phase === "analyzing") {
-    return (
-      <div className="text-center py-16">
-        <div className="text-5xl mb-4 animate-pulse">🔍</div>
-        <BigTitle>Analyse en cours…</BigTitle>
-        <Desc>IZY lit votre décision de refus. Cela prend quelques secondes.</Desc>
-        <div className="w-48 mx-auto mt-4">
-          <div className="h-1.5 bg-muted rounded-full overflow-hidden">
-            <div className="h-full bg-primary rounded-full animate-pulse" style={{ width: "60%" }} />
-          </div>
-        </div>
-      </div>
-    );
+    return <AnalyzingView />;
   }
 
   // ═══ NOT RECOGNIZED ═══
