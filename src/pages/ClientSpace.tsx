@@ -117,6 +117,7 @@ const ClientSpace = () => {
   const [paymentLoading, setPaymentLoading] = useState(false);
   const [taraPaymentLinks, setTaraPaymentLinks] = useState<TaraPaymentLinks | null>(null);
   const [paymentConfirmed, setPaymentConfirmed] = useState(false);
+  const [paidOptions, setPaidOptions] = useState<SendOption[]>([]);
   const [downloadingProcuration, setDownloadingProcuration] = useState(false);
 
   const updateActiveDossier = useCallback(async (patch: DossierUpdate) => {
