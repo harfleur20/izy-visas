@@ -405,12 +405,13 @@ function PieceCard({
           )}
         </div>
 
-        {/* Remove button */}
-        {onRemove && !isLoading && (
+        {/* Remove / Cancel button */}
+        {onRemove && (
           <button
             onClick={() => onRemove(piece.id)}
             className="text-muted-foreground hover:text-foreground transition-colors flex-shrink-0 p-1"
-            aria-label={`Supprimer ${piece.name}`}
+            aria-label={isLoading ? `Annuler ${piece.name}` : `Supprimer ${piece.name}`}
+            title={isLoading ? "Annuler" : "Supprimer"}
           >
             <X className="w-4 h-4" />
           </button>
