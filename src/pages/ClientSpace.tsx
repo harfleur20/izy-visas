@@ -461,10 +461,7 @@ const ClientSpace = () => {
       return;
     }
 
-    const block = (title: string, description: string, redirect: number) => {
-      toast({ title, description, variant: "destructive" });
-      setStep(redirect);
-    };
+    const block = blockNav;
 
     // Step 2: needs recevabilité (date set)
     if (target === 2) {
