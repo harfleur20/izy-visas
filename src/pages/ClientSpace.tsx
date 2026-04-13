@@ -113,6 +113,7 @@ const ClientSpace = () => {
   const [paymentMethod, setPaymentMethod] = useState<PaymentMethod>("stripe");
   const [paymentLoading, setPaymentLoading] = useState(false);
   const [taraPaymentLinks, setTaraPaymentLinks] = useState<TaraPaymentLinks | null>(null);
+  const [paymentConfirmed, setPaymentConfirmed] = useState(false);
 
   const updateActiveDossier = useCallback(async (patch: DossierUpdate) => {
     if (!activeDossier) return false;
