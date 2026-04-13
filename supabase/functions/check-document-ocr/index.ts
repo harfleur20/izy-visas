@@ -22,9 +22,44 @@ const TYPE_LABELS: Record<string, string> = {
   acte_mariage: "Acte de mariage",
   acte_naissance: "Acte de naissance",
   justificatif_hebergement: "Justificatif d'hébergement",
+  billet_avion: "Billet d'avion",
+  assurance_voyage: "Assurance voyage",
+  attestation_emploi: "Attestation d'emploi",
+  certificat_scolarite: "Certificat de scolarité",
+  photo_identite: "Photo d'identité",
+  formulaire_visa: "Formulaire de demande de visa",
+  justificatif_domicile: "Justificatif de domicile",
+  lettre_motivation: "Lettre de motivation",
+  lettre_invitation: "Lettre d'invitation",
+  attestation_hebergement: "Attestation d'hébergement",
+  reservation_hotel: "Réservation d'hôtel",
   autre: "Autre document",
   inconnu: "Document non identifié",
 };
+
+// Map piece names (from pieces_requises) to expected document types for mismatch detection
+function guessExpectedType(nomPiece: string): string {
+  const n = nomPiece.toLowerCase();
+  if (/passeport|passport/.test(n)) return "passeport";
+  if (/décision.*refus|refus.*visa/.test(n)) return "decision_refus";
+  if (/relevé.*banc|bank.*statement|relevé.*compte/.test(n)) return "releve_bancaire";
+  if (/contrat.*travail|employment/.test(n)) return "contrat_travail";
+  if (/campus\s*france/.test(n)) return "attestation_campus_france";
+  if (/acte.*mariage|marriage/.test(n)) return "acte_mariage";
+  if (/acte.*naissance|birth/.test(n)) return "acte_naissance";
+  if (/hébergement|attestation.*accueil/.test(n)) return "justificatif_hebergement";
+  if (/billet.*avion|flight.*ticket|boarding|itinéraire.*vol/.test(n)) return "billet_avion";
+  if (/assurance.*voyage|travel.*insurance/.test(n)) return "assurance_voyage";
+  if (/attestation.*emploi|certificat.*travail/.test(n)) return "attestation_emploi";
+  if (/scolarité|inscription.*université|student/.test(n)) return "certificat_scolarite";
+  if (/photo.*identité/.test(n)) return "photo_identite";
+  if (/formulaire.*visa/.test(n)) return "formulaire_visa";
+  if (/justificatif.*domicile|facture|quittance/.test(n)) return "justificatif_domicile";
+  if (/lettre.*motivation/.test(n)) return "lettre_motivation";
+  if (/lettre.*invitation|invitation/.test(n)) return "lettre_invitation";
+  if (/réservation.*hôtel|hotel.*booking/.test(n)) return "reservation_hotel";
+  return "autre";
+}
 
 function getSupabaseAdmin() {
   return createClient(
@@ -65,7 +100,7 @@ Analyse ce document et réponds UNIQUEMENT en JSON valide sans aucun texte avant
   "lisible": true ou false,
   "score_qualite": nombre entre 0 et 100,
   "motif_rejet": null ou description du problème,
-  "type_document_detecte": une valeur parmi [decision_refus, passeport, releve_bancaire, contrat_travail, attestation_campus_france, acte_mariage, acte_naissance, justificatif_hebergement, autre, inconnu],
+  "type_document_detecte": une valeur parmi [decision_refus, passeport, releve_bancaire, contrat_travail, attestation_campus_france, acte_mariage, acte_naissance, justificatif_hebergement, billet_avion, assurance_voyage, attestation_emploi, certificat_scolarite, justificatif_domicile, reservation_hotel, autre, inconnu],
   "langue_detectee": une valeur parmi [fr, ar, en, autre, mixte],
   "date_detectee": date au format JJ/MM/AAAA ou null si aucune date trouvée,
   "texte_extrait": premiers 500 caractères du texte visible,
@@ -245,6 +280,18 @@ async function processOcrInBackground(
           ocrResult.type_document_detecte = "acte_naissance";
         } else if (/hébergement|attestation\s*d'accueil/i.test(allText)) {
           ocrResult.type_document_detecte = "justificatif_hebergement";
+        } else if (/billet\s*(d')?avion|boarding\s*pass|flight\s*ticket|itinéraire\s*(de\s*)?vol|e-?ticket/i.test(allText)) {
+          ocrResult.type_document_detecte = "billet_avion";
+        } else if (/assurance\s*(de\s*)?voyage|travel\s*insurance|couverture\s*médicale/i.test(allText)) {
+          ocrResult.type_document_detecte = "assurance_voyage";
+        } else if (/attestation\s*(d')?emploi|certificat\s*(de\s*)?travail/i.test(allText)) {
+          ocrResult.type_document_detecte = "attestation_emploi";
+        } else if (/certificat\s*(de\s*)?scolarité|inscription\s*universitaire|student/i.test(allText)) {
+          ocrResult.type_document_detecte = "certificat_scolarite";
+        } else if (/justificatif\s*(de\s*)?domicile|facture|quittance\s*(de\s*)?loyer/i.test(allText)) {
+          ocrResult.type_document_detecte = "justificatif_domicile";
+        } else if (/réservation\s*(d')?hôtel|hotel\s*booking|confirmation\s*(de\s*)?réservation/i.test(allText)) {
+          ocrResult.type_document_detecte = "reservation_hotel";
         }
 
         // Extract date with regex
@@ -300,15 +347,15 @@ async function processOcrInBackground(
   // ── Determine acceptance ────────────────────────────────────────────
   const accepted = ocrResult.lisible && ocrResult.score_qualite >= OCR_SCORE_MINIMUM;
   const rejectionMessage = !accepted ? getRejectionMessage(ocrResult) : null;
-  const effectiveTypeAttendu = isDecisionRefus ? "decision_refus" : "autre";
+  const effectiveTypeAttendu = isDecisionRefus ? "decision_refus" : guessExpectedType(nomPiece);
   const canAutoCorrectVal = !accepted && canAutoCorrectCheck(ocrResult, autoCorrect);
 
-  // Type mismatch warning
+  // Type mismatch warning — only when we have a specific expected type
   let typeMismatchWarning: string | null = null;
-  if (accepted && ocrResult.type_document_detecte !== effectiveTypeAttendu && effectiveTypeAttendu !== "autre") {
+  if (accepted && effectiveTypeAttendu !== "autre" && ocrResult.type_document_detecte !== effectiveTypeAttendu) {
     const detectedLabel = TYPE_LABELS[ocrResult.type_document_detecte] || ocrResult.type_document_detecte;
     const attenduLabel = TYPE_LABELS[effectiveTypeAttendu] || effectiveTypeAttendu;
-    typeMismatchWarning = `⚠️ Ce document semble être un ${detectedLabel} et non une ${attenduLabel}.`;
+    typeMismatchWarning = `⚠️ Ce document semble être un(e) "${detectedLabel}" alors que nous attendons un(e) "${attenduLabel}". Vérifiez que vous avez sélectionné le bon fichier.`;
   }
 
   // Decision refus validation
