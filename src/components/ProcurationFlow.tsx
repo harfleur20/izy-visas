@@ -345,6 +345,7 @@ export const ProcurationFlow = ({
     if (open) {
       setStep("verify");
       setChecks({ lu: false, autorise: false, comprends: false });
+      setCertifie(false);
       setOtpValue("");
       setEditingField(null);
     }
