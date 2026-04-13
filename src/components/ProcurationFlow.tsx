@@ -612,7 +612,7 @@ export const ProcurationFlow = ({
               {/* Scrollable procuration text */}
               <div className="bg-muted/20 border border-border rounded-xl p-5 max-h-[40vh] overflow-y-auto">
                 <pre className="text-sm text-foreground leading-relaxed whitespace-pre-wrap font-sans">
-                  {procurationText}
+                  {procurationData.display}
                 </pre>
               </div>
 
