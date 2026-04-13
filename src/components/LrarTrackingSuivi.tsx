@@ -3,6 +3,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { Progress } from "@/components/ui/progress";
 import { Button } from "@/components/ui/button";
 import { Eyebrow, BigTitle, Box } from "@/components/ui-custom";
+import { toast } from "sonner";
 
 interface LrarTrackingSuiviProps {
   dossierId: string;
@@ -33,13 +34,14 @@ const STATUS_INDEX: Record<string, number> = {
 
 export function LrarTrackingSuivi({ dossierId, dossierRef }: LrarTrackingSuiviProps) {
   const [dossier, setDossier] = useState<any>(null);
+  const [savingFinal, setSavingFinal] = useState(false);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
     const load = async () => {
       const { data } = await supabase
         .from("dossiers")
-        .select("lrar_status, tracking_number, sent_at, delivered_at, recipient_name, dossier_ref")
+        .select("lrar_status, tracking_number, sent_at, delivered_at, recipient_name, dossier_ref, statut_final")
         .eq("id", dossierId)
         .single();
       setDossier(data);
@@ -86,7 +88,23 @@ export function LrarTrackingSuivi({ dossierId, dossierRef }: LrarTrackingSuiviPr
 
   const statusIdx = STATUS_INDEX[dossier.lrar_status] ?? -1;
   const isError = statusIdx === -2;
+  const isDelivered = dossier.lrar_status === "livre" || dossier.lrar_status === "ar_signe";
   const progressPercent = isError ? 0 : Math.max(0, ((statusIdx + 1) / STEPS.length) * 100);
+
+  const handleStatutFinal = async (statut: "visa_obtenu" | "visa_refuse") => {
+    setSavingFinal(true);
+    const { error } = await supabase
+      .from("dossiers")
+      .update({ statut_final: statut } as any)
+      .eq("id", dossierId);
+    setSavingFinal(false);
+    if (error) {
+      toast.error("Erreur lors de la mise à jour du statut");
+    } else {
+      setDossier((prev: any) => ({ ...prev, statut_final: statut }));
+      toast.success(statut === "visa_obtenu" ? "🎉 Félicitations !" : "Statut enregistré");
+    }
+  };
 
   // Compute estimated decision date (60 days after delivery)
   const deliveredAt = dossier.delivered_at ? new Date(dossier.delivered_at) : null;
@@ -218,6 +236,46 @@ export function LrarTrackingSuivi({ dossierId, dossierRef }: LrarTrackingSuiviPr
           </Button>
         )}
       </div>
+
+      {/* Visa outcome buttons — only when delivered and no final status yet */}
+      {isDelivered && !dossier.statut_final && (
+        <div className="mt-6 border border-border rounded-xl p-5 bg-panel">
+          <h3 className="font-syne font-bold text-sm mb-3">📌 Quelle est l'issue de votre recours ?</h3>
+          <p className="text-sm text-muted-foreground mb-4">
+            Une fois la décision reçue, indiquez le résultat pour clôturer votre dossier.
+          </p>
+          <div className="flex gap-3">
+            <Button
+              variant="success"
+              size="sm"
+              disabled={savingFinal}
+              onClick={() => handleStatutFinal("visa_obtenu")}
+            >
+              ✅ Visa obtenu
+            </Button>
+            <Button
+              variant="destructive"
+              size="sm"
+              disabled={savingFinal}
+              onClick={() => handleStatutFinal("visa_refuse")}
+            >
+              ❌ Visa refusé
+            </Button>
+          </div>
+        </div>
+      )}
+
+      {/* Final status display */}
+      {dossier.statut_final === "visa_obtenu" && (
+        <Box variant="ok" title="🎉 Félicitations — Visa obtenu !">
+          Votre recours gracieux a abouti. Le consulat a accordé votre visa. Bon voyage !
+        </Box>
+      )}
+      {dossier.statut_final === "visa_refuse" && (
+        <Box variant="alert" title="⚖️ Visa refusé après recours">
+          Le consulat a maintenu son refus. Vous pouvez envisager un recours contentieux devant le tribunal administratif de Nantes.
+        </Box>
+      )}
     </div>
   );
 }

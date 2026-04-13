@@ -353,6 +353,7 @@ export type Database = {
           refus_type: string
           score_ocr_decision: number | null
           sent_at: string | null
+          statut_final: string | null
           tracking_number: string | null
           type_signataire: string | null
           type_visa_texte_original: string | null
@@ -426,6 +427,7 @@ export type Database = {
           refus_type?: string
           score_ocr_decision?: number | null
           sent_at?: string | null
+          statut_final?: string | null
           tracking_number?: string | null
           type_signataire?: string | null
           type_visa_texte_original?: string | null
@@ -499,6 +501,7 @@ export type Database = {
           refus_type?: string
           score_ocr_decision?: number | null
           sent_at?: string | null
+          statut_final?: string | null
           tracking_number?: string | null
           type_signataire?: string | null
           type_visa_texte_original?: string | null
