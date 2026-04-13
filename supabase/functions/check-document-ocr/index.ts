@@ -280,6 +280,18 @@ async function processOcrInBackground(
           ocrResult.type_document_detecte = "acte_naissance";
         } else if (/hébergement|attestation\s*d'accueil/i.test(allText)) {
           ocrResult.type_document_detecte = "justificatif_hebergement";
+        } else if (/billet\s*(d')?avion|boarding\s*pass|flight\s*ticket|itinéraire\s*(de\s*)?vol|e-?ticket/i.test(allText)) {
+          ocrResult.type_document_detecte = "billet_avion";
+        } else if (/assurance\s*(de\s*)?voyage|travel\s*insurance|couverture\s*médicale/i.test(allText)) {
+          ocrResult.type_document_detecte = "assurance_voyage";
+        } else if (/attestation\s*(d')?emploi|certificat\s*(de\s*)?travail/i.test(allText)) {
+          ocrResult.type_document_detecte = "attestation_emploi";
+        } else if (/certificat\s*(de\s*)?scolarité|inscription\s*universitaire|student/i.test(allText)) {
+          ocrResult.type_document_detecte = "certificat_scolarite";
+        } else if (/justificatif\s*(de\s*)?domicile|facture|quittance\s*(de\s*)?loyer/i.test(allText)) {
+          ocrResult.type_document_detecte = "justificatif_domicile";
+        } else if (/réservation\s*(d')?hôtel|hotel\s*booking|confirmation\s*(de\s*)?réservation/i.test(allText)) {
+          ocrResult.type_document_detecte = "reservation_hotel";
         }
 
         // Extract date with regex
