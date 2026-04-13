@@ -117,8 +117,22 @@ async function textToPdfBytes(title: string, text: string): Promise<Uint8Array> 
 }
 
 function hasUnresolvedLegalReview(dossier: DossierRow): boolean {
-  if (dossier.validation_juridique_status === "a_verifier_avocat") return true;
-  return Array.isArray(dossier.references_a_verifier) && dossier.references_a_verifier.length > 0;
+  // Only block if there are actual unresolved references (not informational messages)
+  if (Array.isArray(dossier.references_a_verifier) && dossier.references_a_verifier.length > 0) {
+    const informationalPrefixes = [
+      "Aucune référence",
+      "Toutes les références",
+      "Aucune référence non vérifiée",
+    ];
+    const hasRealIssues = dossier.references_a_verifier.some((ref: unknown) => {
+      if (typeof ref !== "string") return true;
+      return !informationalPrefixes.some((prefix) => ref.startsWith(prefix));
+    });
+    if (hasRealIssues) return true;
+  }
+  // Status alone is not blocking — it's informational for the avocat workflow
+  if (dossier.validation_juridique_status === "bloquee") return true;
+  return false;
 }
 
 async function assignAvocatIfNeeded(
