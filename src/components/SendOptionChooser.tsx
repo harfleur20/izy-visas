@@ -68,9 +68,13 @@ export const SendOptionChooser = ({ dossierRef, dateNotification, onSelect, onBa
 
   const handleOptionClick = (option: SendOption) => {
     if (loading) return;
-    // If another option was already paid, warn the user
-    const otherPaidOptions = paidOptions.filter((o) => o !== option);
-    if (otherPaidOptions.length > 0) {
+    // If this option is already paid, just select it directly (no warning)
+    if (paidOptions.includes(option)) {
+      onSelect(option);
+      return;
+    }
+    // If a different option was already paid, warn about non-refundable switch
+    if (paidOptions.length > 0) {
       setConfirmOption(option);
       return;
     }
