@@ -610,12 +610,46 @@ export const ProcurationFlow = ({
             </DialogHeader>
 
             <div className="space-y-4 mt-2">
-              {/* Scrollable procuration text */}
-              <div className="bg-muted/20 border border-border rounded-xl p-5 max-h-[40vh] overflow-y-auto">
-                <pre className="text-sm text-foreground leading-relaxed whitespace-pre-wrap font-sans">
-                  {procurationData.display}
-                </pre>
+              {/* Toggle tabs */}
+              <div className="flex gap-1 bg-muted/30 rounded-lg p-1">
+                <button
+                  onClick={() => setPreviewMode("text")}
+                  className={`flex-1 font-syne font-bold text-xs px-3 py-2 rounded-md transition-all ${
+                    previewMode === "text"
+                      ? "bg-background text-foreground shadow-sm"
+                      : "text-muted-foreground hover:text-foreground"
+                  }`}
+                >
+                  📝 Texte
+                </button>
+                <button
+                  onClick={() => setPreviewMode("pdf")}
+                  className={`flex-1 font-syne font-bold text-xs px-3 py-2 rounded-md transition-all ${
+                    previewMode === "pdf"
+                      ? "bg-background text-foreground shadow-sm"
+                      : "text-muted-foreground hover:text-foreground"
+                  }`}
+                >
+                  📄 Aperçu PDF
+                </button>
               </div>
+
+              {/* Text or PDF preview */}
+              {previewMode === "text" ? (
+                <div className="bg-muted/20 border border-border rounded-xl p-5 max-h-[40vh] overflow-y-auto">
+                  <pre className="text-sm text-foreground leading-relaxed whitespace-pre-wrap font-sans">
+                    {procurationData.display}
+                  </pre>
+                </div>
+              ) : (
+                <div className="border border-border rounded-xl overflow-hidden" style={{ height: "45vh" }}>
+                  <iframe
+                    src={`data:application/pdf;base64,${textToPdfBase64(procurationData.pdf)}`}
+                    className="w-full h-full"
+                    title="Aperçu PDF de la procuration"
+                  />
+                </div>
+              )}
 
               {/* 3 checkboxes */}
               <div className="space-y-2">
