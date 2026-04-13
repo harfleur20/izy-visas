@@ -585,7 +585,34 @@ const ClientSpace = () => {
       setStep(11); return;
     }
 
-    // Step 13: always accessible once dossier exists
+    // Step 13: needs payment confirmed before accessing tracking
+    if (target === 13) {
+      const currentOpt = normalizeStoredOption(d.option_choisie);
+      if (!currentOpt) {
+        block("Mode d'envoi manquant", "Choisissez d'abord votre mode d'envoi et finalisez le paiement.", 8);
+        return;
+      }
+      // Check payment
+      const paidStatuses = ["paiement_confirme", "lettre_finalisee", "signature_verifiee", "lrar_envoye", "envoyee", "distribuee"];
+      const statusOk = paidStatuses.includes(d.lrar_status || "");
+      if (!statusOk) {
+        let paymentQuery = supabase
+          .from("payments")
+          .select("id")
+          .eq("dossier_ref", activeDossier.dossier_ref)
+          .eq("status", "paid");
+        if (currentOpt) {
+          paymentQuery = paymentQuery.eq("option_choisie", currentOpt);
+        }
+        const { data: paidRow } = await paymentQuery.limit(1).maybeSingle();
+        if (!paidRow) {
+          block("Paiement requis", "Finalisez le paiement avant d'accéder au suivi.", 9);
+          return;
+        }
+      }
+      setStep(13); return;
+    }
+
     setStep(target);
   }, [activeDossier, refDate, hasRejectedPieces, dlResult]);
 
