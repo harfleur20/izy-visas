@@ -415,6 +415,13 @@ const ClientSpace = () => {
     // Steps 0 and 1 are always accessible
     if (target <= 1) { setStep(target); return; }
 
+    // Block all navigation if deadline is expired
+    if (dlResult && dlResult.type === "expired") {
+      toast({ title: "Parcours bloqué", description: "Le délai de recours est expiré. Aucune étape n'est accessible.", variant: "destructive" });
+      setStep(0);
+      return;
+    }
+
     if (!activeDossier) {
       toast({ title: "Dossier non chargé", description: "Patientez le chargement de votre dossier.", variant: "destructive" });
       return;
