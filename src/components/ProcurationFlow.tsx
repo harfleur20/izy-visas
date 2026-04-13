@@ -37,18 +37,114 @@ interface ProcurationFlowProps {
 
 type Step = "verify" | "consent" | "signing" | "otp";
 
-// Minimal PDF generator
+// WinAnsiEncoding map for common French/special characters
+const WINANSI_MAP: Record<number, number> = {
+  0x2013: 0x96, // en dash
+  0x2014: 0x97, // em dash —
+  0x2018: 0x91, // '
+  0x2019: 0x92, // '
+  0x201C: 0x93, // "
+  0x201D: 0x94, // "
+  0x2026: 0x85, // …
+  0x2022: 0x95, // •
+  0x0152: 0x8C, // Œ
+  0x0153: 0x9C, // œ
+};
+
+function charToWinAnsi(ch: string): number | null {
+  const code = ch.charCodeAt(0);
+  if (code <= 0xFF) return code; // Latin-1 range (includes é, è, à, ç, etc.)
+  return WINANSI_MAP[code] ?? null;
+}
+
+function escPdfString(text: string): string {
+  let out = "";
+  for (const ch of text) {
+    const code = charToWinAnsi(ch);
+    if (code === null) {
+      out += "-"; // fallback for unsupported chars
+    } else if (code === 0x28) {
+      out += "\\(";
+    } else if (code === 0x29) {
+      out += "\\)";
+    } else if (code === 0x5C) {
+      out += "\\\\";
+    } else if (code >= 0x80) {
+      out += "\\" + code.toString(8).padStart(3, "0");
+    } else {
+      out += ch;
+    }
+  }
+  return out;
+}
+
+// Approximate character width for Helvetica at size 10 (in PDF units / 1000)
+function approxCharWidth(ch: string): number {
+  const code = ch.charCodeAt(0);
+  if (code >= 0x61 && code <= 0x7A) return 500; // lowercase
+  if (code >= 0x41 && code <= 0x5A) return 650; // uppercase
+  if (ch === " ") return 250;
+  if (ch === "-") return 333;
+  return 500;
+}
+
+function wrapLine(line: string, maxWidthPt: number, fontSize: number): string[] {
+  const scale = fontSize / 1000;
+  const maxWidth = maxWidthPt / scale;
+  const words = line.split(" ");
+  const wrapped: string[] = [];
+  let current = "";
+  let currentWidth = 0;
+
+  for (const word of words) {
+    let wordWidth = 0;
+    for (const ch of word) wordWidth += approxCharWidth(ch);
+    const spaceWidth = current ? 250 : 0;
+    if (current && currentWidth + spaceWidth + wordWidth > maxWidth) {
+      wrapped.push(current);
+      current = word;
+      currentWidth = wordWidth;
+    } else {
+      current = current ? current + " " + word : word;
+      currentWidth += spaceWidth + wordWidth;
+    }
+  }
+  if (current) wrapped.push(current);
+  return wrapped.length ? wrapped : [""];
+}
+
+// Minimal PDF generator with proper French character support
 function textToPdfBase64(text: string): string {
-  const lines = text.split("\n");
   const pageHeight = 842;
   const pageWidth = 595;
   const margin = 50;
+  const fontSize = 10;
   const lineHeight = 14;
+  const contentWidth = pageWidth - 2 * margin;
   const maxLinesPerPage = Math.floor((pageHeight - 2 * margin) / lineHeight);
-  const pages: string[][] = [];
-  for (let i = 0; i < lines.length; i += maxLinesPerPage) {
-    pages.push(lines.slice(i, i + maxLinesPerPage));
+
+  // Pre-process: wrap all lines
+  const rawLines = text.split("\n");
+  const allLines: string[] = [];
+  for (const raw of rawLines) {
+    if (raw.trim() === "") {
+      allLines.push("");
+    } else if (raw.startsWith("- ")) {
+      const wrapped = wrapLine(raw, contentWidth, fontSize);
+      allLines.push(...wrapped);
+    } else {
+      const wrapped = wrapLine(raw, contentWidth, fontSize);
+      allLines.push(...wrapped);
+    }
   }
+
+  // Paginate
+  const pages: string[][] = [];
+  for (let i = 0; i < allLines.length; i += maxLinesPerPage) {
+    pages.push(allLines.slice(i, i + maxLinesPerPage));
+  }
+  if (pages.length === 0) pages.push([""]);
+
   let objects: string[] = [];
   let objectOffsets: number[] = [];
   let currentOffset = 0;
@@ -66,16 +162,9 @@ function textToPdfBase64(text: string): string {
   pages.forEach((pageLines, idx) => {
     const pageObjNum = 3 + idx * 2;
     const contentObjNum = pageObjNum + 1;
-    let stream = `BT\n/F1 10 Tf\n${margin} ${pageHeight - margin} Td\n`;
+    let stream = `BT\n/F1 ${fontSize} Tf\n${margin} ${pageHeight - margin} Td\n`;
     for (const line of pageLines) {
-      const escaped = line
-        .replace(/\\/g, "\\\\")
-        .replace(/\(/g, "\\(")
-        .replace(/\)/g, "\\)")
-        .replace(/[^\x00-\x7F]/g, (ch) => {
-          const code = ch.charCodeAt(0);
-          return code <= 255 ? `\\${code.toString(8).padStart(3, "0")}` : "?";
-        });
+      const escaped = escPdfString(line);
       stream += `(${escaped}) Tj\n0 -${lineHeight} Td\n`;
     }
     stream += "ET\n";
@@ -105,7 +194,7 @@ function formatDateToLetters(dateStr: string): string {
   return `${d.getDate()} ${months[d.getMonth()]} ${d.getFullYear()}`;
 }
 
-function generateProcurationText(p: ProfileData, dossierRef: string): string {
+function generateProcurationData(p: ProfileData, dossierRef: string, email?: string) {
   const nom = (p.last_name || "").toUpperCase();
   const prenom = p.first_name || "";
   const adresseLigne2 = p.adresse_ligne2 ? `\n${p.adresse_ligne2}` : "";
@@ -113,8 +202,10 @@ function generateProcurationText(p: ProfileData, dossierRef: string): string {
   const ville = p.ville || "";
   const tel = p.phone ? `${p.prefixe_telephone || "+237"} ${p.phone}` : "";
   const today = formatDateToLetters(new Date().toISOString());
+  const emailStr = email || "";
 
-  return `PROCURATION POSTALE
+  // Display version (with accents for UI)
+  const display = `PROCURATION POSTALE
 
 Je soussigné(e),
 
@@ -127,13 +218,13 @@ Adresse personnelle :
 ${p.adresse_ligne1 || ""}${adresseLigne2}
 ${ville}, ${pays}
 Téléphone : ${tel}
-Email : ${p.last_name ? "" : ""}
+Email : ${emailStr}
 
 DONNE PROCURATION à :
 
 La société CAPDEMARCHES
 Sise au 105 rue des Moines
-75017 Paris — FRANCE
+75017 Paris - FRANCE
 Email : contact@capdemarches.fr
 
 pour réceptionner, retirer et prendre connaissance en mon nom de tout courrier recommandé avec accusé de réception, de tout avis de passage et de toute correspondance officielle qui me seraient adressés à l'adresse suivante :
@@ -168,6 +259,23 @@ Signature du mandant :
 [ZONE DE SIGNATURE YOUSIGN]
 
 Nom lisible : ${nom} ${prenom}`;
+
+  // PDF-safe version (ASCII only for Helvetica/WinAnsi)
+  const pdf = display
+    .replace(/é/g, "e").replace(/è/g, "e").replace(/ê/g, "e").replace(/ë/g, "e")
+    .replace(/à/g, "a").replace(/â/g, "a")
+    .replace(/ù/g, "u").replace(/û/g, "u")
+    .replace(/ô/g, "o").replace(/î/g, "i").replace(/ï/g, "i")
+    .replace(/ç/g, "c")
+    .replace(/É/g, "E").replace(/È/g, "E").replace(/Ê/g, "E")
+    .replace(/À/g, "A").replace(/Ô/g, "O").replace(/Ù/g, "U")
+    .replace(/Ç/g, "C")
+    .replace(/œ/g, "oe").replace(/Œ/g, "OE")
+    .replace(/—/g, "-").replace(/–/g, "-")
+    .replace(/'/g, "'").replace(/'/g, "'")
+    .replace(/"/g, '"').replace(/"/g, '"');
+
+  return { display, pdf };
 }
 
 export const ProcurationFlow = ({
@@ -284,12 +392,12 @@ export const ProcurationFlow = ({
     setEditValues({});
   };
 
-  const procurationText = generateProcurationText(profile, dossierRef);
+  const procurationData = generateProcurationData(profile, dossierRef, userEmail);
 
   const triggerSignature = async () => {
     setLoading(true);
     try {
-      const documentBase64 = textToPdfBase64(procurationText);
+      const documentBase64 = textToPdfBase64(procurationData.pdf);
       const signerPhone = profile.phone ? `${profile.prefixe_telephone}${profile.phone}` : undefined;
 
       const { data, error } = await supabase.functions.invoke("yousign-signature/create", {
@@ -504,7 +612,7 @@ export const ProcurationFlow = ({
               {/* Scrollable procuration text */}
               <div className="bg-muted/20 border border-border rounded-xl p-5 max-h-[40vh] overflow-y-auto">
                 <pre className="text-sm text-foreground leading-relaxed whitespace-pre-wrap font-sans">
-                  {procurationText}
+                  {procurationData.display}
                 </pre>
               </div>
 
