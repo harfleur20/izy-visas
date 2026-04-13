@@ -18,6 +18,7 @@ import { LetterPreview } from "@/components/LetterPreview";
 import { SendOptionChooser } from "@/components/SendOptionChooser";
 import { LrarCompositionWrapper } from "@/components/LrarCompositionWrapper";
 import { LrarTrackingSuivi } from "@/components/LrarTrackingSuivi";
+import { PiecesComplementaires } from "@/components/PiecesComplementaires";
 
 type SendOption = "A" | "B" | "C";
 type PaymentMethod = "stripe" | "taramoney";
@@ -1170,8 +1171,18 @@ const ClientSpace = () => {
         {step === 13 && activeDossier && (
           <div>
             <LrarTrackingSuivi dossierId={activeDossier.id} dossierRef={activeDossier.dossier_ref} />
-            <div className="flex gap-2.5 mt-7 flex-wrap">
-              <button className="font-syne font-bold text-[0.78rem] px-5 py-2.5 rounded-[7px] bg-foreground/[0.07] text-muted-foreground border border-border-2 transition-all">+ Transmettre des pièces complémentaires</button>
+            {/* Pièces complémentaires */}
+            <div className="mt-7">
+              <PiecesComplementaires
+                dossierId={activeDossier.id}
+                dossierRef={activeDossier.dossier_ref}
+                userId={user!.id}
+                optionChoisie={selectedOption}
+              />
+            </div>
+
+            {/* Visa obtenu placeholder */}
+            <div className="flex gap-2.5 mt-4 flex-wrap">
               <button className="font-syne font-bold text-[0.78rem] px-5 py-2.5 rounded-[7px] bg-success/20 text-success border border-success/30 transition-all">Visa obtenu ✓</button>
             </div>
             {/* Procuration section */}
