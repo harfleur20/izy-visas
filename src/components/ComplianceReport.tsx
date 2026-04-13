@@ -64,18 +64,32 @@ export const ComplianceReportPanel = ({ result }: ComplianceReportPanelProps) =>
         Rapport de conformité — 12 blocs
       </div>
 
-      {/* Global summary */}
-      <div className={`rounded-[9px] p-3 mb-4 border ${can_send ? "bg-green/[0.09] border-green-2/25" : "bg-destructive/[0.09] border-destructive/[0.28]"}`}>
-        <div className={`font-syne text-[0.78rem] font-bold ${can_send ? "text-green-2" : "text-red-2"}`}>
-          {can_send ? "✓ Lettre conforme — Validation possible" : "🚫 Lettre non conforme — Validation bloquée"}
+      {/* Restored from DB — simplified view */}
+      {result._restored ? (
+        <div className="rounded-[9px] p-3 mb-4 border bg-primary/[0.09] border-primary-hover/25">
+          <div className="font-syne text-[0.78rem] font-bold text-primary-hover">
+            ℹ️ Lettre restaurée depuis votre dossier
+          </div>
+          <div className="text-[0.75rem] mt-1 text-muted-foreground">
+            Le rapport de conformité détaillé n'est disponible qu'après une génération fraîche. Cliquez « Régénérer » pour obtenir le rapport complet.
+          </div>
         </div>
-        <div className={`text-[0.75rem] mt-1 ${can_send ? "text-emerald-300" : "text-red-300"}`}>
-          {can_send
-            ? `${conformBlocs.length}/12 blocs conformes — ${verifiedRefs.length} référence(s) vérifiée(s) Légifrance`
-            : blocking_reason || "Des éléments bloquants ont été détectés."
-          }
-        </div>
-      </div>
+      ) : (
+        <>
+          {/* Global summary */}
+          <div className={`rounded-[9px] p-3 mb-4 border ${can_send ? "bg-green/[0.09] border-green-2/25" : "bg-destructive/[0.09] border-destructive/[0.28]"}`}>
+            <div className={`font-syne text-[0.78rem] font-bold ${can_send ? "text-green-2" : "text-red-2"}`}>
+              {can_send ? "✓ Lettre conforme — Validation possible" : "🚫 Lettre non conforme — Validation bloquée"}
+            </div>
+            <div className={`text-[0.75rem] mt-1 ${can_send ? "text-emerald-300" : "text-red-300"}`}>
+              {can_send
+                ? `${conformBlocs.length}/12 blocs conformes — ${verifiedRefs.length} référence(s) vérifiée(s) Légifrance`
+                : blocking_reason || "Des éléments bloquants ont été détectés."
+              }
+            </div>
+          </div>
+        </>
+      )}
 
       {/* OpenLégi availability warning */}
       {openlegi_available === false && (
