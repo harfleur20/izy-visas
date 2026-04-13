@@ -26,7 +26,7 @@ export interface UploadedPiece {
 interface DocumentUploaderProps {
   dossierId: string;
   userId: string;
-  typePiece?: "obligatoire" | "optionnelle";
+  typePiece?: "obligatoire" | "optionnelle" | "complementaire";
   isDecisionRefus?: boolean;
   nomPiece?: string;
   onPieceUploaded: (piece: UploadedPiece) => void;
