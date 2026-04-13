@@ -502,3 +502,43 @@ function EditField({ label, value, onChange, placeholder }: { label: string; val
     </div>
   );
 }
+
+const ANALYSIS_STEPS = [
+  { label: "Envoi du document…", pct: 10, delay: 0 },
+  { label: "Extraction du texte (OCR)…", pct: 35, delay: 1500 },
+  { label: "Identification des motifs…", pct: 60, delay: 4000 },
+  { label: "Vérification des données…", pct: 85, delay: 6000 },
+];
+
+function AnalyzingView() {
+  const [progress, setProgress] = useState(0);
+  const [stepLabel, setStepLabel] = useState(ANALYSIS_STEPS[0].label);
+
+  useEffect(() => {
+    const timers: ReturnType<typeof setTimeout>[] = [];
+    ANALYSIS_STEPS.forEach((step) => {
+      timers.push(setTimeout(() => {
+        setProgress(step.pct);
+        setStepLabel(step.label);
+      }, step.delay));
+    });
+    return () => timers.forEach(clearTimeout);
+  }, []);
+
+  return (
+    <div className="text-center py-16">
+      <div className="text-5xl mb-4 animate-pulse">🔍</div>
+      <BigTitle>Analyse en cours…</BigTitle>
+      <Desc>{stepLabel}</Desc>
+      <div className="w-64 mx-auto mt-4">
+        <div className="h-1.5 bg-muted rounded-full overflow-hidden">
+          <div
+            className="h-full bg-primary rounded-full transition-all duration-1000 ease-out"
+            style={{ width: `${progress}%` }}
+          />
+        </div>
+        <div className="text-xs text-muted-foreground mt-2">{progress}%</div>
+      </div>
+    </div>
+  );
+}
