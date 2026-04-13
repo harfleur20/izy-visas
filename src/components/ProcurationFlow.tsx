@@ -289,6 +289,7 @@ export const ProcurationFlow = ({
   onSkip,
 }: ProcurationFlowProps) => {
   const [step, setStep] = useState<Step>("verify");
+  const [previewMode, setPreviewMode] = useState<"text" | "pdf">("text");
   const [loading, setLoading] = useState(false);
   const [profileLoading, setProfileLoading] = useState(true);
   const [profile, setProfile] = useState<ProfileData>({
