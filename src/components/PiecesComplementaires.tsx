@@ -276,7 +276,7 @@ export function PiecesComplementaires({
               {complementaryPieces.length > 0 && (
                 <div>
                   <h4 className="font-syne font-bold text-xs text-muted-foreground uppercase tracking-wider mb-2">
-                    Pièces complémentaires déjà transmises
+                    {isOptionA ? "Pièces complémentaires ajoutées" : "Pièces complémentaires déjà transmises"}
                   </h4>
                   <div className="space-y-2">
                     {complementaryPieces.map((p) => (
@@ -291,9 +291,29 @@ export function PiecesComplementaires({
                             Ajoutée le {new Date(p.date_upload).toLocaleDateString("fr-FR")}
                           </p>
                         </div>
+                        {isOptionA && p.url_fichier_original && (
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            className="text-xs"
+                            onClick={async () => {
+                              const { data } = await supabase.storage
+                                .from("dossiers")
+                                .createSignedUrl(p.url_fichier_original!, 300);
+                              if (data?.signedUrl) window.open(data.signedUrl, "_blank");
+                            }}
+                          >
+                            ⬇️ Télécharger
+                          </Button>
+                        )}
                       </div>
                     ))}
                   </div>
+                  {isOptionA && (
+                    <p className="text-xs text-muted-foreground mt-2 italic">
+                      Téléchargez chaque pièce et envoyez-la par courrier à la CRRV.
+                    </p>
+                  )}
                 </div>
               )}
 
