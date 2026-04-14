@@ -68,6 +68,57 @@ export type Database = {
         }
         Relationships: []
       }
+      avocat_invitations: {
+        Row: {
+          barreau: string
+          capacite_max: number
+          created_at: string
+          created_by: string
+          email: string
+          expires_at: string
+          id: string
+          nom: string
+          phone: string | null
+          prenom: string
+          revoked: boolean
+          specialites: string[]
+          token: string
+          used_at: string | null
+        }
+        Insert: {
+          barreau: string
+          capacite_max?: number
+          created_at?: string
+          created_by: string
+          email: string
+          expires_at?: string
+          id?: string
+          nom: string
+          phone?: string | null
+          prenom: string
+          revoked?: boolean
+          specialites?: string[]
+          token?: string
+          used_at?: string | null
+        }
+        Update: {
+          barreau?: string
+          capacite_max?: number
+          created_at?: string
+          created_by?: string
+          email?: string
+          expires_at?: string
+          id?: string
+          nom?: string
+          phone?: string | null
+          prenom?: string
+          revoked?: boolean
+          specialites?: string[]
+          token?: string
+          used_at?: string | null
+        }
+        Relationships: []
+      }
       admin_tasks: {
         Row: {
           assigned_to: string | null

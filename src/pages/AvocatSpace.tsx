@@ -113,10 +113,10 @@ const AvocatSpace = () => {
 
       if (dossiers) {
         const pending = dossiers.filter(
-          (d) => d.validation_juridique_status !== "validee" && d.validation_juridique_status !== "rejetee"
+          (d) => d.validation_juridique_status !== "validee_avocat" && d.validation_juridique_status !== "bloquee"
         );
         const validated = dossiers.filter(
-          (d) => d.validation_juridique_status === "validee"
+          (d) => d.validation_juridique_status === "validee_avocat"
         );
         setPendingDossiers(pending);
         setValidatedDossiers(validated);
@@ -187,9 +187,9 @@ const AvocatSpace = () => {
     const { error } = await supabase
       .from("dossiers")
       .update({
-        validation_juridique_status: "validee",
+        validation_juridique_status: "validee_avocat",
         date_validation_juridique: new Date().toISOString(),
-        validation_juridique_mode: "avocat",
+        validation_juridique_mode: "manuelle_avocat",
       })
       .eq("id", selectedDossier.id);
 
@@ -210,7 +210,7 @@ const AvocatSpace = () => {
     const { error } = await supabase
       .from("dossiers")
       .update({
-        validation_juridique_status: "rejetee",
+        validation_juridique_status: "bloquee",
         date_validation_juridique: new Date().toISOString(),
       })
       .eq("id", selectedDossier.id);

@@ -19,6 +19,7 @@ const SuperAdminSpace = lazy(() => import("./pages/SuperAdminSpace"));
 const AdminJuridiqueSpace = lazy(() => import("./pages/AdminJuridiqueSpace"));
 const Setup2FA = lazy(() => import("./pages/Setup2FA"));
 const ActivateAdmin = lazy(() => import("./pages/ActivateAdmin"));
+const ActivateAvocat = lazy(() => import("./pages/ActivateAvocat"));
 const NotFound = lazy(() => import("./pages/NotFound"));
 const CGU = lazy(() => import("./pages/CGU"));
 
@@ -53,6 +54,7 @@ const App = () => (
               <Route path="/reset-password" element={<ResetPassword />} />
               <Route path="/setup-2fa" element={<Setup2FA />} />
               <Route path="/activate-admin" element={<ActivateAdmin />} />
+              <Route path="/activate-avocat" element={<ActivateAvocat />} />
               <Route
                 path="/client/*"
                 element={
