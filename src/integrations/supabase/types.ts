@@ -417,7 +417,6 @@ export type Database = {
           use_capdemarches: boolean
           user_id: string
           validation_juridique_mode: string
-          validation_juridique_note: string | null
           validation_juridique_status: string
           visa_type: string
           webhook_events: Json | null
@@ -492,7 +491,6 @@ export type Database = {
           use_capdemarches?: boolean
           user_id: string
           validation_juridique_mode?: string
-          validation_juridique_note?: string | null
           validation_juridique_status?: string
           visa_type: string
           webhook_events?: Json | null
@@ -567,7 +565,6 @@ export type Database = {
           use_capdemarches?: boolean
           user_id?: string
           validation_juridique_mode?: string
-          validation_juridique_note?: string | null
           validation_juridique_status?: string
           visa_type?: string
           webhook_events?: Json | null
