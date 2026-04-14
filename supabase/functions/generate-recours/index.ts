@@ -1,11 +1,29 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.49.1";
-import { assertDossierAccess, HttpError, requireAuthenticatedContext } from "../_shared/security.ts";
+import { HttpError, requireAuthenticatedContext } from "../_shared/security.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type, x-supabase-client-platform, x-supabase-client-platform-version, x-supabase-client-runtime, x-supabase-client-runtime-version",
 };
+
+type RecoursAccessContext = {
+  user: { id: string };
+  roles: string[];
+  isPrivileged: boolean;
+};
+
+function assertRecoursGenerationAccess(
+  context: RecoursAccessContext,
+  dossier: { user_id?: string | null; avocat_id?: string | null },
+) {
+  if (context.isPrivileged || dossier.user_id === context.user.id) return;
+
+  const isAssignedAvocat = context.roles.includes("avocat") && dossier.avocat_id === context.user.id;
+  if (isAssignedAvocat) return;
+
+  throw new HttpError(403, "Acces refuse a ce dossier");
+}
 
 const MOTIF_ARTICLES: Record<string, string[]> = {
   A: ["L211-1"], B: ["L211-2", "R211-13"], C: ["L211-1"], D: ["L211-1"],
@@ -93,7 +111,7 @@ serve(async (req) => {
       });
     }
 
-    assertDossierAccess(authContext, dossier);
+    assertRecoursGenerationAccess(authContext, dossier);
 
     const { data: profile } = await supabase
       .from("profiles").select("*").eq("id", dossier.user_id).single();
@@ -552,6 +570,13 @@ RAPPELS :
       : hasAVerifierRefs
         ? "a_verifier_avocat"
         : "validee_automatique";
+    const isAssignedAvocatReview =
+      authContext.roles.includes("avocat") &&
+      dossier.avocat_id === authContext.user.id &&
+      dossier.validation_juridique_status === "a_verifier_avocat";
+    const savedValidationStatus = isAssignedAvocatReview && validationStatus === "validee_automatique"
+      ? "a_verifier_avocat"
+      : validationStatus;
 
     // Clean letter
     const cleanLetter = letterContent
@@ -571,8 +596,8 @@ RAPPELS :
       references_a_verifier: refsAVerifier,
       lrar_status: "lettre_neutre_generee",
       validation_juridique_mode: "hybride",
-      validation_juridique_status: validationStatus,
-      date_validation_juridique: validationStatus === "validee_automatique" ? new Date().toISOString() : null,
+      validation_juridique_status: savedValidationStatus,
+      date_validation_juridique: savedValidationStatus === "validee_automatique" ? new Date().toISOString() : null,
     }).eq("id", dossier_id);
 
     // Build blocking reason message
@@ -601,7 +626,7 @@ RAPPELS :
       blocking_reason,
       has_markers: { qualite: hasQualiteMarker, signature: hasSignatureMarker },
       validation_juridique_mode: "hybride",
-      validation_juridique_status: validationStatus,
+      validation_juridique_status: savedValidationStatus,
       dossier_ref: dossierRef,
       is_neutral: true,
       modele_ia,

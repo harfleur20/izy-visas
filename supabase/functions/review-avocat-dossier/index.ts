@@ -17,7 +17,29 @@ type DossierRow = {
   client_last_name: string | null;
   lrar_status: string | null;
   validation_juridique_status: string | null;
+  lettre_neutre_contenu: string | null;
 };
+
+type ReviewChecklist = Partial<Record<
+  | "adresse_crrv"
+  | "delai_30j"
+  | "arguments_refs"
+  | "inventaire_pieces"
+  | "signataire_qualifie"
+  | "redige_francais"
+  | "references_verifiees",
+  boolean
+>>;
+
+const CHECKLIST_KEYS: Array<keyof ReviewChecklist> = [
+  "adresse_crrv",
+  "delai_30j",
+  "arguments_refs",
+  "inventaire_pieces",
+  "signataire_qualifie",
+  "redige_francais",
+  "references_verifiees",
+];
 
 function getSupabaseAdmin() {
   return createClient(
@@ -25,6 +47,15 @@ function getSupabaseAdmin() {
     Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") ?? "",
     { auth: { persistSession: false } },
   );
+}
+
+function assertChecklistComplete(checklist: unknown) {
+  const data = (checklist || {}) as ReviewChecklist;
+  const missing = CHECKLIST_KEYS.filter((key) => data[key] !== true);
+
+  if (missing.length > 0) {
+    throw new HttpError(400, "Checklist avocat incomplete");
+  }
 }
 
 function jsonResponse(data: unknown, status = 200) {
@@ -101,6 +132,7 @@ serve(async (req) => {
     const dossierId = String(body.dossier_id || "").trim();
     const action = String(body.action || "").trim();
     const note = String(body.note || "").trim();
+    const checklist = body.checklist;
 
     if (!dossierId) throw new HttpError(400, "dossier_id requis");
     if (!["validate", "block"].includes(action)) throw new HttpError(400, "Action inconnue");
@@ -110,7 +142,7 @@ serve(async (req) => {
 
     const { data: dossier, error: dossierError } = await supabaseAdmin
       .from("dossiers")
-      .select("id, dossier_ref, user_id, avocat_id, client_first_name, client_last_name, lrar_status, validation_juridique_status")
+      .select("id, dossier_ref, user_id, avocat_id, client_first_name, client_last_name, lrar_status, validation_juridique_status, lettre_neutre_contenu")
       .eq("id", dossierId)
       .single();
 
@@ -119,6 +151,18 @@ serve(async (req) => {
     const typedDossier = dossier as DossierRow;
     if (typedDossier.avocat_id !== authContext.user.id) {
       throw new HttpError(403, "Ce dossier n'est pas assigne a cet avocat");
+    }
+
+    if (typedDossier.validation_juridique_status !== "a_verifier_avocat") {
+      throw new HttpError(409, "Ce dossier n'est pas en attente de validation avocat");
+    }
+
+    if (!typedDossier.lettre_neutre_contenu) {
+      throw new HttpError(409, "Lettre de recours absente. Generez la lettre avant validation");
+    }
+
+    if (action === "validate") {
+      assertChecklistComplete(checklist);
     }
 
     const wasOpen = !["validee_avocat", "bloquee"].includes(typedDossier.validation_juridique_status || "");

@@ -61,6 +61,7 @@ const VISA_LABELS: Record<string, string> = {
   talent: "Passeport talent",
 };
 
+const REVIEWABLE_STATUSES = new Set(["a_verifier_avocat"]);
 const aTitles = ["Dossiers à relire", "Éditeur de recours", "Dossiers validés", "Statistiques", "Mon profil"];
 
 const AvocatSpace = () => {
@@ -116,7 +117,7 @@ const AvocatSpace = () => {
 
       if (dossiers) {
         const pending = dossiers.filter(
-          (d) => d.validation_juridique_status !== "validee_avocat" && d.validation_juridique_status !== "bloquee"
+          (d) => REVIEWABLE_STATUSES.has(d.validation_juridique_status)
         );
         const validated = dossiers.filter(
           (d) => d.validation_juridique_status === "validee_avocat" || d.validation_juridique_status === "bloquee"
@@ -179,6 +180,14 @@ const AvocatSpace = () => {
   // Validate dossier
   const handleValidate = async () => {
     if (!selectedDossier) return;
+    if (!REVIEWABLE_STATUSES.has(selectedDossier.validation_juridique_status)) {
+      toast.error("Ce dossier n'est pas en attente de validation avocat");
+      return;
+    }
+    if (!selectedDossier.lettre_neutre_contenu && !recoursResult?.letter) {
+      toast.error("Générez ou chargez la lettre de recours avant de valider");
+      return;
+    }
     if (!allChecked) {
       toast.error("Complétez toute la checklist avant de valider");
       return;
@@ -199,6 +208,7 @@ const AvocatSpace = () => {
         dossier_id: selectedDossier.id,
         action: "validate",
         note,
+        checklist,
       },
     });
 
@@ -218,6 +228,10 @@ const AvocatSpace = () => {
   // Return dossier for corrections
   const handleReturn = async () => {
     if (!selectedDossier) return;
+    if (!REVIEWABLE_STATUSES.has(selectedDossier.validation_juridique_status)) {
+      toast.error("Ce dossier n'est pas en attente de validation avocat");
+      return;
+    }
 
     const note = [
       reviewNote.trim(),
@@ -377,8 +391,8 @@ const AvocatSpace = () => {
                             {format(new Date(dossier.created_at), "dd/MM", { locale: fr })}
                           </td>
                           <td className="px-3.5 py-2.5 border-b border-border">
-                            <Pill variant={dossier.validation_juridique_status === "en_cours" ? "new" : "muted"}>
-                              {dossier.validation_juridique_status === "en_cours" ? "En cours" : "À relire"}
+                            <Pill variant="warn">
+                              À relire
                             </Pill>
                           </td>
                           <td className="px-3.5 py-2.5 border-b border-border">
@@ -558,7 +572,13 @@ const AvocatSpace = () => {
                   </button>
                   <button
                     className="font-syne font-bold text-[0.78rem] px-5 py-2.5 rounded-[7px] bg-green-500/20 text-green-600 border border-green-500/30 transition-all disabled:opacity-50 disabled:cursor-not-allowed"
-                    disabled={reviewingAction !== null || !allChecked || (recoursResult ? !recoursResult.can_send : false)}
+                    disabled={
+                      reviewingAction !== null ||
+                      !allChecked ||
+                      (!selectedDossier.lettre_neutre_contenu && !recoursResult?.letter) ||
+                      !REVIEWABLE_STATUSES.has(selectedDossier.validation_juridique_status) ||
+                      (recoursResult ? !recoursResult.can_send : false)
+                    }
                     onClick={handleValidate}
                   >
                     {reviewingAction === "validate" ? "Validation…" : "✓ Valider et débloquer l'envoi"}
