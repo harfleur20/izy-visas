@@ -2,6 +2,7 @@ import { useState, useEffect } from "react";
 import ShellLayout from "@/components/ShellLayout";
 import { NavItem, NavGroup } from "@/components/NavItem";
 import { Eyebrow, BigTitle, Box } from "@/components/ui-custom";
+import { TopbarProfileBadge } from "@/components/TopbarProfileBadge";
 import { useAuth } from "@/hooks/useAuth";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
@@ -172,7 +173,7 @@ const SuperAdminSpace = () => {
       roleLabel="Super Administration"
       sidebar={sidebar}
       topbarTitle={["Vue générale", "Gestion des accès", "Invitations", "Journal d'audit"][page]}
-      topbarRight={<div className="w-[30px] h-[30px] rounded-md bg-gradient-to-br from-amber-500 to-red-600 flex items-center justify-center font-syne font-extrabold text-[0.68rem] text-white">SA</div>}
+      topbarRight={<TopbarProfileBadge fallback="Super admin" />}
       footerContent={<><strong className="text-muted-foreground">Super Admin IZY</strong></>}
     >
       <div className="animate-fadeU">

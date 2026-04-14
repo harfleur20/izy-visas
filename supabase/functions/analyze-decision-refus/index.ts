@@ -397,6 +397,14 @@ serve(async (req) => {
       nom_mismatch: nomMismatch,
     };
 
+    if (nomMismatch) {
+      return jsonResponse({
+        status: "name_mismatch",
+        message: "Le nom sur la décision ne correspond pas au titulaire du dossier.",
+        data: extractedData,
+      });
+    }
+
     if (confidence < 70) {
       return jsonResponse({
         status: "partial",

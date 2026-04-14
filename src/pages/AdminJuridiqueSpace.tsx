@@ -3,6 +3,7 @@ import ShellLayout from "@/components/ShellLayout";
 import { NavItem, NavGroup } from "@/components/NavItem";
 import { AdminReferencesJuridiques } from "@/components/AdminReferencesJuridiques";
 import { AdminPiecesRequises } from "@/components/AdminPiecesRequises";
+import { TopbarProfileBadge } from "@/components/TopbarProfileBadge";
 import { BigTitle, Box, Eyebrow, Pill, SectionLabel } from "@/components/ui-custom";
 import { Button } from "@/components/ui/button";
 import {
@@ -371,9 +372,7 @@ const AdminJuridiqueSpace = () => {
           <Button size="sm" variant="outline" onClick={() => void fetchOverview()} disabled={loading}>
             {loading ? "..." : "Actualiser"}
           </Button>
-          <div className="w-[30px] h-[30px] rounded-md bg-primary-hover flex items-center justify-center font-syne font-extrabold text-[0.68rem] text-white">
-            AJ
-          </div>
+          <TopbarProfileBadge fallback="Admin juridique" />
         </div>
       }
       footerContent={<><strong className="text-muted-foreground">Admin Juridique IZY</strong></>}

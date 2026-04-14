@@ -1,5 +1,5 @@
 import { serve } from "https://deno.land/std@0.190.0/http/server.ts";
-import { createClient } from "https://esm.sh/@supabase/supabase-js@2.49.4";
+import { createClient, type SupabaseClient } from "https://esm.sh/@supabase/supabase-js@2.49.4";
 import { HttpError } from "../_shared/security.ts";
 
 const corsHeaders = {
@@ -15,6 +15,20 @@ function jsonResponse(data: unknown, status = 200) {
     status,
     headers: { ...corsHeaders, "Content-Type": "application/json" },
   });
+}
+
+async function notifyClient(
+  supabaseAdmin: SupabaseClient,
+  payload: { user_id: string; titre: string; message: string; type: string; lien?: string },
+) {
+  const { error } = await supabaseAdmin.from("notifications").insert({
+    ...payload,
+    lien: payload.lien || "/client",
+  });
+
+  if (error) {
+    console.error("[TARAMONEY-WEBHOOK] Notification insert error:", error);
+  }
 }
 
 function timingSafeEqual(a: string, b: string): boolean {
@@ -174,6 +188,17 @@ serve(async (req) => {
         console.error("[TARAMONEY-WEBHOOK] Dossier update error:", dossierError);
         throw dossierError;
       }
+
+      await notifyClient(supabaseAdmin, {
+        user_id: payment.user_id,
+        titre: nextStatus === "paid"
+          ? `Paiement confirme - ${payment.dossier_ref}`
+          : `Paiement echoue - ${payment.dossier_ref}`,
+        message: nextStatus === "paid"
+          ? "Votre paiement Tara Money a ete confirme. Vous pouvez poursuivre votre parcours."
+          : "Votre paiement Tara Money n'a pas ete confirme. Relancez le paiement depuis votre espace client.",
+        type: nextStatus === "paid" ? "paiement" : "alerte",
+      });
     }
 
     return jsonResponse({

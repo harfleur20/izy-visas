@@ -3,6 +3,7 @@ import { useState, useEffect, useCallback } from "react";
 import ShellLayout from "@/components/ShellLayout";
 import { NavItem, NavGroup } from "@/components/NavItem";
 import { Eyebrow, BigTitle, Desc, Box, Pill } from "@/components/ui-custom";
+import { TopbarProfileBadge } from "@/components/TopbarProfileBadge";
 import { toast } from "sonner";
 import { ComplianceReportPanel } from "@/components/ComplianceReport";
 import { useGenerateRecours } from "@/hooks/useGenerateRecours";
@@ -292,8 +293,6 @@ const AvocatSpace = () => {
 
   // Stats
   const totalDossiers = pendingDossiers.length + validatedDossiers.length;
-  const initials = avocatProfile ? `${avocatProfile.prenom[0]}${avocatProfile.nom[0]}`.toUpperCase() : "AV";
-
   const sidebar = (
     <>
       <NavGroup label="Dossiers">
@@ -332,9 +331,7 @@ const AvocatSpace = () => {
       sidebar={sidebar}
       topbarTitle={aTitles[page]}
       topbarRight={
-        <div className="w-[30px] h-[30px] rounded-md bg-gradient-to-br from-primary to-purple-600 flex items-center justify-center font-syne font-extrabold text-[0.68rem] text-primary-foreground">
-          {initials}
-        </div>
+        <TopbarProfileBadge name={avocatProfile?.prenom} fallback="Avocat" />
       }
       footerContent={
         avocatProfile ? (

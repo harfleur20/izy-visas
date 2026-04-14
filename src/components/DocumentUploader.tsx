@@ -35,6 +35,37 @@ interface DocumentUploaderProps {
   maxFiles?: number;
 }
 
+type OcrDetails = {
+  canAutoCorrect?: boolean;
+  typeMismatchWarning?: string;
+  decisionWarning?: string;
+  languageNotice?: string;
+};
+
+const getAcceptedToastMessage = (name: string, details: OcrDetails) => {
+  if (details.typeMismatchWarning) {
+    return {
+      level: "info" as const,
+      title: `${name} — Vérification requise`,
+      description: details.typeMismatchWarning,
+    };
+  }
+
+  if (details.decisionWarning) {
+    return {
+      level: "info" as const,
+      title: `${name} — Vérification requise`,
+      description: details.decisionWarning,
+    };
+  }
+
+  return {
+    level: "success" as const,
+    title: `${name} — Analyse terminée ✓`,
+    description: "",
+  };
+};
+
 function qualityIndicator(score: number) {
   if (score >= 85) return { icon: "🟢", label: "Excellente qualité", color: "text-green-500" };
   if (score >= 70) return { icon: "🟡", label: "Bonne qualité", color: "text-yellow-500" };
@@ -78,7 +109,7 @@ export function DocumentUploader({
       for (const row of data) {
         if (row.statut_ocr === "pending" || row.statut_ocr === "analyzing") continue;
 
-        const details = row.ocr_details as any || {};
+        const details = (row.ocr_details || {}) as OcrDetails;
         const matchingPiece = pieces.find((p) => p.id === row.id);
 
         if (row.statut_ocr === "accepte") {
@@ -96,7 +127,12 @@ export function DocumentUploader({
             canAutoCorrect: details.canAutoCorrect || false,
             file: matchingPiece?.file,
           });
-          toast.success(`${row.nom_piece} — Analyse terminée ✓`);
+          const toastMessage = getAcceptedToastMessage(row.nom_piece, details);
+          if (toastMessage.level === "success") {
+            toast.success(toastMessage.title);
+          } else {
+            toast.info(toastMessage.title, { description: toastMessage.description });
+          }
         } else if (row.statut_ocr === "rejete") {
           onPieceUploaded({
             id: row.id,
@@ -118,6 +154,11 @@ export function DocumentUploader({
   const [dragOver, setDragOver] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
   const cameraRef = useRef<HTMLInputElement>(null);
+
+  const resetFileInputs = useCallback(() => {
+    if (inputRef.current) inputRef.current.value = "";
+    if (cameraRef.current) cameraRef.current.value = "";
+  }, []);
 
   const uploadAndAnalyze = useCallback(async (file: File, customName?: string) => {
     const name = customName || nomPiece || file.name.replace(/\.[^.]+$/, "");
@@ -164,7 +205,7 @@ export function DocumentUploader({
         onPieceRemoved(tempId);
       }
       toast.info(`${name} — Analyse OCR en cours…`);
-    } catch (err: any) {
+    } catch (err) {
       console.error("Upload error:", err);
       onPieceUploaded({
         ...tempPiece,
@@ -220,8 +261,20 @@ export function DocumentUploader({
     if (!files) return;
     const remaining = maxFiles - pieces.length;
     const toUpload = Array.from(files).slice(0, Math.max(0, remaining));
+    if (toUpload.length === 0 && files.length > 0) {
+      toast.info("Supprimez d'abord le document actuel avant d'en ajouter un nouveau.");
+      resetFileInputs();
+      return;
+    }
     toUpload.forEach((f) => uploadAndAnalyze(f));
-  }, [pieces.length, maxFiles, uploadAndAnalyze]);
+    resetFileInputs();
+  }, [pieces.length, maxFiles, resetFileInputs, uploadAndAnalyze]);
+
+  const handleReplace = useCallback((pieceId: string) => {
+    onPieceRemoved?.(pieceId);
+    resetFileInputs();
+    setTimeout(() => inputRef.current?.click(), 0);
+  }, [onPieceRemoved, resetFileInputs]);
 
   const handleDrop = useCallback((e: React.DragEvent) => {
     e.preventDefault();
@@ -282,7 +335,10 @@ export function DocumentUploader({
         className="hidden"
         accept=".pdf,.jpg,.jpeg,.png"
         multiple
-        onChange={(e) => handleFiles(e.target.files)}
+        onChange={(e) => {
+          handleFiles(e.target.files);
+          e.target.value = "";
+        }}
       />
       <input
         ref={cameraRef}
@@ -290,7 +346,10 @@ export function DocumentUploader({
         className="hidden"
         accept="image/*"
         capture="environment"
-        onChange={(e) => handleFiles(e.target.files)}
+        onChange={(e) => {
+          handleFiles(e.target.files);
+          e.target.value = "";
+        }}
       />
 
       {/* Uploaded pieces list */}
@@ -301,6 +360,7 @@ export function DocumentUploader({
               key={piece.id}
               piece={piece}
               onRemove={onPieceRemoved}
+              onReplace={handleReplace}
               onAutoCorrect={handleAutoCorrect}
               onConfirmMismatch={(p) => {
                 onPieceUploaded({
@@ -349,11 +409,13 @@ function AnimatedProgress({ label, targetPct, durationMs }: { label: string; tar
 function PieceCard({
   piece,
   onRemove,
+  onReplace,
   onAutoCorrect,
   onConfirmMismatch,
 }: {
   piece: UploadedPiece;
   onRemove?: (id: string) => void;
+  onReplace?: (id: string) => void;
   onAutoCorrect: (piece: UploadedPiece) => void;
   onConfirmMismatch?: (piece: UploadedPiece) => void;
 }) {
@@ -427,7 +489,7 @@ function PieceCard({
                     <Button variant="outline" size="sm" className="text-xs h-10 sm:h-7" onClick={() => onConfirmMismatch?.(piece)}>
                       Confirmer
                     </Button>
-                    <Button variant="outline" size="sm" className="text-xs h-10 sm:h-7" onClick={() => onRemove?.(piece.id)}>
+                    <Button variant="outline" size="sm" className="text-xs h-10 sm:h-7" onClick={() => onReplace?.(piece.id)}>
                       Changer le fichier
                     </Button>
                   </div>
@@ -440,7 +502,7 @@ function PieceCard({
                     <Button variant="outline" size="sm" className="text-xs h-10 sm:h-7" onClick={() => onConfirmMismatch?.(piece)}>
                       Confirmer quand même
                     </Button>
-                    <Button variant="outline" size="sm" className="text-xs h-10 sm:h-7" onClick={() => onRemove?.(piece.id)}>
+                    <Button variant="outline" size="sm" className="text-xs h-10 sm:h-7" onClick={() => onReplace?.(piece.id)}>
                       Changer le fichier
                     </Button>
                   </div>
@@ -474,7 +536,7 @@ function PieceCard({
                       variant="outline"
                       size="sm"
                       className="text-xs h-10 sm:h-7"
-                      onClick={() => onRemove?.(piece.id)}
+                      onClick={() => onReplace?.(piece.id)}
                     >
                       Non, je réuploade
                     </Button>

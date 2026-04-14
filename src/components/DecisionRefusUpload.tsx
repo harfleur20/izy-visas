@@ -54,6 +54,12 @@ interface DecisionRefusUploadProps {
 
 type Phase = "upload" | "analyzing" | "not_recognized" | "unreadable" | "partial" | "success";
 
+const hasNameMismatch = (data: ExtractedData | null) =>
+  Boolean(data?.nom_mismatch || data?.warnings?.some((warning) => warning.type === "name_mismatch"));
+
+const hasExpiredDeadline = (data: ExtractedData | null) =>
+  data?.delai_restant_jours !== null && data?.delai_restant_jours !== undefined && data.delai_restant_jours < 0;
+
 export function DecisionRefusUpload({ dossierId, userId, onComplete, onBack }: DecisionRefusUploadProps) {
   const [phase, setPhase] = useState<Phase>("upload");
   const [errorMessage, setErrorMessage] = useState("");
@@ -115,6 +121,10 @@ export function DecisionRefusUpload({ dossierId, userId, onComplete, onBack }: D
           setErrorMessage(data.message);
           setPhase("unreadable");
           break;
+        case "name_mismatch":
+          setExtractedData(data.data);
+          setPhase("success");
+          break;
         case "partial":
           setExtractedData(data.data);
           setEditableData(JSON.parse(JSON.stringify(data.data)));
@@ -128,7 +138,7 @@ export function DecisionRefusUpload({ dossierId, userId, onComplete, onBack }: D
           setErrorMessage("Réponse inattendue du serveur.");
           setPhase("upload");
       }
-    } catch (err: any) {
+    } catch (err) {
       console.error("Analysis error:", err);
       setErrorMessage("❌ Erreur lors de l'analyse. Veuillez réessayer.");
       setPhase("upload");
@@ -146,12 +156,16 @@ export function DecisionRefusUpload({ dossierId, userId, onComplete, onBack }: D
     if (!finalData) return;
 
     // Block if deadline expired
-    if (finalData.delai_restant_jours !== null && finalData.delai_restant_jours < 0) {
+    if (hasExpiredDeadline(finalData)) {
       toast.error("Le délai de recours de 30 jours est expiré. Vous ne pouvez pas continuer avec ce document.");
       return;
     }
 
-    // Warn but allow if name mismatch (user already saw the warning)
+    if (hasNameMismatch(finalData)) {
+      toast.error("Le nom sur cette décision ne correspond pas au titulaire du dossier. Importez votre propre décision de refus.");
+      return;
+    }
+
     onComplete(finalData);
   };
 
@@ -282,13 +296,18 @@ export function DecisionRefusUpload({ dossierId, userId, onComplete, onBack }: D
 
   // ═══ PARTIAL EXTRACTION ═══
   if (phase === "partial" && editableData) {
+    const nameMismatch = hasNameMismatch(editableData);
+    const deadlineExpired = hasExpiredDeadline(editableData);
+
     const updateField = (path: string, value: string) => {
       setEditableData((prev) => {
         if (!prev) return prev;
         const copy = JSON.parse(JSON.stringify(prev));
         const keys = path.split(".");
-        let obj: any = copy;
-        for (let i = 0; i < keys.length - 1; i++) obj = obj[keys[i]];
+        let obj = copy as Record<string, unknown>;
+        for (let i = 0; i < keys.length - 1; i++) {
+          obj = obj[keys[i]] as Record<string, unknown>;
+        }
         obj[keys[keys.length - 1]] = value;
         return copy;
       });
@@ -299,6 +318,12 @@ export function DecisionRefusUpload({ dossierId, userId, onComplete, onBack }: D
         <Eyebrow>Vérification requise</Eyebrow>
         <BigTitle>Vérifiez les informations extraites</BigTitle>
         <Desc>Nous avons lu ces informations. Vérifiez et corrigez si nécessaire :</Desc>
+
+        {nameMismatch && (
+          <Box variant="alert" title="⚠️ Nom différent du dossier">
+            Le nom détecté sur cette décision ne correspond pas au titulaire de votre dossier. Pour protéger votre dossier, vous devez importer votre propre décision de refus.
+          </Box>
+        )}
 
         <div className="space-y-3 mb-6">
           <EditField label="Votre nom" value={editableData.demandeur.nom || ""} onChange={(v) => updateField("demandeur.nom", v)} />
@@ -359,19 +384,30 @@ export function DecisionRefusUpload({ dossierId, userId, onComplete, onBack }: D
           }} />
         </div>
 
-        <Button onClick={handleConfirm} className="w-full min-h-[52px]">
-          Confirmer ces informations →
+        <Button onClick={handleConfirm} disabled={nameMismatch || deadlineExpired} className="w-full min-h-[52px]">
+          {nameMismatch ? "🚫 Document refusé — Nom différent" : "Confirmer ces informations →"}
         </Button>
+        {nameMismatch && (
+          <button
+            onClick={resetToUpload}
+            className="w-full text-center text-xs text-muted-foreground hover:underline font-syne font-semibold mt-3"
+          >
+            Uploader mon propre document
+          </button>
+        )}
       </div>
     );
   }
 
   // ═══ SUCCESS ═══
   if (phase === "success" && extractedData) {
+    const nameMismatch = hasNameMismatch(extractedData);
+    const deadlineExpired = hasExpiredDeadline(extractedData);
+
     return (
       <div>
         <Eyebrow>Qualification automatique</Eyebrow>
-        <BigTitle>✅ Votre refus a été lu</BigTitle>
+        <BigTitle>{nameMismatch ? "Document bloqué" : "✅ Votre refus a été lu"}</BigTitle>
 
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mb-6">
           {/* Demandeur card */}
@@ -439,7 +475,7 @@ export function DecisionRefusUpload({ dossierId, userId, onComplete, onBack }: D
         {/* Name mismatch warning */}
         {extractedData.nom_mismatch && (
           <Box variant="alert" title="⚠️ Nom différent du dossier">
-            Le nom sur cette décision ({extractedData.demandeur.nom} {extractedData.demandeur.prenom}) ne correspond pas au titulaire de votre dossier. Vérifiez que vous avez bien uploadé votre propre décision de refus.
+            Le nom sur cette décision ({extractedData.demandeur.nom} {extractedData.demandeur.prenom}) ne correspond pas au titulaire de votre dossier. Vous ne pouvez pas continuer avec ce document. Importez votre propre décision de refus.
           </Box>
         )}
 
@@ -458,28 +494,32 @@ export function DecisionRefusUpload({ dossierId, userId, onComplete, onBack }: D
 
         <Button
           onClick={handleConfirm}
-          disabled={extractedData.delai_restant_jours !== null && extractedData.delai_restant_jours < 0}
+          disabled={nameMismatch || deadlineExpired}
           className="w-full min-h-[52px] mb-3"
         >
-          {extractedData.delai_restant_jours !== null && extractedData.delai_restant_jours < 0
+          {nameMismatch
+            ? "🚫 Document refusé — Nom différent"
+            : deadlineExpired
             ? "🚫 Recours impossible — Délai expiré"
             : "✓ Ces informations sont correctes → Continuer"}
         </Button>
-        <button
-          onClick={() => {
-            setEditableData(JSON.parse(JSON.stringify(extractedData)));
-            setPhase("partial");
-          }}
-          className="w-full text-center text-xs text-primary hover:underline font-syne font-semibold"
-        >
-          Modifier une information
-        </button>
-        {extractedData.delai_restant_jours !== null && extractedData.delai_restant_jours < 0 && (
+        {!nameMismatch && (
+          <button
+            onClick={() => {
+              setEditableData(JSON.parse(JSON.stringify(extractedData)));
+              setPhase("partial");
+            }}
+            className="w-full text-center text-xs text-primary hover:underline font-syne font-semibold"
+          >
+            Modifier une information
+          </button>
+        )}
+        {(nameMismatch || deadlineExpired) && (
           <button
             onClick={resetToUpload}
             className="w-full text-center text-xs text-muted-foreground hover:underline font-syne font-semibold mt-2"
           >
-            Uploader un autre document
+            {nameMismatch ? "Uploader mon propre document" : "Uploader un autre document"}
           </button>
         )}
       </div>

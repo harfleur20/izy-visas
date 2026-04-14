@@ -6,8 +6,10 @@ import { toast } from "sonner";
 import { AdminCapdemarchesDashboard } from "@/components/AdminCapdemarchesDashboard";
 import { AdminReferencesJuridiques } from "@/components/AdminReferencesJuridiques";
 import { AdminPiecesRequises } from "@/components/AdminPiecesRequises";
+import { TopbarProfileBadge } from "@/components/TopbarProfileBadge";
 import { supabase } from "@/integrations/supabase/client";
 import type { Database, Json } from "@/integrations/supabase/types";
+import { Bell } from "lucide-react";
 
 const mTitles = ["Vue générale", "Tous les dossiers", "Alertes & urgences", "Réassignations", "Suivi MySendingBox", "Gestion avocats", "Inscriptions", "Contenu juridique", "Finances", "RGPD & journaux", "CAPDEMARCHES", "Base juridique", "Pièces requises"];
 
@@ -763,13 +765,21 @@ const AdminSpace = () => {
   const topbarRight = (
     <>
       <button className="bg-foreground/[0.06] border border-border-2 rounded-md px-2.5 py-1.5 text-xs text-muted-foreground font-syne font-semibold flex items-center gap-1.5 hover:bg-foreground/10 hover:text-foreground transition-all" onClick={() => openModal()}>🔄 Réassigner</button>
-      <div className="relative w-[30px] h-[30px] rounded-md bg-foreground/[0.05] border border-border cursor-pointer flex items-center justify-center text-sm" onClick={() => setPage(2)}>
-        🔔
+      <TopbarProfileBadge fallback="Admin" />
+      <button
+        type="button"
+        className="relative w-[30px] h-[30px] rounded-md bg-foreground/[0.06] border border-border-2 cursor-pointer flex items-center justify-center text-muted-foreground hover:text-foreground hover:bg-foreground/[0.09] transition-all"
+        onClick={() => setPage(2)}
+        aria-label="Alertes"
+        title="Alertes"
+      >
+        <Bell size={14} />
         {dossierStats.urgent > 0 && (
-          <span className="absolute -top-1 -right-1 min-w-3.5 h-3.5 px-1 rounded-full bg-destructive font-syne text-[0.52rem] font-extrabold flex items-center justify-center">{dossierStats.urgent}</span>
+          <span className="absolute -right-1.5 -top-1.5 min-w-[17px] h-[17px] rounded-full bg-destructive text-[0.58rem] font-syne font-extrabold text-foreground flex items-center justify-center px-1 border border-background-2">
+            {dossierStats.urgent > 9 ? "9+" : dossierStats.urgent}
+          </span>
         )}
-      </div>
-      <div className="w-[30px] h-[30px] rounded-md bg-gradient-to-br from-primary-hover to-purple-600 flex items-center justify-center font-syne font-extrabold text-[0.68rem]">AD</div>
+      </button>
     </>
   );
 

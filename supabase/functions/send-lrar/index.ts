@@ -64,6 +64,20 @@ function jsonResponse(data: unknown, status = 200) {
   });
 }
 
+async function notifyClient(
+  supabase: ReturnType<typeof getSupabaseAdmin>,
+  payload: { user_id: string; titre: string; message: string; type: string; lien?: string },
+) {
+  const { error } = await supabase.from("notifications").insert({
+    ...payload,
+    lien: payload.lien || "/client",
+  });
+
+  if (error) {
+    console.error("[SEND-LRAR] Notification insert error:", error);
+  }
+}
+
 function formatPhone(phone: string): string {
   const cleaned = phone.replace(/[^0-9+]/g, "");
   if (cleaned.startsWith("+")) return cleaned;
@@ -314,6 +328,13 @@ async function handleSend(req: Request) {
     })
     .eq("id", dossierId);
 
+  await notifyClient(supabase, {
+    user_id: dossier.user_id,
+    titre: `LRAR envoyee - ${dossier.dossier_ref}`,
+    message: `Votre recours a ete envoye en LRAR. Suivi : ${letter.tracking_number || "en attente"}.`,
+    type: "lrar",
+  });
+
   // ── Notification WhatsApp ──
   if (dossier.client_phone) {
     await sendWhatsApp(
@@ -403,6 +424,28 @@ async function handleWebhook(req: Request) {
     .eq("mysendingbox_letter_id", letterId);
 
   console.log(`[SEND-LRAR-WEBHOOK] Dossier ${dossier.dossier_ref} → ${newStatus}`);
+
+  if (newStatus !== dossier.lrar_status) {
+    const notificationMessages: Record<string, string> = {
+      en_transit: `Votre LRAR ${dossier.dossier_ref} est en transit vers la CRRV.`,
+      depose_poste: `Votre LRAR ${dossier.dossier_ref} a ete deposee a La Poste. Suivi : ${trackingNumber || "en attente"}.`,
+      livre: `Votre recours ${dossier.dossier_ref} a ete remis a la CRRV.`,
+      ar_signe: `L'accuse de reception du dossier ${dossier.dossier_ref} a ete signe.`,
+      retourne: `Votre courrier LRAR ${dossier.dossier_ref} a ete retourne. L'equipe IZY vous contactera.`,
+      adresse_incorrecte: `L'adresse de livraison du dossier ${dossier.dossier_ref} doit etre corrigee.`,
+      erreur: `Un incident postal bloque le dossier ${dossier.dossier_ref}. L'equipe IZY prend le relais.`,
+    };
+
+    const message = notificationMessages[newStatus];
+    if (message) {
+      await notifyClient(supabase, {
+        user_id: dossier.user_id,
+        titre: `Suivi LRAR - ${dossier.dossier_ref}`,
+        message,
+        type: ["retourne", "adresse_incorrecte", "erreur"].includes(newStatus) ? "alerte" : "lrar",
+      });
+    }
+  }
 
   // ── WhatsApp notifications by status ──
   if (newStatus !== dossier.lrar_status && dossier.client_phone) {

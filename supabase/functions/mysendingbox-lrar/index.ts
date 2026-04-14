@@ -56,6 +56,20 @@ function jsonResponse(data: unknown, status = 200) {
   });
 }
 
+async function notifyClient(
+  supabase: ReturnType<typeof getSupabaseAdmin>,
+  payload: { user_id: string; titre: string; message: string; type: string; lien?: string },
+) {
+  const { error } = await supabase.from("notifications").insert({
+    ...payload,
+    lien: payload.lien || "/client",
+  });
+
+  if (error) {
+    console.error("[MSB] Notification insert error:", error);
+  }
+}
+
 // ── Router ──────────────────────────────────────────────────────────────────
 
 serve(async (req) => {
@@ -203,6 +217,13 @@ async function handleSend(req: Request) {
 
   if (dbError) {
     console.error("[MSB] DB insert error:", dbError);
+  } else {
+    await notifyClient(supabase, {
+      user_id: userId,
+      titre: `LRAR envoyee - ${dossierRef}`,
+      message: `Votre recours a ete envoye en LRAR. Suivi : ${letter.tracking_number || "en attente"}.`,
+      type: "lrar",
+    });
   }
 
   // Sync dossiers table: mark as sent
@@ -353,6 +374,28 @@ async function handleWebhook(req: Request) {
       console.error(`[MSB-WEBHOOK] Failed to update dossier ${envoi.dossier_ref}:`, dossierError);
     } else {
       console.log(`[MSB-WEBHOOK] Synced dossier ${envoi.dossier_ref}: lrar_status=${newDossierStatus}`);
+    }
+  }
+
+  if (newStatus !== envoi.status) {
+    const notificationMessages: Record<string, string> = {
+      in_transit: `Votre LRAR ${envoi.dossier_ref} est en cours d'acheminement. Suivi : ${trackingNumber || "en attente"}.`,
+      delivered: `Votre LRAR ${envoi.dossier_ref} a ete distribuee.`,
+      waiting_withdrawal: `Votre LRAR ${envoi.dossier_ref} est en attente de retrait.`,
+      returned: `Votre LRAR ${envoi.dossier_ref} a ete retournee a l'expediteur.`,
+      wrong_address: `L'adresse de livraison du dossier ${envoi.dossier_ref} doit etre corrigee.`,
+      error: `Une erreur bloque l'envoi LRAR du dossier ${envoi.dossier_ref}.`,
+      filing_proof: `La preuve de depot de votre LRAR ${envoi.dossier_ref} est disponible.`,
+    };
+
+    const message = notificationMessages[newStatus];
+    if (message) {
+      await notifyClient(supabase, {
+        user_id: envoi.user_id,
+        titre: `Suivi LRAR - ${envoi.dossier_ref}`,
+        message,
+        type: ["returned", "wrong_address", "error"].includes(newStatus) ? "alerte" : "lrar",
+      });
     }
   }
 

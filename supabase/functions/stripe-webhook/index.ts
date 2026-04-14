@@ -1,12 +1,26 @@
 import { serve } from "https://deno.land/std@0.190.0/http/server.ts";
 import Stripe from "https://esm.sh/stripe@18.5.0";
-import { createClient } from "https://esm.sh/@supabase/supabase-js@2.49.4";
+import { createClient, type SupabaseClient } from "https://esm.sh/@supabase/supabase-js@2.49.4";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
   "Access-Control-Allow-Headers":
     "authorization, x-client-info, apikey, content-type, x-supabase-client-platform, x-supabase-client-platform-version, x-supabase-client-runtime, x-supabase-client-runtime-version",
 };
+
+async function notifyClient(
+  supabaseAdmin: SupabaseClient,
+  payload: { user_id: string; titre: string; message: string; type: string; lien?: string },
+) {
+  const { error } = await supabaseAdmin.from("notifications").insert({
+    ...payload,
+    lien: payload.lien || "/client",
+  });
+
+  if (error) {
+    console.error("[STRIPE-WEBHOOK] Notification insert error:", error);
+  }
+}
 
 serve(async (req) => {
   if (req.method === "OPTIONS") {
@@ -88,6 +102,13 @@ serve(async (req) => {
             console.error("[STRIPE-WEBHOOK] Error updating dossier after payment:", dossierUpdateError);
             throw dossierUpdateError;
           }
+
+          await notifyClient(supabaseAdmin, {
+            user_id: userId,
+            titre: `Paiement confirme - ${dossierRef}`,
+            message: "Votre paiement a ete confirme. Vous pouvez poursuivre votre parcours.",
+            type: "paiement",
+          });
         }
 
         console.log(`[STRIPE-WEBHOOK] Payment marked as paid for session ${session.id}`);
@@ -113,6 +134,13 @@ serve(async (req) => {
             .update({ lrar_status: "paiement_echoue" })
             .eq("dossier_ref", dossierRef)
             .eq("user_id", userId);
+
+          await notifyClient(supabaseAdmin, {
+            user_id: userId,
+            titre: `Paiement echoue - ${dossierRef}`,
+            message: "Votre paiement n'a pas ete confirme. Relancez le paiement depuis votre espace client.",
+            type: "alerte",
+          });
         }
         break;
       }
@@ -141,6 +169,13 @@ serve(async (req) => {
               .update({ lrar_status: "paiement_rembourse" })
               .eq("dossier_ref", payment.dossier_ref)
               .eq("user_id", payment.user_id);
+
+            await notifyClient(supabaseAdmin, {
+              user_id: payment.user_id,
+              titre: `Paiement rembourse - ${payment.dossier_ref}`,
+              message: "Un remboursement a ete enregistre pour votre dossier.",
+              type: "paiement",
+            });
           }
         }
         break;

@@ -19,6 +19,8 @@ import { SendOptionChooser } from "@/components/SendOptionChooser";
 import { LrarCompositionWrapper } from "@/components/LrarCompositionWrapper";
 import { LrarTrackingSuivi } from "@/components/LrarTrackingSuivi";
 import { PiecesComplementaires } from "@/components/PiecesComplementaires";
+import { ClientNotificationBell } from "@/components/ClientNotificationBell";
+import { TopbarProfileBadge } from "@/components/TopbarProfileBadge";
 
 type SendOption = "A" | "B" | "C";
 type PaymentMethod = "stripe" | "taramoney";
@@ -82,6 +84,27 @@ type PieceRequiseCheckRow = {
 type PieceJustificativeCheckRow = {
   nom_piece: string;
   statut_ocr: string;
+};
+
+const getPieceToastPayload = (name: string, score: number | null, details: OcrDetails) => {
+  if (details.typeMismatchWarning) {
+    return {
+      title: `⚠️ ${name} — Vérification requise`,
+      description: details.typeMismatchWarning,
+    };
+  }
+
+  if (details.decisionWarning) {
+    return {
+      title: `⚠️ ${name} — Vérification requise`,
+      description: details.decisionWarning,
+    };
+  }
+
+  return {
+    title: `✅ ${name} acceptée — Qualité : ${score || 0}/100`,
+    description: undefined,
+  };
 };
 
 const OPTION_LABELS: Record<SendOption, string> = {
@@ -399,7 +422,8 @@ const ClientSpace = () => {
           });
 
           if (status === "accepted") {
-            toast({ title: `✅ ${row.nom_piece} acceptée — Qualité : ${row.score_qualite}/100` });
+            const toastPayload = getPieceToastPayload(row.nom_piece, row.score_qualite, details);
+            toast({ title: toastPayload.title, description: toastPayload.description });
           } else if (status === "rejected") {
             toast({ title: `❌ ${row.nom_piece} rejetée`, description: row.motif_rejet || "Qualité insuffisante", variant: "destructive" });
           }
@@ -896,7 +920,12 @@ const ClientSpace = () => {
       roleLabel="Client"
       sidebar={sidebar}
       topbarTitle={cTitles[step]}
-      topbarRight={<div className="w-[30px] h-[30px] rounded-md bg-gradient-to-br from-primary-hover to-purple-600 flex items-center justify-center font-syne font-extrabold text-[0.68rem]">AD</div>}
+      topbarRight={
+        <>
+          <TopbarProfileBadge name={profileForm.first_name} fallback="Client" />
+          <ClientNotificationBell />
+        </>
+      }
       footerContent={<><strong className="text-muted-foreground">Me NGUIYAN Dieu Le Fit</strong><br />Avocat à la cour<br />2C Rue Ferdinand de Lesseps<br />94000 Créteil</>}
       bottomNavItems={bottomNavItems}
     >
