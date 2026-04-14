@@ -241,6 +241,7 @@ const SuperAdminSpace = () => {
                 <div>
                   <label className={labelClass}>Rôle</label>
                   <select className={inputClass} value={form.role} onChange={e => setForm(p => ({ ...p, role: e.target.value }))}>
+                    <option value="super_admin">Super admin — Accès complet et gestion des administrateurs</option>
                     <option value="admin_delegue">Admin délégué — Gestion dossiers, avocats, alertes</option>
                     <option value="admin_juridique">Admin juridique — Base juridique uniquement</option>
                   </select>

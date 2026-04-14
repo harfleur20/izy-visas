@@ -110,7 +110,7 @@ serve(async (req) => {
       throw new HttpError(400, "Email et role requis");
     }
 
-    if (!["admin_delegue", "admin_juridique"].includes(role)) {
+    if (!["super_admin", "admin_delegue", "admin_juridique"].includes(role)) {
       throw new HttpError(400, "Role invalide");
     }
 
