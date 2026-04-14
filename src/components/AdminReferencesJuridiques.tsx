@@ -67,6 +67,10 @@ const FAVORABLE_OPTIONS = [
 type RefJuridique = Database["public"]["Tables"]["references_juridiques"]["Row"];
 type RefJuridiqueInsert = Database["public"]["Tables"]["references_juridiques"]["Insert"];
 
+interface AdminReferencesJuridiquesProps {
+  readOnly?: boolean;
+}
+
 const emptyForm = {
   categorie: "",
   reference_complete: "",
@@ -83,7 +87,7 @@ const emptyForm = {
   source_url: "",
 };
 
-export function AdminReferencesJuridiques() {
+export function AdminReferencesJuridiques({ readOnly = false }: AdminReferencesJuridiquesProps) {
   const [refs, setRefs] = useState<RefJuridique[]>([]);
   const [loading, setLoading] = useState(true);
   const [form, setForm] = useState({ ...emptyForm });
@@ -302,6 +306,11 @@ export function AdminReferencesJuridiques() {
     <div>
       <Eyebrow>Base juridique</Eyebrow>
       <BigTitle>Références juridiques</BigTitle>
+      {readOnly && (
+        <Box variant="info" title="Lecture seule">
+          L'édition des références juridiques se fait depuis l'espace admin juridique.
+        </Box>
+      )}
 
       {/* SECTION 4 — Stats */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-5">
@@ -341,12 +350,12 @@ export function AdminReferencesJuridiques() {
       <Tabs defaultValue="list" className="w-full">
         <TabsList className="mb-4">
           <TabsTrigger value="list">Liste des références</TabsTrigger>
-          <TabsTrigger value="add">{editingId ? "Modifier" : "Ajouter"}</TabsTrigger>
-          <TabsTrigger value="import">Import CSV</TabsTrigger>
+          {!readOnly && <TabsTrigger value="add">{editingId ? "Modifier" : "Ajouter"}</TabsTrigger>}
+          {!readOnly && <TabsTrigger value="import">Import CSV</TabsTrigger>}
         </TabsList>
 
         {/* TAB — Formulaire */}
-        <TabsContent value="add">
+        {!readOnly && <TabsContent value="add">
           <div className="bg-panel border border-border rounded-xl p-5 space-y-4">
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <div className="space-y-2">
@@ -490,7 +499,7 @@ export function AdminReferencesJuridiques() {
               )}
             </div>
           </div>
-        </TabsContent>
+        </TabsContent>}
 
         {/* TAB — Liste */}
         <TabsContent value="list">
@@ -540,14 +549,14 @@ export function AdminReferencesJuridiques() {
                     <TableHead className="text-xs">Date décision</TableHead>
                     <TableHead className="text-xs">Vérifié par</TableHead>
                     <TableHead className="text-xs">Vérification</TableHead>
-                    <TableHead className="text-xs">Actions</TableHead>
+                    {!readOnly && <TableHead className="text-xs">Actions</TableHead>}
                   </TableRow>
                 </TableHeader>
                 <TableBody>
                   {loading ? (
-                    <TableRow><TableCell colSpan={8} className="text-center text-muted-foreground py-8">Chargement…</TableCell></TableRow>
+                    <TableRow><TableCell colSpan={readOnly ? 7 : 8} className="text-center text-muted-foreground py-8">Chargement…</TableCell></TableRow>
                   ) : filteredRefs.length === 0 ? (
-                    <TableRow><TableCell colSpan={8} className="text-center text-muted-foreground py-8">Aucune référence trouvée</TableCell></TableRow>
+                    <TableRow><TableCell colSpan={readOnly ? 7 : 8} className="text-center text-muted-foreground py-8">Aucune référence trouvée</TableCell></TableRow>
                   ) : (
                     filteredRefs.map((ref) => (
                       <TableRow key={ref.id} className={!ref.actif ? "opacity-50" : ""}>
@@ -573,22 +582,24 @@ export function AdminReferencesJuridiques() {
                         <TableCell className="text-xs text-muted-foreground">{ref.date_decision || "—"}</TableCell>
                         <TableCell className="text-xs text-muted-foreground">{ref.verifie_par || "—"}</TableCell>
                         <TableCell className="text-xs text-muted-foreground">{ref.date_verification || "—"}</TableCell>
-                        <TableCell>
-                          <div className="flex gap-1">
-                            <button
-                              onClick={() => handleEdit(ref)}
-                              className="bg-primary/10 border border-primary-hover/30 text-primary-hover rounded px-2 py-0.5 font-syne text-[0.6rem] font-bold hover:bg-primary/20"
-                            >Modifier</button>
-                            <button
-                              onClick={() => handleArchive(ref.id, ref.actif)}
-                              className="bg-foreground/[0.07] border border-border-2 text-muted-foreground rounded px-2 py-0.5 font-syne text-[0.6rem] font-bold hover:bg-foreground/10"
-                            >{ref.actif ? "Archiver" : "Réactiver"}</button>
-                            <button
-                              onClick={() => handleDelete(ref.id)}
-                              className="bg-destructive/10 border border-destructive/30 text-destructive rounded px-2 py-0.5 font-syne text-[0.6rem] font-bold hover:bg-destructive/20"
-                            >Suppr.</button>
-                          </div>
-                        </TableCell>
+                        {!readOnly && (
+                          <TableCell>
+                            <div className="flex gap-1">
+                              <button
+                                onClick={() => handleEdit(ref)}
+                                className="bg-primary/10 border border-primary-hover/30 text-primary-hover rounded px-2 py-0.5 font-syne text-[0.6rem] font-bold hover:bg-primary/20"
+                              >Modifier</button>
+                              <button
+                                onClick={() => handleArchive(ref.id, ref.actif)}
+                                className="bg-foreground/[0.07] border border-border-2 text-muted-foreground rounded px-2 py-0.5 font-syne text-[0.6rem] font-bold hover:bg-foreground/10"
+                              >{ref.actif ? "Archiver" : "Réactiver"}</button>
+                              <button
+                                onClick={() => handleDelete(ref.id)}
+                                className="bg-destructive/10 border border-destructive/30 text-destructive rounded px-2 py-0.5 font-syne text-[0.6rem] font-bold hover:bg-destructive/20"
+                              >Suppr.</button>
+                            </div>
+                          </TableCell>
+                        )}
                       </TableRow>
                     ))
                   )}
@@ -599,7 +610,7 @@ export function AdminReferencesJuridiques() {
         </TabsContent>
 
         {/* TAB — Import CSV */}
-        <TabsContent value="import">
+        {!readOnly && <TabsContent value="import">
           <div className="bg-panel border border-border rounded-xl p-5 space-y-4">
             <div className="font-syne font-bold text-sm mb-2">Import en masse CSV</div>
             <p className="text-sm text-muted-foreground">
@@ -622,7 +633,7 @@ export function AdminReferencesJuridiques() {
               </div>
             </div>
           </div>
-        </TabsContent>
+        </TabsContent>}
       </Tabs>
     </div>
   );

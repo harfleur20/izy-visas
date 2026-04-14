@@ -7,7 +7,7 @@ import { AdminCapdemarchesDashboard } from "@/components/AdminCapdemarchesDashbo
 import { AdminReferencesJuridiques } from "@/components/AdminReferencesJuridiques";
 import { AdminPiecesRequises } from "@/components/AdminPiecesRequises";
 import { supabase } from "@/integrations/supabase/client";
-import type { Database } from "@/integrations/supabase/types";
+import type { Database, Json } from "@/integrations/supabase/types";
 
 const mTitles = ["Vue générale", "Tous les dossiers", "Alertes & urgences", "Réassignations", "Suivi MySendingBox", "Gestion avocats", "Inscriptions", "Contenu juridique", "Finances", "RGPD & journaux", "CAPDEMARCHES", "Base juridique", "Pièces requises"];
 
@@ -15,6 +15,11 @@ type AvocatRow = Database["public"]["Tables"]["avocats_partenaires"]["Row"];
 type AvocatInvitationRow = Database["public"]["Tables"]["avocat_invitations"]["Row"];
 type DossierRow = Database["public"]["Tables"]["dossiers"]["Row"];
 type AuditLogRow = Database["public"]["Tables"]["audit_admin"]["Row"];
+type PaymentRow = Database["public"]["Tables"]["payments"]["Row"];
+type ReferenceJuridiqueRow = Database["public"]["Tables"]["references_juridiques"]["Row"];
+type PieceRequiseRow = Database["public"]["Tables"]["pieces_requises"]["Row"];
+type RgpdRequestRow = Database["public"]["Tables"]["rgpd_requests"]["Row"];
+type TarificationRow = Database["public"]["Tables"]["tarification"]["Row"];
 
 type InviteAvocatResponse = {
   error?: string;
@@ -60,6 +65,19 @@ const formatDateTime = (value: string | null) => {
   });
 };
 
+const formatDate = (value: string | null) => {
+  if (!value) return "—";
+  return new Date(value).toLocaleDateString("fr-FR", {
+    day: "2-digit",
+    month: "2-digit",
+    year: "numeric",
+  });
+};
+
+const formatCurrency = (value: number) => (
+  new Intl.NumberFormat("fr-FR", { style: "currency", currency: "EUR", maximumFractionDigits: 0 }).format(value)
+);
+
 const getInvitationStatus = (invitation: AvocatInvitationRow) => {
   if (invitation.revoked) return { label: "Révoquée", variant: "red" as const };
   if (invitation.used_at) return { label: "Activée", variant: "ok" as const };
@@ -73,13 +91,61 @@ const getSpecialiteLabel = (value: string | null | undefined) => {
 };
 
 const sentLrarStatuses = new Set(["lrar_envoye", "envoyee", "distribuee", "livre", "ar_signe", "delivered", "sent"]);
+const inTransitLrarStatuses = new Set(["lrar_envoye", "lrar_cree", "depose_poste", "en_transit", "attente_retrait", "envoyee", "sent"]);
+const deliveredLrarStatuses = new Set(["livre", "ar_signe", "distribuee", "delivered"]);
+const failedLrarStatuses = new Set(["retourne", "adresse_incorrecte", "erreur", "lrar_echec"]);
 const validatedStatuses = new Set(["validee_avocat", "validee_automatique"]);
 const isSentLrarStatus = (status: string | null | undefined) => Boolean(status && sentLrarStatuses.has(status));
 const isValidatedStatus = (status: string | null | undefined) => Boolean(status && validatedStatuses.has(status));
 const getInitials = (prenom?: string | null, nom?: string | null) => `${prenom?.[0] || ""}${nom?.[0] || ""}`.toUpperCase() || "AV";
 
-const getJsonObject = (value: Database["public"]["Tables"]["audit_admin"]["Row"]["details"]) => (
+const getJsonObject = (value: Json | null) => (
   value && typeof value === "object" && !Array.isArray(value) ? value as Record<string, unknown> : {}
+);
+
+const getPricingNumber = (payment: PaymentRow, key: string) => {
+  const details = getJsonObject(payment.pricing_details);
+  const value = details[key];
+  return typeof value === "number" ? value : Number(value || 0);
+};
+
+const getClientLabel = (dossier: DossierRow) => (
+  [dossier.client_last_name, dossier.client_first_name].filter(Boolean).join(" ") || dossier.client_email || "Client"
+);
+
+const getRgpdTypeLabel = (type: string) => {
+  const labels: Record<string, string> = {
+    acces: "Accès",
+    rectification: "Rectification",
+    suppression: "Suppression",
+    opposition: "Opposition",
+    portabilite: "Portabilité",
+    limitation: "Limitation",
+    autre: "Autre",
+  };
+  return labels[type] || type;
+};
+
+const getPaymentStatus = (status: string) => {
+  if (status === "paid") return { label: "Payé", variant: "ok" as const };
+  if (status === "failed") return { label: "Échec", variant: "red" as const };
+  if (status === "refunded") return { label: "Remboursé", variant: "warn" as const };
+  if (status === "superseded") return { label: "Remplacé", variant: "muted" as const };
+  return { label: "En attente", variant: "new" as const };
+};
+
+const isCurrentMonth = (value: string | null) => {
+  if (!value) return false;
+  const date = new Date(value);
+  const now = new Date();
+  return date.getMonth() === now.getMonth() && date.getFullYear() === now.getFullYear();
+};
+
+const isMysendingboxDossier = (dossier: DossierRow) => (
+  Boolean(dossier.mysendingbox_letter_id || dossier.tracking_number || dossier.sent_at)
+  || dossier.option_choisie === "B"
+  || dossier.option_envoi === "B_mysendingbox"
+  || isSentLrarStatus(dossier.lrar_status)
 );
 
 const getDelayInfo = (dossier: DossierRow) => {
@@ -105,7 +171,9 @@ const getDossierStatus = (dossier: DossierRow) => {
 };
 
 const getLrarStatus = (status: string | null | undefined) => {
-  if (isSentLrarStatus(status)) return { label: "Envoyé", variant: "post" as const };
+  if (status && deliveredLrarStatuses.has(status)) return { label: "Livré", variant: "ok" as const };
+  if (status && inTransitLrarStatuses.has(status)) return { label: "En transit", variant: "post" as const };
+  if (status && failedLrarStatuses.has(status)) return { label: "Incident", variant: "red" as const };
   if (status === "paiement_confirme" || status === "lettre_finalisee") return { label: "Prêt", variant: "ok" as const };
   if (status === "paiement_echoue") return { label: "Échec", variant: "red" as const };
   return { label: status || "En attente", variant: "muted" as const };
@@ -146,6 +214,20 @@ const AdminSpace = () => {
   const [avocats, setAvocats] = useState<AvocatRow[]>([]);
   const [avocatInvitations, setAvocatInvitations] = useState<AvocatInvitationRow[]>([]);
   const [loadingAvocats, setLoadingAvocats] = useState(false);
+  const [payments, setPayments] = useState<PaymentRow[]>([]);
+  const [referencesJuridiques, setReferencesJuridiques] = useState<ReferenceJuridiqueRow[]>([]);
+  const [piecesRequises, setPiecesRequises] = useState<PieceRequiseRow[]>([]);
+  const [rgpdRequests, setRgpdRequests] = useState<RgpdRequestRow[]>([]);
+  const [tarification, setTarification] = useState<TarificationRow | null>(null);
+  const [loadingPlatformData, setLoadingPlatformData] = useState(false);
+  const [updatingRgpdRequestId, setUpdatingRgpdRequestId] = useState<string | null>(null);
+  const [creatingRgpdRequest, setCreatingRgpdRequest] = useState(false);
+  const [rgpdForm, setRgpdForm] = useState({
+    demandeur_email: "",
+    type: "acces",
+    dossier_ref: "",
+    motif: "",
+  });
   const [invitingAvocat, setInvitingAvocat] = useState(false);
   const [savingAvocatId, setSavingAvocatId] = useState<string | null>(null);
   const [workingInvitationId, setWorkingInvitationId] = useState<string | null>(null);
@@ -256,11 +338,115 @@ const AdminSpace = () => {
     }
   };
 
+  const fetchPlatformData = async () => {
+    setLoadingPlatformData(true);
+    try {
+      const [paymentsResult, referencesResult, piecesResult, rgpdResult, tarificationResult] = await Promise.all([
+        supabase
+          .from("payments")
+          .select("*")
+          .order("created_at", { ascending: false })
+          .limit(200),
+        supabase
+          .from("references_juridiques")
+          .select("*")
+          .order("updated_at", { ascending: false })
+          .limit(500),
+        supabase
+          .from("pieces_requises")
+          .select("*")
+          .order("updated_at", { ascending: false })
+          .limit(500),
+        supabase
+          .from("rgpd_requests")
+          .select("*")
+          .order("created_at", { ascending: false })
+          .limit(100),
+        supabase
+          .from("tarification")
+          .select("*")
+          .order("updated_at", { ascending: false })
+          .limit(1),
+      ]);
+
+      if (paymentsResult.error) throw paymentsResult.error;
+      if (referencesResult.error) throw referencesResult.error;
+      if (piecesResult.error) throw piecesResult.error;
+      if (rgpdResult.error) throw rgpdResult.error;
+      if (tarificationResult.error) throw tarificationResult.error;
+
+      setPayments(paymentsResult.data || []);
+      setReferencesJuridiques(referencesResult.data || []);
+      setPiecesRequises(piecesResult.data || []);
+      setRgpdRequests(rgpdResult.data || []);
+      setTarification(tarificationResult.data?.[0] || null);
+    } catch (err: unknown) {
+      toast.error(err instanceof Error ? err.message : "Chargement des données plateforme impossible");
+    } finally {
+      setLoadingPlatformData(false);
+    }
+  };
+
   useEffect(() => {
     void fetchDossiers();
     void fetchAvocatData();
     void fetchAuditLogs();
+    void fetchPlatformData();
   }, []);
+
+  const handleCreateRgpdRequest = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!rgpdForm.demandeur_email.trim()) {
+      toast.error("Email demandeur requis");
+      return;
+    }
+
+    setCreatingRgpdRequest(true);
+    try {
+      const { error } = await supabase
+        .from("rgpd_requests")
+        .insert({
+          demandeur_email: rgpdForm.demandeur_email.trim(),
+          type: rgpdForm.type,
+          dossier_ref: rgpdForm.dossier_ref.trim() || null,
+          motif: rgpdForm.motif.trim() || null,
+        });
+
+      if (error) throw error;
+
+      toast.success("Demande RGPD enregistrée");
+      setRgpdForm({ demandeur_email: "", type: "acces", dossier_ref: "", motif: "" });
+      void fetchPlatformData();
+    } catch (err: unknown) {
+      toast.error(err instanceof Error ? err.message : "Création RGPD impossible");
+    } finally {
+      setCreatingRgpdRequest(false);
+    }
+  };
+
+  const handleUpdateRgpdRequest = async (request: RgpdRequestRow, statut: "en_cours" | "terminee" | "rejetee") => {
+    setUpdatingRgpdRequestId(request.id);
+    try {
+      const { data: authData } = await supabase.auth.getUser();
+      const { error } = await supabase
+        .from("rgpd_requests")
+        .update({
+          statut,
+          assigned_to: statut === "en_cours" ? authData.user?.id || null : request.assigned_to,
+          completed_at: statut === "terminee" || statut === "rejetee" ? new Date().toISOString() : null,
+        })
+        .eq("id", request.id);
+
+      if (error) throw error;
+
+      toast.success("Demande RGPD mise à jour");
+      void fetchPlatformData();
+    } catch (err: unknown) {
+      toast.error(err instanceof Error ? err.message : "Mise à jour RGPD impossible");
+    } finally {
+      setUpdatingRgpdRequestId(null);
+    }
+  };
 
   const copyToClipboard = async (value: string, successMessage: string) => {
     try {
@@ -447,6 +633,75 @@ const AdminSpace = () => {
     }).length,
   };
 
+  const lrarDossiers = [...dossiers]
+    .filter(isMysendingboxDossier)
+    .sort((a, b) => new Date(b.sent_at || b.updated_at || b.created_at).getTime() - new Date(a.sent_at || a.updated_at || a.created_at).getTime());
+
+  const lrarStats = {
+    month: lrarDossiers.filter((dossier) => isCurrentMonth(dossier.sent_at || dossier.created_at)).length,
+    delivered: lrarDossiers.filter((dossier) => deliveredLrarStatuses.has(dossier.lrar_status) || Boolean(dossier.delivered_at)).length,
+    transit: lrarDossiers.filter((dossier) => inTransitLrarStatuses.has(dossier.lrar_status)).length,
+    failed: lrarDossiers.filter((dossier) => failedLrarStatuses.has(dossier.lrar_status)).length,
+  };
+
+  const paidPayments = payments.filter((payment) => payment.status === "paid");
+  const monthlyPaidPayments = paidPayments.filter((payment) => isCurrentMonth(payment.created_at));
+  const financeStats = {
+    revenue: monthlyPaidPayments.reduce((sum, payment) => sum + payment.amount / 100, 0),
+    avocatFees: monthlyPaidPayments.reduce((sum, payment) => sum + getPricingNumber(payment, "honoraires_avocat_eur"), 0),
+    mysendingboxFees: monthlyPaidPayments.reduce((sum, payment) => sum + getPricingNumber(payment, "envoi_mysendingbox_eur"), 0),
+    letterFees: monthlyPaidPayments.reduce((sum, payment) => sum + getPricingNumber(payment, "generation_lettre_eur"), 0),
+    pending: payments.filter((payment) => payment.status === "pending").length,
+    failed: payments.filter((payment) => payment.status === "failed").length,
+  };
+  const netMargin = financeStats.revenue - financeStats.avocatFees - financeStats.mysendingboxFees;
+
+  const activeReferences = referencesJuridiques.filter((ref) => ref.actif);
+  const activePieces = piecesRequises.filter((piece) => piece.actif);
+  const motifCoverage = activeReferences.reduce<Record<string, number>>((acc, ref) => {
+    for (const motif of ref.motifs_concernes || []) {
+      acc[motif] = (acc[motif] || 0) + 1;
+    }
+    return acc;
+  }, {});
+  const underCoveredMotifs = ["A", "B", "C", "D", "E", "F", "G", "H", "I", "J", "K", "L"].filter((motif) => (motifCoverage[motif] || 0) < 3);
+  const referencesToVerify = activeReferences.filter((ref) => {
+    if (!ref.date_verification || !ref.source_url) return true;
+    const verifiedAt = new Date(ref.date_verification).getTime();
+    return verifiedAt < Date.now() - 180 * 24 * 60 * 60 * 1000;
+  });
+  const lastReferenceUpdate = referencesJuridiques[0]?.updated_at || referencesJuridiques[0]?.created_at || null;
+  const lastPieceUpdate = piecesRequises[0]?.updated_at || piecesRequises[0]?.created_at || null;
+
+  const rgpdStats = {
+    pending: rgpdRequests.filter((request) => request.statut === "nouvelle" || request.statut === "en_cours").length,
+    overdue: rgpdRequests.filter((request) => request.statut !== "terminee" && request.statut !== "rejetee" && new Date(request.due_at).getTime() < Date.now()).length,
+    completed: rgpdRequests.filter((request) => request.statut === "terminee").length,
+  };
+
+  const recentActivity = [
+    ...auditLogs.map((log) => ({
+      id: `audit-${log.id}`,
+      createdAt: log.created_at,
+      color: log.action_type.includes("blocage") || log.action_type.includes("revocation") ? "bg-red-2" : log.action_type.includes("validation") || log.action_type.includes("activation") ? "bg-green-2" : "bg-primary-hover",
+      text: `${log.action_type.split("_").join(" ")} · ${String(getJsonObject(log.details).dossier_ref || getJsonObject(log.details).email || log.cible_id || "audit")}`,
+    })),
+    ...payments.slice(0, 20).map((payment) => ({
+      id: `payment-${payment.id}`,
+      createdAt: payment.created_at,
+      color: payment.status === "paid" ? "bg-green-2" : payment.status === "failed" ? "bg-red-2" : "bg-amber-2",
+      text: `Paiement ${payment.payment_method} · ${payment.dossier_ref} · ${getPaymentStatus(payment.status).label}`,
+    })),
+    ...lrarDossiers.slice(0, 20).map((dossier) => ({
+      id: `lrar-${dossier.id}`,
+      createdAt: dossier.delivered_at || dossier.sent_at || dossier.updated_at || dossier.created_at,
+      color: deliveredLrarStatuses.has(dossier.lrar_status) ? "bg-green-2" : failedLrarStatuses.has(dossier.lrar_status) ? "bg-red-2" : "bg-post-dark",
+      text: `MySendingBox · ${dossier.dossier_ref} · ${getLrarStatus(dossier.lrar_status).label}`,
+    })),
+  ]
+    .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())
+    .slice(0, 6);
+
   const filteredDossiers = dossiers.filter((dossier) => {
     if (!matchesDossierFilter(dossier, dossierFilter)) return false;
     const query = dossierSearch.trim().toLowerCase();
@@ -510,7 +765,9 @@ const AdminSpace = () => {
       <button className="bg-foreground/[0.06] border border-border-2 rounded-md px-2.5 py-1.5 text-xs text-muted-foreground font-syne font-semibold flex items-center gap-1.5 hover:bg-foreground/10 hover:text-foreground transition-all" onClick={() => openModal()}>🔄 Réassigner</button>
       <div className="relative w-[30px] h-[30px] rounded-md bg-foreground/[0.05] border border-border cursor-pointer flex items-center justify-center text-sm" onClick={() => setPage(2)}>
         🔔
-        <span className="absolute -top-1 -right-1 w-3.5 h-3.5 rounded-full bg-destructive font-syne text-[0.52rem] font-extrabold flex items-center justify-center">3</span>
+        {dossierStats.urgent > 0 && (
+          <span className="absolute -top-1 -right-1 min-w-3.5 h-3.5 px-1 rounded-full bg-destructive font-syne text-[0.52rem] font-extrabold flex items-center justify-center">{dossierStats.urgent}</span>
+        )}
       </div>
       <div className="w-[30px] h-[30px] rounded-md bg-gradient-to-br from-primary-hover to-purple-600 flex items-center justify-center font-syne font-extrabold text-[0.68rem]">AD</div>
     </>
@@ -530,7 +787,7 @@ const AdminSpace = () => {
       sidebar={sidebar}
       topbarTitle={mTitles[page]}
       topbarRight={topbarRight}
-      footerContent={<><strong className="text-muted-foreground">Admin IZY</strong><br />Me NGUIYAN D.L.F.<br />Dernière connexion : 06/04 08:42</>}
+      footerContent={<><strong className="text-muted-foreground">Admin IZY</strong><br />Données Supabase actualisées</>}
       bottomNavItems={bottomNavItems}
     >
       <div className="animate-fadeU">
@@ -588,16 +845,14 @@ const AdminSpace = () => {
                   <div className="font-syne font-bold text-sm">⏱ Activité récente</div>
                 </div>
                 <div className="p-3">
-                  {[
-                    { color: "bg-green-2", time: "09:41", text: "MySendingBox · IZY-0847 livré CRRV · AR signé" },
-                    { color: "bg-primary-hover", time: "09:18", text: "Nouveau dossier IZY-0858 · Assigné Me Laurent" },
-                    { color: "bg-amber-2", time: "08:55", text: "Réassignation 0839 · Me Bernard → Me Moreau" },
-                    { color: "bg-post-dark", time: "08:30", text: "MySendingBox · 3 envois LRAR confirmés La Poste" },
-                    { color: "bg-green-2", time: "07:45", text: "Paiement Stripe · IZY-0851 · 98,90€" },
-                  ].map((item, i) => (
-                    <div key={i} className="flex gap-3 py-2 border-b border-foreground/[0.04] last:border-b-0 text-xs">
+                  {recentActivity.length === 0 ? (
+                    <div className="text-xs text-muted-foreground py-2">Aucune activité récente dans les journaux chargés.</div>
+                  ) : recentActivity.map((item) => (
+                    <div key={item.id} className="flex gap-3 py-2 border-b border-foreground/[0.04] last:border-b-0 text-xs">
                       <div className={`w-2 h-2 rounded-full flex-shrink-0 mt-1 ${item.color}`} />
-                      <div className="text-muted flex-shrink-0 text-[0.7rem] whitespace-nowrap min-w-[40px]">{item.time}</div>
+                      <div className="text-muted flex-shrink-0 text-[0.7rem] whitespace-nowrap min-w-[40px]">
+                        {new Date(item.createdAt).toLocaleTimeString("fr-FR", { hour: "2-digit", minute: "2-digit" })}
+                      </div>
                       <div className="text-muted-foreground flex-1 leading-relaxed">{item.text}</div>
                     </div>
                   ))}
@@ -850,10 +1105,10 @@ const AdminSpace = () => {
             <BigTitle>Suivi MySendingBox — Envois LRAR</BigTitle>
             <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-5">
               {[
-                { val: "18", label: "Envois ce mois", color: "text-primary-hover", top: "bg-primary-hover" },
-                { val: "14", label: "AR signés CRRV", color: "text-green-2", top: "bg-green-2" },
-                { val: "3", label: "En transit", color: "text-amber-2", top: "bg-amber-2" },
-                { val: "1", label: "Échec / relance", color: "text-red-2", top: "bg-red-2" },
+                { val: String(lrarStats.month), label: "Envois ce mois", color: "text-primary-hover", top: "bg-primary-hover" },
+                { val: String(lrarStats.delivered), label: "AR signés / livrés", color: "text-green-2", top: "bg-green-2" },
+                { val: String(lrarStats.transit), label: "En transit", color: "text-amber-2", top: "bg-amber-2" },
+                { val: String(lrarStats.failed), label: "Incident / relance", color: "text-red-2", top: "bg-red-2" },
               ].map((k) => (
                 <div key={k.label} className="bg-panel border border-border rounded-[10px] p-3 relative overflow-hidden">
                   <div className={`absolute top-0 left-0 right-0 h-0.5 ${k.top}`} />
@@ -863,32 +1118,53 @@ const AdminSpace = () => {
               ))}
             </div>
             <div className="bg-panel border border-border rounded-xl overflow-hidden mb-4">
-              <div className="p-3 border-b border-border"><div className="font-syne font-bold text-sm">Tous les envois MySendingBox</div></div>
+              <div className="flex items-center justify-between p-3 border-b border-border">
+                <div className="font-syne font-bold text-sm">Tous les envois MySendingBox</div>
+                <button
+                  className="font-syne font-bold text-[0.7rem] px-3 py-1 rounded-md bg-foreground/[0.07] text-muted-foreground border border-border-2 disabled:opacity-50"
+                  onClick={() => void fetchDossiers()}
+                  disabled={loadingDossiers}
+                >
+                  {loadingDossiers ? "Chargement…" : "Actualiser"}
+                </button>
+              </div>
               <div className="overflow-x-auto">
                 <table className="w-full border-collapse">
                   <thead><tr>{["Réf. IZY", "Client", "N° LRAR", "Envoyé le", "Destinataire", "Statut", "AR reçu"].map((h) => (<th key={h} className="font-syne text-[0.6rem] font-bold tracking-wider uppercase text-muted px-3.5 py-2 text-left border-b border-border">{h}</th>))}</tr></thead>
                   <tbody>
-                    {[
-                      { ref: "0847", name: "ESSOMBA Amina", lrar: "2C 234 567 8FR", date: "06/04", dest: "CRRV Nantes", statut: <Pill variant="ok">✓ Livré</Pill>, ar: "08/04 ✓" },
-                      { ref: "0855", name: "NKODO Fatima", lrar: "2C 234 567 9FR", date: "06/04", dest: "SD Visas Nantes", statut: <Pill variant="warn">En transit</Pill>, ar: "—" },
-                      { ref: "0842", name: "ATANGANA K.", lrar: "—", date: "04/04", dest: "CRRV Nantes", statut: <Pill variant="red">⚡ Échec API</Pill>, ar: "—" },
-                    ].map((r) => (
-                      <tr key={r.ref} className="hover:bg-foreground/[0.022] transition-colors">
-                        <td className="px-3.5 py-2.5 text-xs font-syne text-muted border-b border-foreground/[0.03]">{r.ref}</td>
-                        <td className="px-3.5 py-2.5 text-xs font-semibold border-b border-foreground/[0.03]">{r.name}</td>
-                        <td className="px-3.5 py-2.5 text-xs font-mono text-muted border-b border-foreground/[0.03]">{r.lrar}</td>
-                        <td className="px-3.5 py-2.5 text-xs text-muted-foreground border-b border-foreground/[0.03]">{r.date}</td>
-                        <td className="px-3.5 py-2.5 text-xs text-muted-foreground border-b border-foreground/[0.03]">{r.dest}</td>
-                        <td className="px-3.5 py-2.5 border-b border-foreground/[0.03]">{r.statut}</td>
-                        <td className="px-3.5 py-2.5 text-xs text-muted-foreground border-b border-foreground/[0.03]">{r.ar}</td>
+                    {lrarDossiers.length === 0 ? (
+                      <tr>
+                        <td colSpan={7} className="px-3.5 py-8 text-center text-xs text-muted-foreground">
+                          Aucun envoi MySendingBox trouvé dans les dossiers chargés.
+                        </td>
                       </tr>
-                    ))}
+                    ) : lrarDossiers.map((dossier) => {
+                      const status = getLrarStatus(dossier.lrar_status);
+                      return (
+                        <tr key={dossier.id} className="hover:bg-foreground/[0.022] transition-colors">
+                          <td className="px-3.5 py-2.5 text-xs font-syne text-muted border-b border-foreground/[0.03]">{dossier.dossier_ref}</td>
+                          <td className="px-3.5 py-2.5 text-xs font-semibold border-b border-foreground/[0.03]">{getClientLabel(dossier)}</td>
+                          <td className="px-3.5 py-2.5 text-xs font-mono text-muted border-b border-foreground/[0.03]">{dossier.tracking_number || dossier.mysendingbox_letter_id || "—"}</td>
+                          <td className="px-3.5 py-2.5 text-xs text-muted-foreground border-b border-foreground/[0.03]">{formatDate(dossier.sent_at)}</td>
+                          <td className="px-3.5 py-2.5 text-xs text-muted-foreground border-b border-foreground/[0.03]">{dossier.recipient_name} · {dossier.recipient_city}</td>
+                          <td className="px-3.5 py-2.5 border-b border-foreground/[0.03]"><Pill variant={status.variant}>{status.label}</Pill></td>
+                          <td className="px-3.5 py-2.5 text-xs text-muted-foreground border-b border-foreground/[0.03]">{dossier.delivered_at ? `${formatDate(dossier.delivered_at)} ✓` : "—"}</td>
+                        </tr>
+                      );
+                    })}
                   </tbody>
                 </table>
               </div>
             </div>
-            <Box variant="alert" title="⚡ Échec API MySendingBox — IZY-2026-0842 · ATANGANA K.">L'envoi via l'API MySendingBox a échoué (timeout serveur). Relance automatique programmée dans 2h.</Box>
-            <Box variant="post" title="Configuration API MySendingBox">Endpoint : api.mysendingbox.fr · Clé API active · Webhook de statut configuré</Box>
+            {lrarStats.failed > 0 ? (
+              <Box variant="alert" title="Incidents MySendingBox">
+                {lrarStats.failed} dossier(s) nécessitent une vérification ou une relance depuis les statuts postaux synchronisés.
+              </Box>
+            ) : (
+              <Box variant="ok" title="Aucun incident MySendingBox">
+                Aucun statut postal en incident dans les dossiers chargés.
+              </Box>
+            )}
           </div>
         )}
 
@@ -1173,19 +1449,31 @@ const AdminSpace = () => {
             <BigTitle>Mise à jour du contenu</BigTitle>
             <div className="grid grid-cols-1 md:grid-cols-2 gap-3 mb-4">
               {[
-                { icon: "📋", title: "Motifs de refus codifiés (12)", desc: "Dernière MAJ : 15 jan. 2026" },
-                { icon: "📦", title: "Listes de pièces par visa (5)", desc: "Dernière MAJ : 20 mars 2026" },
-                { icon: "⚖️", title: "Arguments juridiques", desc: "Dernière MAJ : 2 avril 2026" },
-                { icon: "📬", title: "Adresses MySendingBox / CRRV", desc: "Vérifiées le 1er avril 2026" },
+                { icon: "📋", title: `Motifs couverts (${Object.keys(motifCoverage).length}/12)`, desc: underCoveredMotifs.length ? `${underCoveredMotifs.length} motif(s) sous-couverts` : "Couverture minimale atteinte", onClick: () => setPage(11) },
+                { icon: "📦", title: `Pièces actives (${activePieces.length})`, desc: `Dernière MAJ : ${formatDate(lastPieceUpdate)}`, onClick: () => setPage(12) },
+                { icon: "⚖️", title: `Références actives (${activeReferences.length})`, desc: `Dernière MAJ : ${formatDate(lastReferenceUpdate)}`, onClick: () => setPage(11) },
+                { icon: "🔎", title: `Références à vérifier (${referencesToVerify.length})`, desc: referencesToVerify.length ? "Source ou date de vérification requise" : "Aucune vérification en retard", onClick: () => setPage(11) },
               ].map((c) => (
-                <div key={c.title} className="bg-panel border border-border rounded-xl p-4 cursor-pointer hover:bg-foreground/[0.04] hover:-translate-y-px transition-all">
+                <div key={c.title} onClick={c.onClick} className="bg-panel border border-border rounded-xl p-4 cursor-pointer hover:bg-foreground/[0.04] hover:-translate-y-px transition-all">
                   <div className="text-2xl mb-2">{c.icon}</div>
                   <h4 className="font-syne font-bold text-sm mb-1">{c.title}</h4>
                   <p className="text-xs text-muted-foreground">{c.desc}</p>
                 </div>
               ))}
             </div>
-            <Box variant="warn" title="Jurisprudence à intégrer">CAA Nantes, 18 mars 2026, n°25NT01882 — Motif F · Pays à fort taux d'émigration. À intégrer dans les arguments pré-rédigés.</Box>
+            {loadingPlatformData ? (
+              <Box variant="info" title="Chargement">
+                Synchronisation des références juridiques, pièces requises et demandes RGPD.
+              </Box>
+            ) : referencesToVerify.length > 0 ? (
+              <Box variant="warn" title="Références à vérifier">
+                {referencesToVerify.slice(0, 3).map((ref) => ref.intitule_court).join(" · ")}
+              </Box>
+            ) : (
+              <Box variant="ok" title="Base juridique à jour">
+                Aucune référence active sans source ou vérification récente.
+              </Box>
+            )}
           </div>
         )}
 
@@ -1193,13 +1481,13 @@ const AdminSpace = () => {
         {page === 8 && (
           <div>
             <Eyebrow>Finance</Eyebrow>
-            <BigTitle>Tableau financier — Avril 2026</BigTitle>
+            <BigTitle>Tableau financier — mois en cours</BigTitle>
             <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-5">
               {[
-                { val: "7 830€", label: "Revenus clients", color: "text-primary-hover", top: "bg-primary-hover" },
-                { val: "2 475€", label: "Honoraires avocats", color: "text-green-2", top: "bg-green-2" },
-                { val: "178€", label: "Frais MySendingBox", color: "text-purple-400", top: "bg-purple-400" },
-                { val: "5 177€", label: "Marge nette", color: "text-amber-2", top: "bg-amber-2" },
+                { val: formatCurrency(financeStats.revenue), label: "Revenus encaissés", color: "text-primary-hover", top: "bg-primary-hover" },
+                { val: formatCurrency(financeStats.avocatFees), label: "Honoraires avocats", color: "text-green-2", top: "bg-green-2" },
+                { val: formatCurrency(financeStats.mysendingboxFees), label: "Frais MySendingBox", color: "text-purple-400", top: "bg-purple-400" },
+                { val: formatCurrency(netMargin), label: "Marge hors frais paiement", color: "text-amber-2", top: "bg-amber-2" },
               ].map((k) => (
                 <div key={k.label} className="bg-panel border border-border rounded-[10px] p-3 relative overflow-hidden">
                   <div className={`absolute top-0 left-0 right-0 h-0.5 ${k.top}`} />
@@ -1209,8 +1497,51 @@ const AdminSpace = () => {
               ))}
             </div>
             <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-              <Box variant="info" title="Stripe — Cartes bancaires">87 transactions · 7 830€ · Frais Stripe : 227€ · Visa · Mastercard · Amex · Reversements avocats via Stripe Connect automatique</Box>
-              {/* CinetPay — Mobile Money : désactivé en bêta, à activer en production */}
+              <Box variant="info" title="Paiements">
+                {paidPayments.length} paiement(s) encaissé(s), {financeStats.pending} en attente, {financeStats.failed} en échec sur les 200 derniers paiements chargés.
+              </Box>
+              <Box variant="post" title="Tarification active">
+                Lettre {formatCurrency(tarification?.generation_lettre_eur || 0)} · Envoi {formatCurrency(tarification?.envoi_mysendingbox_eur || 0)} · Avocat {formatCurrency(tarification?.honoraires_avocat_eur || 0)}.
+              </Box>
+            </div>
+            <div className="bg-panel border border-border rounded-xl overflow-hidden mt-4">
+              <div className="flex items-center justify-between p-3 border-b border-border">
+                <div className="font-syne font-bold text-sm">Derniers paiements</div>
+                <button
+                  className="font-syne font-bold text-[0.7rem] px-3 py-1 rounded-md bg-foreground/[0.07] text-muted-foreground border border-border-2 disabled:opacity-50"
+                  onClick={() => void fetchPlatformData()}
+                  disabled={loadingPlatformData}
+                >
+                  {loadingPlatformData ? "Chargement…" : "Actualiser"}
+                </button>
+              </div>
+              <div className="overflow-x-auto">
+                <table className="w-full border-collapse">
+                  <thead><tr>{["Date", "Dossier", "Méthode", "Option", "Montant", "Statut", "Webhook"].map((h) => (<th key={h} className="font-syne text-[0.6rem] font-bold tracking-wider uppercase text-muted px-3.5 py-2 text-left border-b border-border whitespace-nowrap">{h}</th>))}</tr></thead>
+                  <tbody>
+                    {payments.length === 0 ? (
+                      <tr>
+                        <td colSpan={7} className="px-3.5 py-8 text-center text-xs text-muted-foreground">
+                          Aucun paiement trouvé.
+                        </td>
+                      </tr>
+                    ) : payments.slice(0, 20).map((payment) => {
+                      const status = getPaymentStatus(payment.status);
+                      return (
+                        <tr key={payment.id} className="hover:bg-foreground/[0.022] transition-colors">
+                          <td className="px-3.5 py-2.5 text-xs text-muted-foreground border-b border-foreground/[0.03] whitespace-nowrap">{formatDateTime(payment.created_at)}</td>
+                          <td className="px-3.5 py-2.5 text-xs font-syne text-muted border-b border-foreground/[0.03]">{payment.dossier_ref}</td>
+                          <td className="px-3.5 py-2.5 text-xs text-muted-foreground border-b border-foreground/[0.03]">{payment.payment_method}</td>
+                          <td className="px-3.5 py-2.5 text-xs text-muted-foreground border-b border-foreground/[0.03]">{payment.option_choisie || "—"}</td>
+                          <td className="px-3.5 py-2.5 text-xs font-semibold border-b border-foreground/[0.03]">{formatCurrency(payment.amount / 100)}</td>
+                          <td className="px-3.5 py-2.5 border-b border-foreground/[0.03]"><Pill variant={status.variant}>{status.label}</Pill></td>
+                          <td className="px-3.5 py-2.5 border-b border-foreground/[0.03]"><Pill variant={payment.verified_by_webhook ? "ok" : "muted"}>{payment.verified_by_webhook ? "Confirmé" : "Non"}</Pill></td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
             </div>
           </div>
         )}
@@ -1220,20 +1551,160 @@ const AdminSpace = () => {
           <div>
             <Eyebrow>RGPD & Conformité</Eyebrow>
             <BigTitle>Données personnelles & journaux</BigTitle>
-            <div className="bg-panel border border-border rounded-xl overflow-hidden mb-4">
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-5">
               {[
-                { key: "Conservation des dossiers", val: "5 ans après clôture · Suppression auto", valClass: "" },
-                { key: "Chiffrement pièces jointes", val: "AES-256 · Accès limité avocat assigné", valClass: "text-green-2" },
-                { key: "Accès admin aux dossiers", val: "Journalisé · Motif requis", valClass: "text-green-2" },
-                { key: "Demandes de suppression", val: "2 en attente · Délai légal 30j", valClass: "text-amber-2" },
-                { key: "Données paiement", val: "Stripe/Tara · jamais stockées sur IZY", valClass: "text-green-2" },
-                { key: "Journalisation réassignations", val: "Immuable · Exportable pour audit", valClass: "text-green-2" },
-              ].map((r) => (
-                <div key={r.key} className="flex justify-between px-4 py-3 border-b border-foreground/[0.04] last:border-b-0 text-sm gap-3">
-                  <span className="text-muted-foreground">{r.key}</span>
-                  <span className={`font-medium text-right ${r.valClass || "text-foreground"}`}>{r.val}</span>
+                { val: String(rgpdStats.pending), label: "Demandes ouvertes", color: rgpdStats.pending ? "text-amber-2" : "text-green-2", top: rgpdStats.pending ? "bg-amber-2" : "bg-green-2" },
+                { val: String(rgpdStats.overdue), label: "Hors délai", color: rgpdStats.overdue ? "text-red-2" : "text-green-2", top: rgpdStats.overdue ? "bg-red-2" : "bg-green-2" },
+                { val: String(rgpdStats.completed), label: "Terminées", color: "text-primary-hover", top: "bg-primary-hover" },
+                { val: String(auditLogs.length), label: "Logs chargés", color: "text-muted-foreground", top: "bg-muted-foreground" },
+              ].map((k) => (
+                <div key={k.label} className="bg-panel border border-border rounded-[10px] p-3 relative overflow-hidden">
+                  <div className={`absolute top-0 left-0 right-0 h-0.5 ${k.top}`} />
+                  <div className={`font-syne font-extrabold text-2xl leading-none mb-1 ${k.color}`}>{k.val}</div>
+                  <div className="text-[0.7rem] text-muted-foreground">{k.label}</div>
                 </div>
               ))}
+            </div>
+
+            <div className="grid grid-cols-1 lg:grid-cols-[1.1fr_0.9fr] gap-4">
+              <div className="bg-panel border border-border rounded-xl overflow-hidden">
+                <div className="flex items-center justify-between p-3 border-b border-border">
+                  <div className="font-syne font-bold text-sm">Demandes RGPD</div>
+                  <button
+                    className="font-syne font-bold text-[0.7rem] px-3 py-1 rounded-md bg-foreground/[0.07] text-muted-foreground border border-border-2 disabled:opacity-50"
+                    onClick={() => void fetchPlatformData()}
+                    disabled={loadingPlatformData}
+                  >
+                    {loadingPlatformData ? "Chargement…" : "Actualiser"}
+                  </button>
+                </div>
+                <form onSubmit={handleCreateRgpdRequest} className="grid grid-cols-1 md:grid-cols-[1.2fr_0.8fr_0.8fr_auto] gap-2 p-3 border-b border-border bg-foreground/[0.015]">
+                  <input
+                    type="email"
+                    className="bg-background border border-border rounded-md px-3 py-2 text-xs text-foreground outline-none focus:border-primary/55"
+                    placeholder="email demandeur"
+                    value={rgpdForm.demandeur_email}
+                    onChange={(e) => setRgpdForm((prev) => ({ ...prev, demandeur_email: e.target.value }))}
+                  />
+                  <select
+                    className="bg-background border border-border rounded-md px-3 py-2 text-xs text-foreground outline-none focus:border-primary/55"
+                    value={rgpdForm.type}
+                    onChange={(e) => setRgpdForm((prev) => ({ ...prev, type: e.target.value }))}
+                  >
+                    {["acces", "rectification", "suppression", "opposition", "portabilite", "limitation", "autre"].map((type) => (
+                      <option key={type} value={type}>{getRgpdTypeLabel(type)}</option>
+                    ))}
+                  </select>
+                  <input
+                    className="bg-background border border-border rounded-md px-3 py-2 text-xs text-foreground outline-none focus:border-primary/55"
+                    placeholder="dossier optionnel"
+                    value={rgpdForm.dossier_ref}
+                    onChange={(e) => setRgpdForm((prev) => ({ ...prev, dossier_ref: e.target.value }))}
+                  />
+                  <button
+                    type="submit"
+                    disabled={creatingRgpdRequest}
+                    className="font-syne font-bold text-[0.7rem] px-3 py-2 rounded-md bg-primary-hover text-foreground disabled:opacity-50"
+                  >
+                    {creatingRgpdRequest ? "Ajout…" : "Ajouter"}
+                  </button>
+                  <input
+                    className="md:col-span-4 bg-background border border-border rounded-md px-3 py-2 text-xs text-foreground outline-none focus:border-primary/55"
+                    placeholder="motif / précision interne"
+                    value={rgpdForm.motif}
+                    onChange={(e) => setRgpdForm((prev) => ({ ...prev, motif: e.target.value }))}
+                  />
+                </form>
+                <div className="overflow-x-auto">
+                  <table className="w-full border-collapse">
+                    <thead><tr>{["Date", "Demandeur", "Type", "Échéance", "Statut", "Actions"].map((h) => (<th key={h} className="font-syne text-[0.6rem] font-bold tracking-wider uppercase text-muted px-3.5 py-2 text-left border-b border-border whitespace-nowrap">{h}</th>))}</tr></thead>
+                    <tbody>
+                      {rgpdRequests.length === 0 ? (
+                        <tr>
+                          <td colSpan={6} className="px-3.5 py-8 text-center text-xs text-muted-foreground">
+                            Aucune demande RGPD enregistrée.
+                          </td>
+                        </tr>
+                      ) : rgpdRequests.map((request) => {
+                        const isOverdue = request.statut !== "terminee" && request.statut !== "rejetee" && new Date(request.due_at).getTime() < Date.now();
+                        const working = updatingRgpdRequestId === request.id;
+                        return (
+                          <tr key={request.id} className={`hover:bg-foreground/[0.022] transition-colors ${isOverdue ? "border-l-2 border-l-red-2" : ""}`}>
+                            <td className="px-3.5 py-2.5 text-xs text-muted-foreground border-b border-foreground/[0.03] whitespace-nowrap">{formatDate(request.created_at)}</td>
+                            <td className="px-3.5 py-2.5 text-xs font-semibold border-b border-foreground/[0.03]">
+                              {request.demandeur_email}
+                              {request.dossier_ref && <div className="text-[0.65rem] text-muted-foreground">{request.dossier_ref}</div>}
+                            </td>
+                            <td className="px-3.5 py-2.5 text-xs text-muted-foreground border-b border-foreground/[0.03]">{getRgpdTypeLabel(request.type)}</td>
+                            <td className={`px-3.5 py-2.5 text-xs border-b border-foreground/[0.03] ${isOverdue ? "text-red-2 font-semibold" : "text-muted-foreground"}`}>{formatDate(request.due_at)}</td>
+                            <td className="px-3.5 py-2.5 border-b border-foreground/[0.03]">
+                              <Pill variant={request.statut === "terminee" ? "ok" : request.statut === "rejetee" ? "red" : isOverdue ? "warn" : "new"}>{request.statut}</Pill>
+                            </td>
+                            <td className="px-3.5 py-2.5 border-b border-foreground/[0.03]">
+                              {request.statut === "terminee" || request.statut === "rejetee" ? (
+                                <span className="text-xs text-muted-foreground">Clôturée</span>
+                              ) : (
+                                <div className="flex gap-1.5">
+                                  {request.statut === "nouvelle" && (
+                                    <button
+                                      className="bg-primary/[0.18] border border-primary-hover/30 text-primary-hover rounded px-2 py-1 font-syne text-[0.6rem] font-bold disabled:opacity-50"
+                                      disabled={working}
+                                      onClick={() => void handleUpdateRgpdRequest(request, "en_cours")}
+                                    >
+                                      Traiter
+                                    </button>
+                                  )}
+                                  <button
+                                    className="bg-green/[0.12] border border-green/25 text-green-2 rounded px-2 py-1 font-syne text-[0.6rem] font-bold disabled:opacity-50"
+                                    disabled={working}
+                                    onClick={() => void handleUpdateRgpdRequest(request, "terminee")}
+                                  >
+                                    Terminer
+                                  </button>
+                                  <button
+                                    className="bg-destructive/[0.14] border border-destructive/25 text-red-2 rounded px-2 py-1 font-syne text-[0.6rem] font-bold disabled:opacity-50"
+                                    disabled={working}
+                                    onClick={() => void handleUpdateRgpdRequest(request, "rejetee")}
+                                  >
+                                    Rejeter
+                                  </button>
+                                </div>
+                              )}
+                            </td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+
+              <div className="bg-panel border border-border rounded-xl overflow-hidden">
+                <div className="p-3 border-b border-border">
+                  <div className="font-syne font-bold text-sm">Journal opérationnel</div>
+                </div>
+                <div className="overflow-x-auto">
+                  <table className="w-full border-collapse">
+                    <thead><tr>{["Date", "Action", "Rôle", "Cible"].map((h) => (<th key={h} className="font-syne text-[0.6rem] font-bold tracking-wider uppercase text-muted px-3.5 py-2 text-left border-b border-border whitespace-nowrap">{h}</th>))}</tr></thead>
+                    <tbody>
+                      {auditLogs.length === 0 ? (
+                        <tr>
+                          <td colSpan={4} className="px-3.5 py-8 text-center text-xs text-muted-foreground">
+                            Aucun journal chargé.
+                          </td>
+                        </tr>
+                      ) : auditLogs.slice(0, 20).map((log) => (
+                        <tr key={log.id} className="hover:bg-foreground/[0.022] transition-colors">
+                          <td className="px-3.5 py-2.5 text-xs text-muted-foreground border-b border-foreground/[0.03] whitespace-nowrap">{formatDateTime(log.created_at)}</td>
+                          <td className="px-3.5 py-2.5 text-xs font-semibold border-b border-foreground/[0.03]">{log.action_type.split("_").join(" ")}</td>
+                          <td className="px-3.5 py-2.5 text-xs text-muted-foreground border-b border-foreground/[0.03]">{log.admin_role}</td>
+                          <td className="px-3.5 py-2.5 text-xs text-muted-foreground border-b border-foreground/[0.03]">{log.cible_type || "—"}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
             </div>
           </div>
         )}
@@ -1432,14 +1903,14 @@ const AdminSpace = () => {
       {/* Page 11 — Base juridique */}
       {page === 11 && (
         <div className="animate-fadeU">
-          <AdminReferencesJuridiques />
+          <AdminReferencesJuridiques readOnly />
         </div>
       )}
 
       {/* Page 12 — Pièces requises */}
       {page === 12 && (
         <div className="animate-fadeU">
-          <AdminPiecesRequises />
+          <AdminPiecesRequises readOnly />
         </div>
       )}
     </ShellLayout>

@@ -53,6 +53,10 @@ const FORMAT_OPTIONS = [
 type PieceRequise = Database["public"]["Tables"]["pieces_requises"]["Row"];
 type PieceRequiseInsert = Database["public"]["Tables"]["pieces_requises"]["Insert"];
 
+interface AdminPiecesRequisesProps {
+  readOnly?: boolean;
+}
+
 const emptyForm = {
   type_visa: "tous",
   motifs_concernes: ["tous"] as string[],
@@ -72,7 +76,7 @@ const emptyForm = {
   note: "",
 };
 
-export function AdminPiecesRequises() {
+export function AdminPiecesRequises({ readOnly = false }: AdminPiecesRequisesProps) {
   const [pieces, setPieces] = useState<PieceRequise[]>([]);
   const [loading, setLoading] = useState(true);
   const [form, setForm] = useState({ ...emptyForm });
@@ -230,6 +234,12 @@ export function AdminPiecesRequises() {
     <div>
       <Eyebrow>Configuration</Eyebrow>
       <BigTitle>Pièces justificatives requises</BigTitle>
+      {readOnly && (
+        <div className="bg-primary/[0.09] border border-primary-hover/[0.22] rounded-[11px] p-4 mb-4">
+          <h4 className="font-syne text-[0.83rem] font-bold mb-1 text-blue-300">Lecture seule</h4>
+          <p className="text-[0.8rem] leading-relaxed text-blue-300/80">L'édition des pièces requises se fait depuis l'espace admin juridique.</p>
+        </div>
+      )}
 
       {/* Stats */}
       <div className="grid grid-cols-2 md:grid-cols-5 gap-3 mb-5">
@@ -263,7 +273,7 @@ export function AdminPiecesRequises() {
       <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
         <TabsList className="mb-4">
           <TabsTrigger value="list">Liste des pièces ({pieces.length})</TabsTrigger>
-          <TabsTrigger value="add">{editingId ? "Modifier" : "Ajouter"}</TabsTrigger>
+          {!readOnly && <TabsTrigger value="add">{editingId ? "Modifier" : "Ajouter"}</TabsTrigger>}
         </TabsList>
 
         {/* TAB — Liste */}
@@ -314,14 +324,14 @@ export function AdminPiecesRequises() {
                     <TableHead className="text-xs">Type</TableHead>
                     <TableHead className="text-xs">Trad.</TableHead>
                     <TableHead className="text-xs">Apost.</TableHead>
-                    <TableHead className="text-xs">Actions</TableHead>
+                    {!readOnly && <TableHead className="text-xs">Actions</TableHead>}
                   </TableRow>
                 </TableHeader>
                 <TableBody>
                   {loading ? (
-                    <TableRow><TableCell colSpan={8} className="text-center text-muted-foreground py-8">Chargement…</TableCell></TableRow>
+                    <TableRow><TableCell colSpan={readOnly ? 7 : 8} className="text-center text-muted-foreground py-8">Chargement…</TableCell></TableRow>
                   ) : filteredPieces.length === 0 ? (
-                    <TableRow><TableCell colSpan={8} className="text-center text-muted-foreground py-8">Aucune pièce trouvée</TableCell></TableRow>
+                    <TableRow><TableCell colSpan={readOnly ? 7 : 8} className="text-center text-muted-foreground py-8">Aucune pièce trouvée</TableCell></TableRow>
                   ) : (
                     filteredPieces.map((p) => (
                       <TableRow key={p.id} className={!p.actif ? "opacity-50" : ""}>
@@ -351,13 +361,15 @@ export function AdminPiecesRequises() {
                         </TableCell>
                         <TableCell className="text-xs">{p.traduction_requise ? "✓" : "—"}</TableCell>
                         <TableCell className="text-xs">{p.apostille_requise ? "✓" : "—"}</TableCell>
-                        <TableCell>
-                          <div className="flex gap-1">
-                            <button onClick={() => handleEdit(p)} className="bg-primary/10 border border-primary-hover/30 text-primary-hover rounded px-2 py-0.5 font-syne text-[0.6rem] font-bold hover:bg-primary/20">Modifier</button>
-                            <button onClick={() => handleToggleActif(p.id, p.actif)} className="bg-foreground/[0.07] border border-border-2 text-muted-foreground rounded px-2 py-0.5 font-syne text-[0.6rem] font-bold hover:bg-foreground/10">{p.actif ? "Désact." : "Réact."}</button>
-                            <button onClick={() => handleDelete(p.id)} className="bg-destructive/10 border border-destructive/30 text-destructive rounded px-2 py-0.5 font-syne text-[0.6rem] font-bold hover:bg-destructive/20">Suppr.</button>
-                          </div>
-                        </TableCell>
+                        {!readOnly && (
+                          <TableCell>
+                            <div className="flex gap-1">
+                              <button onClick={() => handleEdit(p)} className="bg-primary/10 border border-primary-hover/30 text-primary-hover rounded px-2 py-0.5 font-syne text-[0.6rem] font-bold hover:bg-primary/20">Modifier</button>
+                              <button onClick={() => handleToggleActif(p.id, p.actif)} className="bg-foreground/[0.07] border border-border-2 text-muted-foreground rounded px-2 py-0.5 font-syne text-[0.6rem] font-bold hover:bg-foreground/10">{p.actif ? "Désact." : "Réact."}</button>
+                              <button onClick={() => handleDelete(p.id)} className="bg-destructive/10 border border-destructive/30 text-destructive rounded px-2 py-0.5 font-syne text-[0.6rem] font-bold hover:bg-destructive/20">Suppr.</button>
+                            </div>
+                          </TableCell>
+                        )}
                       </TableRow>
                     ))
                   )}
@@ -368,7 +380,7 @@ export function AdminPiecesRequises() {
         </TabsContent>
 
         {/* TAB — Formulaire */}
-        <TabsContent value="add">
+        {!readOnly && <TabsContent value="add">
           <div className="bg-panel border border-border rounded-xl p-5 space-y-4">
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <div className="space-y-2">
@@ -480,7 +492,7 @@ export function AdminPiecesRequises() {
               )}
             </div>
           </div>
-        </TabsContent>
+        </TabsContent>}
       </Tabs>
     </div>
   );
