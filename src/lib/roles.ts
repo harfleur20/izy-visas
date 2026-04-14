@@ -46,7 +46,7 @@ export function homeRouteForRole(role: string | null | undefined): string {
     case "avocat":
       return "/avocat";
     case "super_admin":
-      return "/super-admin";
+      return "/admin-choice";
     case "admin_delegue":
       return "/admin";
     case "admin_juridique":
