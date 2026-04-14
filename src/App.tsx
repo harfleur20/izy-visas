@@ -74,7 +74,7 @@ const App = () => (
               <Route
                 path="/admin/*"
                 element={
-                  <ProtectedRoute allowedRoles={["admin_delegue"]} requireMfa>
+                  <ProtectedRoute allowedRoles={["super_admin", "admin_delegue"]} requireMfa>
                     <AdminSpace />
                   </ProtectedRoute>
                 }
