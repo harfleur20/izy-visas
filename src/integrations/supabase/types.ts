@@ -1041,6 +1041,48 @@ export type Database = {
         }
         Relationships: []
       }
+      rgpd_requests: {
+        Row: {
+          assigned_to: string | null
+          completed_at: string | null
+          created_at: string
+          demandeur_email: string
+          dossier_ref: string | null
+          due_at: string
+          id: string
+          motif: string | null
+          statut: string
+          type: string
+          updated_at: string
+        }
+        Insert: {
+          assigned_to?: string | null
+          completed_at?: string | null
+          created_at?: string
+          demandeur_email: string
+          dossier_ref?: string | null
+          due_at?: string
+          id?: string
+          motif?: string | null
+          statut?: string
+          type?: string
+          updated_at?: string
+        }
+        Update: {
+          assigned_to?: string | null
+          completed_at?: string | null
+          created_at?: string
+          demandeur_email?: string
+          dossier_ref?: string | null
+          due_at?: string
+          id?: string
+          motif?: string | null
+          statut?: string
+          type?: string
+          updated_at?: string
+        }
+        Relationships: []
+      }
       signatures: {
         Row: {
           certificate_path: string | null
