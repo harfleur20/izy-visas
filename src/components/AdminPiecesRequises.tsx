@@ -1,5 +1,6 @@
 import { useState, useEffect, useMemo } from "react";
 import { supabase } from "@/integrations/supabase/client";
+import type { Database } from "@/integrations/supabase/types";
 import { toast } from "sonner";
 import { Eyebrow, BigTitle } from "@/components/ui-custom";
 import { Button } from "@/components/ui/button";
@@ -49,28 +50,8 @@ const FORMAT_OPTIONS = [
   { value: "PNG", label: "PNG uniquement" },
 ];
 
-interface PieceRequise {
-  id: string;
-  type_visa: string;
-  motifs_concernes: string[];
-  nom_piece: string;
-  description_simple: string;
-  pourquoi_necessaire: string | null;
-  obligatoire: boolean;
-  conditionnel: boolean;
-  condition_declenchement: string | null;
-  alternative_possible: string | null;
-  format_accepte: string;
-  taille_max_mo: number;
-  traduction_requise: boolean;
-  apostille_requise: boolean;
-  original_requis: boolean;
-  ordre_affichage: number;
-  actif: boolean;
-  note: string | null;
-  created_at: string;
-  updated_at: string;
-}
+type PieceRequise = Database["public"]["Tables"]["pieces_requises"]["Row"];
+type PieceRequiseInsert = Database["public"]["Tables"]["pieces_requises"]["Insert"];
 
 const emptyForm = {
   type_visa: "tous",
@@ -106,14 +87,14 @@ export function AdminPiecesRequises() {
   const fetchPieces = async () => {
     setLoading(true);
     const { data, error } = await supabase
-      .from("pieces_requises" as any)
+      .from("pieces_requises")
       .select("*")
       .order("ordre_affichage", { ascending: true });
     if (error) {
       toast.error("Erreur de chargement");
       console.error(error);
     } else {
-      setPieces((data as any[]) || []);
+      setPieces(data || []);
     }
     setLoading(false);
   };
@@ -139,7 +120,7 @@ export function AdminPiecesRequises() {
       return;
     }
     setSaving(true);
-    const payload: any = {
+    const payload = {
       type_visa: form.type_visa,
       motifs_concernes: form.motifs_concernes,
       nom_piece: form.nom_piece,
@@ -156,13 +137,13 @@ export function AdminPiecesRequises() {
       original_requis: form.original_requis,
       ordre_affichage: form.ordre_affichage,
       note: form.note || null,
-    };
+    } satisfies PieceRequiseInsert;
 
     let error;
     if (editingId) {
-      ({ error } = await supabase.from("pieces_requises" as any).update(payload).eq("id", editingId));
+      ({ error } = await supabase.from("pieces_requises").update(payload).eq("id", editingId));
     } else {
-      ({ error } = await supabase.from("pieces_requises" as any).insert(payload));
+      ({ error } = await supabase.from("pieces_requises").insert(payload));
     }
 
     if (error) {
@@ -202,14 +183,14 @@ export function AdminPiecesRequises() {
   };
 
   const handleToggleActif = async (id: string, current: boolean) => {
-    const { error } = await supabase.from("pieces_requises" as any).update({ actif: !current }).eq("id", id);
+    const { error } = await supabase.from("pieces_requises").update({ actif: !current }).eq("id", id);
     if (error) toast.error("Erreur");
     else { toast.success(current ? "Pièce désactivée" : "Pièce réactivée"); fetchPieces(); }
   };
 
   const handleDelete = async (id: string) => {
     if (!confirm("Supprimer définitivement cette pièce ?")) return;
-    const { error } = await supabase.from("pieces_requises" as any).delete().eq("id", id);
+    const { error } = await supabase.from("pieces_requises").delete().eq("id", id);
     if (error) toast.error("Erreur");
     else { toast.success("Pièce supprimée"); fetchPieces(); }
   };

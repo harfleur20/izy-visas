@@ -1,5 +1,6 @@
 import { useState, useEffect, useMemo, useRef } from "react";
 import { supabase } from "@/integrations/supabase/client";
+import type { Database } from "@/integrations/supabase/types";
 import { toast } from "sonner";
 import { Eyebrow, BigTitle, Box } from "@/components/ui-custom";
 import { Button } from "@/components/ui/button";
@@ -63,25 +64,8 @@ const FAVORABLE_OPTIONS = [
   { value: "na", label: "Non applicable (texte de loi)" },
 ];
 
-interface RefJuridique {
-  id: string;
-  categorie: string;
-  reference_complete: string;
-  intitule_court: string;
-  texte_exact: string;
-  resume_vulgarise: string | null;
-  motifs_concernes: string[];
-  argument_type: string;
-  favorable_demandeur: boolean | null;
-  juridiction: string | null;
-  date_decision: string | null;
-  date_verification: string | null;
-  verifie_par: string | null;
-  source_url: string | null;
-  actif: boolean;
-  created_at: string;
-  updated_at: string;
-}
+type RefJuridique = Database["public"]["Tables"]["references_juridiques"]["Row"];
+type RefJuridiqueInsert = Database["public"]["Tables"]["references_juridiques"]["Insert"];
 
 const emptyForm = {
   categorie: "",
@@ -114,14 +98,14 @@ export function AdminReferencesJuridiques() {
   const fetchRefs = async () => {
     setLoading(true);
     const { data, error } = await supabase
-      .from("references_juridiques" as any)
+      .from("references_juridiques")
       .select("*")
       .order("created_at", { ascending: false });
     if (error) {
       toast.error("Erreur de chargement des références");
       console.error(error);
     } else {
-      setRefs((data as any[]) || []);
+      setRefs(data || []);
     }
     setLoading(false);
   };
@@ -150,7 +134,7 @@ export function AdminReferencesJuridiques() {
       return;
     }
     setSaving(true);
-    const payload: any = {
+    const payload = {
       categorie: form.categorie,
       reference_complete: form.reference_complete,
       intitule_court: form.intitule_court,
@@ -164,17 +148,17 @@ export function AdminReferencesJuridiques() {
       date_verification: form.date_verification || null,
       verifie_par: form.verifie_par || null,
       source_url: form.source_url || null,
-    };
+    } satisfies RefJuridiqueInsert;
 
     let error;
     if (editingId) {
       ({ error } = await supabase
-        .from("references_juridiques" as any)
+        .from("references_juridiques")
         .update(payload)
         .eq("id", editingId));
     } else {
       ({ error } = await supabase
-        .from("references_juridiques" as any)
+        .from("references_juridiques")
         .insert(payload));
     }
 
@@ -211,7 +195,7 @@ export function AdminReferencesJuridiques() {
 
   const handleArchive = async (id: string, currentActif: boolean) => {
     const { error } = await supabase
-      .from("references_juridiques" as any)
+      .from("references_juridiques")
       .update({ actif: !currentActif })
       .eq("id", id);
     if (error) toast.error("Erreur");
@@ -224,7 +208,7 @@ export function AdminReferencesJuridiques() {
   const handleDelete = async (id: string) => {
     if (!confirm("Supprimer définitivement cette référence ?")) return;
     const { error } = await supabase
-      .from("references_juridiques" as any)
+      .from("references_juridiques")
       .delete()
       .eq("id", id);
     if (error) toast.error("Erreur de suppression");
@@ -238,7 +222,7 @@ export function AdminReferencesJuridiques() {
     const lines = text.split("\n").filter((l) => l.trim());
     if (lines.length < 2) { toast.error("Fichier CSV vide ou invalide"); return; }
 
-    const rows = lines.slice(1).map((line) => {
+    const rows: RefJuridiqueInsert[] = lines.slice(1).map((line) => {
       const cols = line.split(",").map((c) => c.trim().replace(/^"|"$/g, ""));
       return {
         categorie: cols[0] || "texte_loi",
@@ -258,7 +242,7 @@ export function AdminReferencesJuridiques() {
     if (rows.length === 0) { toast.error("Aucune ligne valide dans le CSV"); return; }
 
     const { error } = await supabase
-      .from("references_juridiques" as any)
+      .from("references_juridiques")
       .insert(rows);
     if (error) {
       toast.error("Erreur lors de l'import CSV");
