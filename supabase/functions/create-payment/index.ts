@@ -2,6 +2,7 @@ import { serve } from "https://deno.land/std@0.190.0/http/server.ts";
 import Stripe from "https://esm.sh/stripe@18.5.0";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.49.4";
 import { assertDossierAccess, HttpError, requireAuthenticatedContext } from "../_shared/security.ts";
+import { assertPaymentPrerequisites, PAYMENT_DOSSIER_SELECT } from "../_shared/payment_prerequisites.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -97,26 +98,27 @@ serve(async (req) => {
     if (!dossier_ref) throw new Error("dossier_ref is required");
     assertSendOption(option);
 
-    const stripe = new Stripe(Deno.env.get("STRIPE_SECRET_KEY") || "", {
-      apiVersion: "2025-08-27.basil",
-    });
-
-    // Check existing customer
-    const customers = await stripe.customers.list({ email: authContext.user.email, limit: 1 });
-    let customerId: string | undefined;
-    if (customers.data.length > 0) {
-      customerId = customers.data[0].id;
-    }
-
     // Fetch dossier and verify ownership
     const { data: dossier, error: dossierError } = await supabaseAdmin
       .from("dossiers")
-      .select("user_id, visa_type, client_first_name, client_last_name")
+      .select(PAYMENT_DOSSIER_SELECT)
       .eq("dossier_ref", dossier_ref)
       .single();
 
     if (dossierError || !dossier) throw new Error("Dossier introuvable: " + dossier_ref);
     assertDossierAccess(authContext, dossier);
+    await assertPaymentPrerequisites(supabaseAdmin, dossier, option);
+
+    const stripe = new Stripe(Deno.env.get("STRIPE_SECRET_KEY") || "", {
+      apiVersion: "2025-08-27.basil",
+    });
+
+    // Check existing customer after local prerequisites pass.
+    const customers = await stripe.customers.list({ email: authContext.user.email, limit: 1 });
+    let customerId: string | undefined;
+    if (customers.data.length > 0) {
+      customerId = customers.data[0].id;
+    }
 
     const { data: tarifs } = await supabaseAdmin
       .from("tarification")

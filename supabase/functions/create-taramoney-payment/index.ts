@@ -1,6 +1,7 @@
 import { serve } from "https://deno.land/std@0.190.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.49.4";
 import { assertDossierAccess, HttpError, requireAuthenticatedContext } from "../_shared/security.ts";
+import { assertPaymentPrerequisites, PAYMENT_DOSSIER_SELECT } from "../_shared/payment_prerequisites.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -128,12 +129,13 @@ serve(async (req) => {
 
     const { data: dossier, error: dossierError } = await supabaseAdmin
       .from("dossiers")
-      .select("user_id, visa_type, client_first_name, client_last_name")
+      .select(PAYMENT_DOSSIER_SELECT)
       .eq("dossier_ref", dossier_ref)
       .single();
 
     if (dossierError || !dossier) throw new HttpError(404, `Dossier introuvable: ${dossier_ref}`);
     assertDossierAccess(authContext, dossier);
+    await assertPaymentPrerequisites(supabaseAdmin, dossier, option);
 
     const { data: tarifs } = await supabaseAdmin
       .from("tarification")

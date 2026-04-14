@@ -41,7 +41,14 @@ interface PiecesRequisesClientProps {
   uploadedPieces: UploadedPiece[];
   onPieceUploaded: (piece: UploadedPiece) => void;
   onPieceRemoved: (id: string) => void;
+  onMandatoryStatusChange?: (status: MandatoryPiecesStatus) => void;
 }
+
+type MandatoryPiecesStatus = {
+  loading: boolean;
+  total: number;
+  missing: string[];
+};
 
 const VISA_LABELS: Record<string, string> = {
   court_sejour: "Court séjour Schengen",
@@ -75,6 +82,7 @@ export function PiecesRequisesClient({
   uploadedPieces,
   onPieceUploaded,
   onPieceRemoved,
+  onMandatoryStatusChange,
 }: PiecesRequisesClientProps) {
   const [allPieces, setAllPieces] = useState<PieceRequise[]>([]);
   const [loading, setLoading] = useState(true);
@@ -144,6 +152,23 @@ export function PiecesRequisesClient({
 
     return { section1, section2, section3, section4 };
   }, [allPieces, visaType, motifRefus]);
+
+  useEffect(() => {
+    if (!onMandatoryStatusChange) return;
+
+    const requiredNames = [...section1, ...section2].map((piece) => piece.nom_piece);
+    const acceptedNames = new Set(
+      uploadedPieces
+        .filter((piece) => piece.status === "accepted")
+        .map((piece) => piece.name),
+    );
+
+    onMandatoryStatusChange({
+      loading,
+      total: requiredNames.length,
+      missing: requiredNames.filter((name) => !acceptedNames.has(name)),
+    });
+  }, [loading, onMandatoryStatusChange, section1, section2, uploadedPieces]);
 
   const toggleMotifPiece = (id: string) => {
     setUncheckedMotif((prev) => {

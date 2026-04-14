@@ -65,6 +65,25 @@ type TaraPaymentLinks = {
   smsLink?: string | null;
 };
 
+type MandatoryPiecesStatus = {
+  loading: boolean;
+  total: number;
+  missing: string[];
+};
+
+type PieceRequiseCheckRow = {
+  nom_piece: string;
+  type_visa: string;
+  motifs_concernes: string[] | null;
+  obligatoire: boolean;
+  conditionnel: boolean | null;
+};
+
+type PieceJustificativeCheckRow = {
+  nom_piece: string;
+  statut_ocr: string;
+};
+
 const OPTION_LABELS: Record<SendOption, string> = {
   A: "Téléchargement direct",
   B: "Envoi MySendingBox automatique",
@@ -76,6 +95,10 @@ const normalizeStoredOption = (value?: string | null): SendOption | null => {
   const normalized = value.charAt(0).toUpperCase();
   return normalized === "A" || normalized === "B" || normalized === "C" ? normalized : null;
 };
+
+const ACCEPTED_OCR_STATUSES = new Set(["accepte", "accepted"]);
+const REJECTED_OCR_STATUSES = new Set(["rejete", "rejected", "erreur", "failed"]);
+const PENDING_OCR_STATUSES = new Set(["pending", "en_cours", "analyzing", "uploading", "correcting"]);
 
 // Removed getErrorMessage — all errors are now handled with user-friendly messages inline
 
@@ -118,6 +141,11 @@ const ClientSpace = () => {
   const [taraPaymentLinks, setTaraPaymentLinks] = useState<TaraPaymentLinks | null>(null);
   const [paymentConfirmed, setPaymentConfirmed] = useState(false);
   const [paidOptions, setPaidOptions] = useState<SendOption[]>([]);
+  const [mandatoryPiecesStatus, setMandatoryPiecesStatus] = useState<MandatoryPiecesStatus>({
+    loading: true,
+    total: 0,
+    missing: [],
+  });
   const [downloadingProcuration, setDownloadingProcuration] = useState(false);
 
   // Restore previously generated letter when entering step 7
@@ -125,7 +153,7 @@ const ClientSpace = () => {
     if (step === 7 && activeDossier && !recoursResult && !generatingRecours) {
       restoreRecours(activeDossier.id);
     }
-  }, [step, activeDossier?.id]);
+  }, [step, activeDossier, recoursResult, generatingRecours, restoreRecours]);
 
   const updateActiveDossier = useCallback(async (patch: DossierUpdate) => {
     if (!activeDossier) return false;
@@ -228,6 +256,7 @@ const ClientSpace = () => {
         .select("status, option_choisie")
         .eq("dossier_ref", activeDossier.dossier_ref)
         .eq("status", "paid")
+        .eq("verified_by_webhook", true)
         .eq("option_choisie", currentOption)
         .limit(1)
         .maybeSingle();
@@ -244,7 +273,8 @@ const ClientSpace = () => {
         .from("payments")
         .select("option_choisie")
         .eq("dossier_ref", activeDossier.dossier_ref)
-        .eq("status", "paid");
+        .eq("status", "paid")
+        .eq("verified_by_webhook", true);
       if (data) {
         const opts = [...new Set(data.map((p) => p.option_choisie).filter(Boolean))] as SendOption[];
         setPaidOptions(opts);
@@ -259,7 +289,7 @@ const ClientSpace = () => {
       }
     };
     fetchPaidOptions();
-  }, [activeDossier, step]);
+  }, [activeDossier, step, updateActiveDossier]);
 
   useEffect(() => {
     if (!activeDossier) return;
@@ -268,9 +298,8 @@ const ClientSpace = () => {
     if (!paymentStatus) return;
 
     if (paymentStatus === "success") {
-      setPaymentConfirmed(true);
-      toast({ title: "✅ Paiement confirmé", description: "Vous pouvez passer à la signature YouSign." });
-      setStep(10);
+      toast({ title: "Paiement reçu", description: "Confirmation du webhook en cours. La signature sera débloquée après validation." });
+      setStep(9);
     } else if (paymentStatus === "taramoney_pending") {
       toast({ title: "Paiement Mobile Money en attente", description: "La suite sera débloquée après confirmation Tara." });
       setStep(9);
@@ -418,6 +447,71 @@ const ClientSpace = () => {
 
   const hasRejectedPieces = uploadedPieces.some((p) => p.status === "rejected");
   const hasAnalyzingPieces = uploadedPieces.some((p) => p.status === "uploading" || p.status === "analyzing" || p.status === "correcting");
+  const hasMissingMandatoryPieces = mandatoryPiecesStatus.missing.length > 0;
+  const piecesButtonBlocked = mandatoryPiecesStatus.loading || hasRejectedPieces || hasAnalyzingPieces || hasMissingMandatoryPieces;
+
+  const checkVerifiedPayment = useCallback(async (dossierRef: string, option: SendOption) => {
+    const { data } = await supabase
+      .from("payments")
+      .select("id")
+      .eq("dossier_ref", dossierRef)
+      .eq("status", "paid")
+      .eq("verified_by_webhook", true)
+      .eq("option_choisie", option)
+      .limit(1)
+      .maybeSingle();
+
+    return Boolean(data);
+  }, []);
+
+  const checkMandatoryPiecesReady = useCallback(async (dossierId: string, visaType?: string | null) => {
+    const { data: requiredRows, error: requiredError } = await supabase
+      .from("pieces_requises")
+      .select("nom_piece, type_visa, motifs_concernes, obligatoire, conditionnel")
+      .eq("actif", true)
+      .eq("obligatoire", true);
+
+    if (requiredError) {
+      throw new Error("Impossible de verifier les pieces obligatoires.");
+    }
+
+    const requiredNames = [
+      ...new Set(
+        ((requiredRows || []) as PieceRequiseCheckRow[])
+          .filter((piece) => {
+            if (!piece.obligatoire || piece.conditionnel) return false;
+            if (piece.type_visa === "tous") {
+              return (piece.motifs_concernes || []).includes("tous");
+            }
+            return Boolean(visaType) && piece.type_visa === visaType;
+          })
+          .map((piece) => piece.nom_piece),
+      ),
+    ];
+
+    const { data: uploadedRows, error: uploadedError } = await supabase
+      .from("pieces_justificatives")
+      .select("nom_piece, statut_ocr")
+      .eq("dossier_id", dossierId);
+
+    if (uploadedError) {
+      throw new Error("Impossible de verifier les pieces justificatives.");
+    }
+
+    const pieces = (uploadedRows || []) as PieceJustificativeCheckRow[];
+    const acceptedNames = new Set(
+      pieces
+        .filter((piece) => ACCEPTED_OCR_STATUSES.has(piece.statut_ocr))
+        .map((piece) => piece.nom_piece),
+    );
+
+    return {
+      total: requiredNames.length,
+      missing: requiredNames.filter((name) => !acceptedNames.has(name)),
+      hasRejected: pieces.some((piece) => REJECTED_OCR_STATUSES.has(piece.statut_ocr)),
+      hasPending: pieces.some((piece) => PENDING_OCR_STATUSES.has(piece.statut_ocr)),
+    };
+  }, []);
 
   const checkDeadline = (dateStr: string) => {
     if (!dateStr) return;
@@ -468,7 +562,7 @@ const ClientSpace = () => {
     // Fetch fresh dossier state for reliable checks
     const { data: d } = await supabase
       .from("dossiers")
-      .select("date_notification_refus, motifs_refus, consulat_nom, lettre_neutre_contenu, option_choisie, lrar_status, sent_at, url_lettre_definitive, validation_juridique_status")
+      .select("date_notification_refus, motifs_refus, consulat_nom, visa_type, lettre_neutre_contenu, option_choisie, lrar_status, sent_at, url_lettre_definitive, validation_juridique_status, procuration_signee, procuration_expiration")
       .eq("id", activeDossier.id)
       .single();
 
@@ -505,8 +599,23 @@ const ClientSpace = () => {
         block("Décision de refus incomplète", "Les motifs de refus et le consulat doivent être renseignés.", 2);
         return;
       }
-      if (hasRejectedPieces) {
-        block("Pièces rejetées", "Corrigez les pièces rejetées avant de générer la lettre.", 5);
+      try {
+        const pieceStatus = await checkMandatoryPiecesReady(activeDossier.id, d.visa_type || selectedVisaType);
+        if (pieceStatus.hasRejected || hasRejectedPieces) {
+          block("Pièces rejetées", "Corrigez les pièces rejetées avant de générer la lettre.", 5);
+          return;
+        }
+        if (pieceStatus.hasPending || hasAnalyzingPieces) {
+          block("Analyse des pièces en cours", "Attendez la fin du contrôle OCR avant de générer la lettre.", 5);
+          return;
+        }
+        if (pieceStatus.missing.length > 0) {
+          block("Pièces obligatoires manquantes", `Ajoutez et faites valider les pièces obligatoires : ${pieceStatus.missing.join(", ")}.`, 5);
+          return;
+        }
+      } catch (error) {
+        console.error("Mandatory pieces check error:", error);
+        block("Vérification impossible", "Impossible de vérifier les pièces obligatoires. Réessayez.", 5);
         return;
       }
       setStep(7); return;
@@ -541,31 +650,15 @@ const ClientSpace = () => {
 
     // Step 10: needs payment (check payments table as fallback)
     if (target === 10) {
-      const paidStatuses = ["paiement_confirme", "lettre_finalisee", "signature_verifiee", "envoyee", "distribuee"];
-      const statusOk = paidStatuses.includes(d.lrar_status || "");
-
       if (!d.option_choisie) {
         block("Option manquante", "Choisissez d'abord un mode d'envoi.", 8);
         return;
       }
 
-      if (!statusOk) {
-        // Fallback: check payments table directly — filter by current option
-        const currentOpt = normalizeStoredOption(d.option_choisie);
-        let paymentQuery = supabase
-          .from("payments")
-          .select("id")
-          .eq("dossier_ref", activeDossier.dossier_ref)
-          .eq("status", "paid");
-        if (currentOpt) {
-          paymentQuery = paymentQuery.eq("option_choisie", currentOpt);
-        }
-        const { data: paidRow } = await paymentQuery.limit(1).maybeSingle();
-
-        if (!paidRow) {
-          block("Paiement requis", "Finalisez le paiement avant de passer à la signature.", 9);
-          return;
-        }
+      const currentOpt = normalizeStoredOption(d.option_choisie);
+      if (!currentOpt || !(await checkVerifiedPayment(activeDossier.dossier_ref, currentOpt))) {
+        block("Paiement requis", "Finalisez le paiement confirmé par webhook avant de passer à la signature.", 9);
+        return;
       }
       setStep(10); return;
     }
@@ -582,6 +675,22 @@ const ClientSpace = () => {
         setStep(13);
         return;
       }
+      if (!opt || !(await checkVerifiedPayment(activeDossier.dossier_ref, opt))) {
+        block("Paiement requis", "Le paiement de l'option choisie doit être confirmé avant l'envoi LRAR.", 9);
+        return;
+      }
+      if (!d.procuration_signee) {
+        block("Procuration requise", "Signez la procuration avant l'envoi LRAR automatique.", 10);
+        return;
+      }
+      if (d.procuration_expiration && new Date(d.procuration_expiration) < new Date()) {
+        block("Procuration expirée", "Renouvelez la procuration avant l'envoi LRAR automatique.", 10);
+        return;
+      }
+      if (opt === "C" && d.validation_juridique_status !== "validee_avocat") {
+        block("Validation avocat requise", "L'avocat doit valider le dossier avant l'envoi LRAR.", 10);
+        return;
+      }
       setStep(11); return;
     }
 
@@ -592,29 +701,15 @@ const ClientSpace = () => {
         block("Mode d'envoi manquant", "Choisissez d'abord votre mode d'envoi et finalisez le paiement.", 8);
         return;
       }
-      // Check payment
-      const paidStatuses = ["paiement_confirme", "lettre_finalisee", "signature_verifiee", "lrar_envoye", "envoyee", "distribuee"];
-      const statusOk = paidStatuses.includes(d.lrar_status || "");
-      if (!statusOk) {
-        let paymentQuery = supabase
-          .from("payments")
-          .select("id")
-          .eq("dossier_ref", activeDossier.dossier_ref)
-          .eq("status", "paid");
-        if (currentOpt) {
-          paymentQuery = paymentQuery.eq("option_choisie", currentOpt);
-        }
-        const { data: paidRow } = await paymentQuery.limit(1).maybeSingle();
-        if (!paidRow) {
-          block("Paiement requis", "Finalisez le paiement avant d'accéder au suivi.", 9);
-          return;
-        }
+      if (!(await checkVerifiedPayment(activeDossier.dossier_ref, currentOpt))) {
+        block("Paiement requis", "Finalisez le paiement confirmé par webhook avant d'accéder au suivi.", 9);
+        return;
       }
       setStep(13); return;
     }
 
     setStep(target);
-  }, [activeDossier, refDate, hasRejectedPieces, dlResult]);
+  }, [activeDossier, refDate, hasRejectedPieces, hasAnalyzingPieces, dlResult, selectedVisaType, checkMandatoryPiecesReady, checkVerifiedPayment]);
 
   const handleReceivabilityContinue = async () => {
     if (refDate && activeDossier) {
@@ -1006,7 +1101,13 @@ const ClientSpace = () => {
               uploadedPieces={uploadedPieces}
               onPieceUploaded={handlePieceUploaded}
               onPieceRemoved={handlePieceRemoved}
+              onMandatoryStatusChange={setMandatoryPiecesStatus}
             />
+            {hasMissingMandatoryPieces && (
+              <Box variant="alert" title="Pièces obligatoires manquantes">
+                Ajoutez et faites valider les pièces obligatoires suivantes : {mandatoryPiecesStatus.missing.join(", ")}.
+              </Box>
+            )}
             {hasRejectedPieces && (
               <Box variant="alert" title="⚠️ Pièces rejetées">Certains documents ont été rejetés par le contrôle qualité. Corrigez-les ou réuploadez-les avant de continuer.</Box>
             )}
@@ -1014,15 +1115,15 @@ const ClientSpace = () => {
               <button className="font-syne font-bold text-[0.78rem] px-5 py-2.5 rounded-[7px] bg-foreground/[0.07] text-muted-foreground border border-border-2 transition-all" onClick={() => setStep(2)}>← Retour</button>
               <button
                 className={`font-syne font-bold text-[0.78rem] px-5 py-2.5 rounded-[7px] transition-all ${
-                  hasRejectedPieces || hasAnalyzingPieces ? "bg-muted text-muted-foreground cursor-not-allowed opacity-50" : "bg-primary-hover text-foreground hover:bg-[#5585ff]"
+                  piecesButtonBlocked ? "bg-muted text-muted-foreground cursor-not-allowed opacity-50" : "bg-primary-hover text-foreground hover:bg-[#5585ff]"
                 }`}
-                disabled={hasRejectedPieces || hasAnalyzingPieces}
+                disabled={piecesButtonBlocked}
                 onClick={async () => {
                   const saved = await updateActiveDossier({ lrar_status: "pieces_validees" });
-                  if (saved) setStep(7);
+                  if (saved) await navigateToStep(7);
                 }}
               >
-                {hasAnalyzingPieces ? "Analyse en cours…" : "Valider les pièces →"}
+                {mandatoryPiecesStatus.loading ? "Vérification des pièces…" : hasAnalyzingPieces ? "Analyse en cours…" : "Valider les pièces →"}
               </button>
             </div>
           </div>
@@ -1088,7 +1189,7 @@ const ClientSpace = () => {
                 <div className="flex gap-2.5 mt-7">
                   <button className="font-syne font-bold text-[0.78rem] px-5 py-2.5 rounded-[7px] bg-foreground/[0.07] text-muted-foreground border border-border-2 transition-all" onClick={() => setStep(8)}>← Retour</button>
                   <button
-                    onClick={() => setStep(10)}
+                    onClick={() => navigateToStep(10)}
                     className="font-syne font-bold text-[0.78rem] px-5 py-2.5 rounded-[7px] bg-primary-hover text-foreground hover:bg-[#5585ff] transition-all"
                   >
                     Continuer vers la signature →
@@ -1217,6 +1318,11 @@ const ClientSpace = () => {
                 Votre paiement a été validé. Vous pouvez continuer la procédure.
               </Box>
             )}
+            {!paymentConfirmed && (
+              <Box variant="alert" title="Paiement non confirmé">
+                Le paiement doit être confirmé par webhook avant de signer ou d'envoyer le dossier.
+              </Box>
+            )}
 
             {selectedOption && (
               <div className="bg-panel border border-border rounded-xl p-4 mb-4">
@@ -1257,16 +1363,21 @@ const ClientSpace = () => {
             <div className="flex gap-2.5 mt-7">
               <button className="font-syne font-bold text-[0.78rem] px-5 py-2.5 rounded-[7px] bg-foreground/[0.07] text-muted-foreground border border-border-2 transition-all" onClick={() => setStep(8)}>← Retour mode d'envoi</button>
               <button
-                disabled={!selectedOption || (selectedOption !== "A" && !procurationSignee) || (selectedOption === "C" && activeDossier.validation_juridique_status !== "validee_avocat")}
+                disabled={!paymentConfirmed || !selectedOption || (selectedOption !== "A" && !procurationSignee) || (selectedOption === "C" && activeDossier.validation_juridique_status !== "validee_avocat")}
                 className={`font-syne font-bold text-[0.78rem] px-5 py-2.5 rounded-[7px] transition-all ${
-                  !selectedOption || (selectedOption !== "A" && !procurationSignee) || (selectedOption === "C" && activeDossier.validation_juridique_status !== "validee_avocat")
+                  !paymentConfirmed || !selectedOption || (selectedOption !== "A" && !procurationSignee) || (selectedOption === "C" && activeDossier.validation_juridique_status !== "validee_avocat")
                     ? "bg-muted text-muted-foreground cursor-not-allowed opacity-50"
                     : "bg-primary-hover text-foreground hover:bg-[#5585ff]"
                 }`}
                 onClick={async () => {
                   if (!selectedOption) return;
+                  if (!paymentConfirmed) {
+                    toast({ title: "Paiement requis", description: "Attendez la confirmation du paiement avant de continuer.", variant: "destructive" });
+                    setStep(9);
+                    return;
+                  }
                   const saved = await updateActiveDossier({ lrar_status: "signature_verifiee" });
-                  if (saved) setStep(selectedOption === "A" ? 13 : 11);
+                  if (saved) await navigateToStep(selectedOption === "A" ? 13 : 11);
                 }}
               >
                 {selectedOption === "A" ? "Continuer vers le suivi →" : "Continuer vers l'envoi LRAR →"}

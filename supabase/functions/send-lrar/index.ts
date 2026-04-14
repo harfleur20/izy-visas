@@ -71,6 +71,12 @@ function formatPhone(phone: string): string {
   return `+${cleaned}`;
 }
 
+function normalizeSendOption(value?: string | null): "A" | "B" | "C" | null {
+  if (!value) return null;
+  const normalized = value.charAt(0).toUpperCase();
+  return normalized === "A" || normalized === "B" || normalized === "C" ? normalized : null;
+}
+
 // ── Router ──────────────────────────────────────────────────────────────────
 
 serve(async (req) => {
@@ -134,7 +140,13 @@ async function handleSend(req: Request) {
 
   assertDossierAccess(authContext, dossier);
 
-  const optionChoisie = dossier.option_choisie || (typeof dossier.option_envoi === "string" ? dossier.option_envoi.slice(0, 1) : null);
+  const optionChoisie = normalizeSendOption(dossier.option_choisie || dossier.option_envoi);
+  if (!optionChoisie) {
+    return jsonResponse({
+      error: "Mode d'envoi non finalise.",
+      code: "OPTION_NOT_FINALIZED",
+    }, 400);
+  }
   if (optionChoisie === "A") {
     return jsonResponse({
       error: "L'option A ne déclenche pas d'envoi LRAR automatique.",
@@ -149,13 +161,14 @@ async function handleSend(req: Request) {
     .eq("user_id", dossier.user_id)
     .eq("status", "paid")
     .eq("verified_by_webhook", true)
+    .eq("option_choisie", optionChoisie)
     .order("updated_at", { ascending: false })
     .limit(1)
     .maybeSingle();
 
   if (!paidPayment) {
     return jsonResponse({
-      error: "Paiement non confirmé par Stripe. L'envoi LRAR est bloqué.",
+      error: "Paiement non confirme par webhook pour l'option choisie. L'envoi LRAR est bloque.",
       code: "PAYMENT_NOT_CONFIRMED",
     }, 402);
   }
