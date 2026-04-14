@@ -14,6 +14,7 @@ const mTitles = ["Vue générale", "Tous les dossiers", "Alertes & urgences", "R
 type AvocatRow = Database["public"]["Tables"]["avocats_partenaires"]["Row"];
 type AvocatInvitationRow = Database["public"]["Tables"]["avocat_invitations"]["Row"];
 type DossierRow = Database["public"]["Tables"]["dossiers"]["Row"];
+type AuditLogRow = Database["public"]["Tables"]["audit_admin"]["Row"];
 
 type InviteAvocatResponse = {
   error?: string;
@@ -24,6 +25,12 @@ type InviteAvocatResponse = {
 type AssignAvocatResponse = {
   error?: string;
   message?: string;
+};
+
+type ManageAvocatResponse = {
+  error?: string;
+  message?: string;
+  activation_url?: string;
 };
 
 type DossierFilter = "all" | "orphans" | "assigned" | "review" | "validated" | "sent";
@@ -70,6 +77,10 @@ const validatedStatuses = new Set(["validee_avocat", "validee_automatique"]);
 const isSentLrarStatus = (status: string | null | undefined) => Boolean(status && sentLrarStatuses.has(status));
 const isValidatedStatus = (status: string | null | undefined) => Boolean(status && validatedStatuses.has(status));
 const getInitials = (prenom?: string | null, nom?: string | null) => `${prenom?.[0] || ""}${nom?.[0] || ""}`.toUpperCase() || "AV";
+
+const getJsonObject = (value: Database["public"]["Tables"]["audit_admin"]["Row"]["details"]) => (
+  value && typeof value === "object" && !Array.isArray(value) ? value as Record<string, unknown> : {}
+);
 
 const getDelayInfo = (dossier: DossierRow) => {
   if (!dossier.date_notification_refus) {
@@ -125,14 +136,19 @@ const AdminSpace = () => {
   const [assignNote, setAssignNote] = useState("");
   const [assigningDossier, setAssigningDossier] = useState(false);
   const [selectedDossierForAssign, setSelectedDossierForAssign] = useState<DossierRow | null>(null);
+  const [selectedDossierDetail, setSelectedDossierDetail] = useState<DossierRow | null>(null);
   const [dossiers, setDossiers] = useState<DossierRow[]>([]);
   const [loadingDossiers, setLoadingDossiers] = useState(false);
   const [dossierSearch, setDossierSearch] = useState("");
   const [dossierFilter, setDossierFilter] = useState<DossierFilter>("all");
+  const [auditLogs, setAuditLogs] = useState<AuditLogRow[]>([]);
+  const [loadingAudit, setLoadingAudit] = useState(false);
   const [avocats, setAvocats] = useState<AvocatRow[]>([]);
   const [avocatInvitations, setAvocatInvitations] = useState<AvocatInvitationRow[]>([]);
   const [loadingAvocats, setLoadingAvocats] = useState(false);
   const [invitingAvocat, setInvitingAvocat] = useState(false);
+  const [savingAvocatId, setSavingAvocatId] = useState<string | null>(null);
+  const [workingInvitationId, setWorkingInvitationId] = useState<string | null>(null);
   const [lastAvocatActivationUrl, setLastAvocatActivationUrl] = useState("");
   const [inviteForm, setInviteForm] = useState({
     email: "",
@@ -210,9 +226,40 @@ const AdminSpace = () => {
     }
   };
 
+  const fetchAuditLogs = async () => {
+    setLoadingAudit(true);
+    try {
+      const { data, error } = await supabase
+        .from("audit_admin")
+        .select("*")
+        .in("action_type", [
+          "assignation_avocat_dossier",
+          "reassignation_avocat_dossier",
+          "mise_a_jour_avocat_partenaire",
+          "suspension_avocat_partenaire",
+          "reactivation_avocat_partenaire",
+          "creation_invitation_avocat",
+          "revocation_invitation_avocat",
+          "prolongation_invitation_avocat",
+          "validation_avocat_dossier",
+          "blocage_avocat_dossier",
+        ])
+        .order("created_at", { ascending: false })
+        .limit(40);
+
+      if (error) throw error;
+      setAuditLogs(data || []);
+    } catch (err: unknown) {
+      toast.error(err instanceof Error ? err.message : "Chargement du journal impossible");
+    } finally {
+      setLoadingAudit(false);
+    }
+  };
+
   useEffect(() => {
     void fetchDossiers();
     void fetchAvocatData();
+    void fetchAuditLogs();
   }, []);
 
   const copyToClipboard = async (value: string, successMessage: string) => {
@@ -260,6 +307,7 @@ const AdminSpace = () => {
         specialites: "tous",
       });
       void fetchAvocatData();
+      void fetchAuditLogs();
     } catch (err: unknown) {
       toast.error(err instanceof Error ? err.message : "Erreur lors de l'invitation avocat");
     } finally {
@@ -292,10 +340,97 @@ const AdminSpace = () => {
       closeModal();
       void fetchDossiers();
       void fetchAvocatData();
+      void fetchAuditLogs();
     } catch (err: unknown) {
       toast.error(err instanceof Error ? err.message : "Assignation impossible");
     } finally {
       setAssigningDossier(false);
+    }
+  };
+
+  const handleUpdateAvocat = async (e: React.FormEvent<HTMLFormElement>, avocat: AvocatRow) => {
+    e.preventDefault();
+    const form = new FormData(e.currentTarget);
+    setSavingAvocatId(avocat.id);
+
+    try {
+      const { data, error } = await supabase.functions.invoke("manage-avocat-admin", {
+        body: {
+          action: "update_avocat",
+          avocat_id: avocat.id,
+          capacite_max: Number(form.get("capacite_max")),
+          delai_moyen_jours: Number(form.get("delai_moyen_jours")),
+          specialites: [String(form.get("specialites") || "tous")],
+        },
+      });
+
+      if (error) throw error;
+
+      const payload = data as ManageAvocatResponse;
+      if (payload?.error) throw new Error(payload.error);
+
+      toast.success(payload.message || "Avocat mis à jour");
+      void fetchAvocatData();
+      void fetchAuditLogs();
+    } catch (err: unknown) {
+      toast.error(err instanceof Error ? err.message : "Mise à jour avocat impossible");
+    } finally {
+      setSavingAvocatId(null);
+    }
+  };
+
+  const handleToggleAvocat = async (avocat: AvocatRow) => {
+    setSavingAvocatId(avocat.id);
+    try {
+      const { data, error } = await supabase.functions.invoke("manage-avocat-admin", {
+        body: {
+          action: "toggle_avocat",
+          avocat_id: avocat.id,
+          disponible: !avocat.disponible,
+        },
+      });
+
+      if (error) throw error;
+
+      const payload = data as ManageAvocatResponse;
+      if (payload?.error) throw new Error(payload.error);
+
+      toast.success(payload.message || "Statut avocat mis à jour");
+      void fetchAvocatData();
+      void fetchAuditLogs();
+    } catch (err: unknown) {
+      toast.error(err instanceof Error ? err.message : "Changement de statut impossible");
+    } finally {
+      setSavingAvocatId(null);
+    }
+  };
+
+  const handleInvitationAction = async (invitation: AvocatInvitationRow, action: "revoke_invitation" | "renew_invitation") => {
+    setWorkingInvitationId(invitation.id);
+    try {
+      const { data, error } = await supabase.functions.invoke("manage-avocat-admin", {
+        body: {
+          action,
+          invitation_id: invitation.id,
+        },
+      });
+
+      if (error) throw error;
+
+      const payload = data as ManageAvocatResponse;
+      if (payload?.error) throw new Error(payload.error);
+
+      if (payload.activation_url) {
+        await copyToClipboard(payload.activation_url, "Lien d'activation copié");
+      }
+
+      toast.success(payload.message || "Invitation mise à jour");
+      void fetchAvocatData();
+      void fetchAuditLogs();
+    } catch (err: unknown) {
+      toast.error(err instanceof Error ? err.message : "Action invitation impossible");
+    } finally {
+      setWorkingInvitationId(null);
     }
   };
 
@@ -542,12 +677,20 @@ const AdminSpace = () => {
                           <td className="px-3.5 py-2.5 border-b border-foreground/[0.03]"><Pill variant={dossierStatus.variant}>{dossierStatus.label}</Pill></td>
                           <td className="px-3.5 py-2.5 border-b border-foreground/[0.03]"><Pill variant={lrarStatus.variant}>{lrarStatus.label}</Pill></td>
                           <td className="px-3.5 py-2.5 border-b border-foreground/[0.03]">
+                            <div className="flex gap-1.5">
+                              <button
+                                className="bg-foreground/[0.07] border border-border-2 text-muted-foreground rounded px-2 py-1 font-syne text-[0.6rem] font-bold cursor-pointer hover:text-foreground"
+                                onClick={() => setSelectedDossierDetail(dossier)}
+                              >
+                                Détails
+                              </button>
                             <button
                               className="bg-primary/[0.18] border border-primary-hover/30 text-primary-hover rounded px-2 py-1 font-syne text-[0.6rem] font-bold cursor-pointer hover:bg-primary/30"
                               onClick={() => openModal(dossier)}
                             >
                               {dossier.avocat_id ? "Réassigner" : "Assigner"}
                             </button>
+                            </div>
                           </td>
                         </tr>
                       );
@@ -656,6 +799,46 @@ const AdminSpace = () => {
             </div>
             <div className="flex gap-2.5 mt-7">
               <button className="font-syne font-bold text-[0.78rem] px-5 py-2.5 rounded-[7px] bg-primary-hover text-foreground transition-all" onClick={() => setPage(1)}>Choisir dans tous les dossiers</button>
+            </div>
+
+            <div className="bg-panel border border-border rounded-xl overflow-hidden mt-5">
+              <div className="flex items-center justify-between p-3 border-b border-border">
+                <div className="font-syne font-bold text-sm">Journal opérationnel</div>
+                <button
+                  className="font-syne font-bold text-[0.7rem] px-3 py-1 rounded-md bg-foreground/[0.07] text-muted-foreground border border-border-2 disabled:opacity-50"
+                  onClick={() => void fetchAuditLogs()}
+                  disabled={loadingAudit}
+                >
+                  {loadingAudit ? "Chargement…" : "Actualiser"}
+                </button>
+              </div>
+              <div className="overflow-x-auto">
+                <table className="w-full border-collapse">
+                  <thead><tr>{["Date", "Action", "Dossier/Cible", "Acteur", "Détails"].map((h) => (<th key={h} className="font-syne text-[0.6rem] font-bold tracking-wider uppercase text-muted px-3.5 py-2 text-left border-b border-border whitespace-nowrap">{h}</th>))}</tr></thead>
+                  <tbody>
+                    {auditLogs.length === 0 ? (
+                      <tr>
+                        <td colSpan={5} className="px-3.5 py-8 text-center text-xs text-muted-foreground">
+                          Aucun événement opérationnel enregistré.
+                        </td>
+                      </tr>
+                    ) : auditLogs.map((log) => {
+                      const details = getJsonObject(log.details);
+                      const cible = String(details.dossier_ref || details.email || log.cible_id || "—");
+                      const change = String(details.new_avocat_label || details.next_status || details.previous_status || details.note || "—");
+                      return (
+                        <tr key={log.id} className="hover:bg-foreground/[0.022] transition-colors">
+                          <td className="px-3.5 py-2.5 text-xs text-muted-foreground border-b border-foreground/[0.03] whitespace-nowrap">{formatDateTime(log.created_at)}</td>
+                          <td className="px-3.5 py-2.5 text-xs font-semibold border-b border-foreground/[0.03]">{log.action_type.replaceAll("_", " ")}</td>
+                          <td className="px-3.5 py-2.5 text-xs text-muted-foreground border-b border-foreground/[0.03]">{cible}</td>
+                          <td className="px-3.5 py-2.5 text-xs text-muted-foreground border-b border-foreground/[0.03]">{log.admin_role}</td>
+                          <td className="px-3.5 py-2.5 text-xs text-muted-foreground border-b border-foreground/[0.03] max-w-[280px] truncate">{change}</td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
             </div>
           </div>
         )}
@@ -788,6 +971,42 @@ const AdminSpace = () => {
                         <span className="text-xs text-muted-foreground">Aucune spécialité configurée</span>
                       )}
                     </div>
+
+                    <form className="grid grid-cols-1 md:grid-cols-3 gap-2 mt-4" onSubmit={(e) => void handleUpdateAvocat(e, avocat)}>
+                      <div>
+                        <label className={labelClass}>Spécialité</label>
+                        <select name="specialites" className={formInputClass} defaultValue={avocat.specialites?.[0] || "tous"}>
+                          {specialiteOptions.map((option) => (
+                            <option key={option.value} value={option.value}>{option.label}</option>
+                          ))}
+                        </select>
+                      </div>
+                      <div>
+                        <label className={labelClass}>Capacité</label>
+                        <input name="capacite_max" type="number" min={1} max={100} className={formInputClass} defaultValue={avocat.capacite_max} />
+                      </div>
+                      <div>
+                        <label className={labelClass}>Délai moyen</label>
+                        <input name="delai_moyen_jours" type="number" min={1} max={30} className={formInputClass} defaultValue={avocat.delai_moyen_jours} />
+                      </div>
+                      <div className="md:col-span-3 flex gap-2">
+                        <button
+                          type="submit"
+                          disabled={savingAvocatId === avocat.id}
+                          className="font-syne font-bold text-[0.72rem] px-3 py-2 rounded-[7px] bg-primary-hover text-foreground disabled:opacity-50"
+                        >
+                          {savingAvocatId === avocat.id ? "Enregistrement…" : "Enregistrer"}
+                        </button>
+                        <button
+                          type="button"
+                          disabled={savingAvocatId === avocat.id}
+                          className={`font-syne font-bold text-[0.72rem] px-3 py-2 rounded-[7px] border disabled:opacity-50 ${avocat.disponible ? "bg-destructive/[0.14] text-red-2 border-destructive/25" : "bg-green/[0.12] text-green-2 border-green/25"}`}
+                          onClick={() => void handleToggleAvocat(avocat)}
+                        >
+                          {avocat.disponible ? "Suspendre" : "Réactiver"}
+                        </button>
+                      </div>
+                    </form>
                   </div>
                 );
               })}
@@ -893,7 +1112,7 @@ const AdminSpace = () => {
                     <table className="w-full border-collapse">
                       <thead>
                         <tr>
-                          {["Avocat", "Email", "Barreau", "Statut", "Expiration", "Lien"].map((h) => (
+                          {["Avocat", "Email", "Barreau", "Statut", "Expiration", "Actions"].map((h) => (
                             <th key={h} className="font-syne text-[0.6rem] font-bold tracking-wider uppercase text-muted px-3.5 py-2 text-left border-b border-border whitespace-nowrap">{h}</th>
                           ))}
                         </tr>
@@ -911,12 +1130,28 @@ const AdminSpace = () => {
                               <td className="px-3.5 py-2.5 text-xs text-muted-foreground border-b border-foreground/[0.03]">{formatDateTime(invitation.expires_at)}</td>
                               <td className="px-3.5 py-2.5 border-b border-foreground/[0.03]">
                                 {!invitation.used_at && !invitation.revoked && (
-                                  <button
-                                    className="bg-primary/[0.18] border border-primary-hover/30 text-primary-hover rounded px-2 py-1 font-syne text-[0.6rem] font-bold"
-                                    onClick={() => void copyToClipboard(activationUrl, "Lien d'activation copié")}
-                                  >
-                                    Copier
-                                  </button>
+                                  <div className="flex gap-1.5">
+                                    <button
+                                      className="bg-primary/[0.18] border border-primary-hover/30 text-primary-hover rounded px-2 py-1 font-syne text-[0.6rem] font-bold"
+                                      onClick={() => void copyToClipboard(activationUrl, "Lien d'activation copié")}
+                                    >
+                                      Copier
+                                    </button>
+                                    <button
+                                      className="bg-foreground/[0.07] border border-border-2 text-muted-foreground rounded px-2 py-1 font-syne text-[0.6rem] font-bold disabled:opacity-50"
+                                      disabled={workingInvitationId === invitation.id}
+                                      onClick={() => void handleInvitationAction(invitation, "renew_invitation")}
+                                    >
+                                      Prolonger
+                                    </button>
+                                    <button
+                                      className="bg-destructive/[0.14] border border-destructive/25 text-red-2 rounded px-2 py-1 font-syne text-[0.6rem] font-bold disabled:opacity-50"
+                                      disabled={workingInvitationId === invitation.id}
+                                      onClick={() => void handleInvitationAction(invitation, "revoke_invitation")}
+                                    >
+                                      Révoquer
+                                    </button>
+                                  </div>
                                 )}
                               </td>
                             </tr>
@@ -1123,6 +1358,64 @@ const AdminSpace = () => {
                 onClick={() => void handleManualAssign()}
               >
                 {assigningDossier ? "Assignation…" : "Confirmer"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {selectedDossierDetail && (
+        <div className="fixed inset-0 bg-black/75 z-[8000] flex items-center justify-center p-4 backdrop-blur-sm" onClick={(e) => e.target === e.currentTarget && setSelectedDossierDetail(null)}>
+          <div className="bg-background-2 border border-border-2 rounded-2xl w-full max-w-[760px] max-h-[88vh] overflow-hidden flex flex-col shadow-[0_24px_80px_rgba(0,0,0,0.7)]">
+            <div className="p-5 border-b border-border flex items-start justify-between gap-4 flex-shrink-0">
+              <div>
+                <div className="font-syne font-extrabold text-base mb-1">Détail dossier</div>
+                <div className="text-xs text-muted-foreground">{selectedDossierDetail.dossier_ref} · {selectedDossierDetail.client_last_name} {selectedDossierDetail.client_first_name}</div>
+              </div>
+              <button className="w-[26px] h-[26px] rounded-md bg-foreground/[0.07] border border-border cursor-pointer flex items-center justify-center text-sm text-muted-foreground hover:bg-foreground/[0.13] hover:text-foreground transition-all flex-shrink-0" onClick={() => setSelectedDossierDetail(null)}>✕</button>
+            </div>
+            <div className="flex-1 overflow-y-auto p-5">
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                {[
+                  ["Client", `${selectedDossierDetail.client_first_name} ${selectedDossierDetail.client_last_name}`],
+                  ["Email", selectedDossierDetail.client_email || "—"],
+                  ["Téléphone", selectedDossierDetail.client_phone || "—"],
+                  ["Visa", getSpecialiteLabel(selectedDossierDetail.visa_type)],
+                  ["Motif refus", selectedDossierDetail.motifs_refus?.join(", ") || selectedDossierDetail.refus_type || "—"],
+                  ["Notification refus", selectedDossierDetail.date_notification_refus ? formatDateTime(selectedDossierDetail.date_notification_refus) : "—"],
+                  ["Avocat", selectedDossierDetail.avocat_id ? `Me ${selectedDossierDetail.avocat_prenom || ""} ${selectedDossierDetail.avocat_nom || ""}` : "Aucun"],
+                  ["Barreau", selectedDossierDetail.avocat_barreau || "—"],
+                  ["Validation", selectedDossierDetail.validation_juridique_status],
+                  ["LRAR", selectedDossierDetail.lrar_status],
+                  ["Option", selectedDossierDetail.option_choisie || selectedDossierDetail.option_envoi || "—"],
+                  ["Créé le", formatDateTime(selectedDossierDetail.created_at)],
+                ].map(([label, value]) => (
+                  <div key={label} className="bg-background-3 border border-border rounded-[9px] p-3">
+                    <div className="font-syne text-[0.58rem] font-bold tracking-wider uppercase text-muted mb-1">{label}</div>
+                    <div className="text-sm text-foreground break-words">{value}</div>
+                  </div>
+                ))}
+              </div>
+
+              {selectedDossierDetail.validation_juridique_note && (
+                <Box variant="warn" title="Note de relecture avocat" className="mt-4">
+                  {selectedDossierDetail.validation_juridique_note}
+                </Box>
+              )}
+
+              <div className="bg-background-3 border border-border rounded-[9px] p-3 mt-4">
+                <div className="font-syne text-[0.58rem] font-bold tracking-wider uppercase text-muted mb-1">Destinataire recours</div>
+                <div className="text-sm text-muted-foreground">
+                  {selectedDossierDetail.recipient_name}<br />
+                  {selectedDossierDetail.recipient_address}<br />
+                  {selectedDossierDetail.recipient_postal_code} {selectedDossierDetail.recipient_city}
+                </div>
+              </div>
+            </div>
+            <div className="p-4 border-t border-border flex gap-2.5 justify-end bg-foreground/[0.02] flex-shrink-0">
+              <button className="font-syne font-bold text-[0.78rem] px-4 py-2 rounded-[7px] bg-foreground/[0.07] text-muted-foreground border border-border-2" onClick={() => setSelectedDossierDetail(null)}>Fermer</button>
+              <button className="font-syne font-bold text-[0.78rem] px-4 py-2 rounded-[7px] bg-primary-hover text-foreground" onClick={() => { const dossier = selectedDossierDetail; setSelectedDossierDetail(null); openModal(dossier); }}>
+                {selectedDossierDetail.avocat_id ? "Réassigner" : "Assigner"}
               </button>
             </div>
           </div>

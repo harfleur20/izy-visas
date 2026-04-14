@@ -24,6 +24,7 @@ interface Dossier {
   created_at: string;
   updated_at: string;
   validation_juridique_status: string;
+  validation_juridique_note: string | null;
   lettre_neutre_contenu: string | null;
   url_lettre_neutre: string | null;
   date_notification_refus: string | null;
@@ -76,6 +77,8 @@ const AvocatSpace = () => {
   const [annotations, setAnnotations] = useState<{ type: string; page: string; text: string }[]>([]);
   const [newAnnotation, setNewAnnotation] = useState("");
   const [annotationType, setAnnotationType] = useState<"probleme" | "suggestion">("probleme");
+  const [reviewNote, setReviewNote] = useState("");
+  const [reviewingAction, setReviewingAction] = useState<"validate" | "block" | null>(null);
 
   // Checklist state
   const [checklist, setChecklist] = useState({
@@ -116,7 +119,7 @@ const AvocatSpace = () => {
           (d) => d.validation_juridique_status !== "validee_avocat" && d.validation_juridique_status !== "bloquee"
         );
         const validated = dossiers.filter(
-          (d) => d.validation_juridique_status === "validee_avocat"
+          (d) => d.validation_juridique_status === "validee_avocat" || d.validation_juridique_status === "bloquee"
         );
         setPendingDossiers(pending);
         setValidatedDossiers(validated);
@@ -136,6 +139,7 @@ const AvocatSpace = () => {
   const openDossier = useCallback((dossier: Dossier) => {
     setSelectedDossier(dossier);
     setAnnotations([]);
+    setReviewNote("");
     setChecklist({
       adresse_crrv: false,
       delai_30j: false,
@@ -184,22 +188,29 @@ const AvocatSpace = () => {
       return;
     }
 
-    const { error } = await supabase
-      .from("dossiers")
-      .update({
-        validation_juridique_status: "validee_avocat",
-        date_validation_juridique: new Date().toISOString(),
-        validation_juridique_mode: "manuelle_avocat",
-      })
-      .eq("id", selectedDossier.id);
+    setReviewingAction("validate");
+    const note = [
+      reviewNote.trim(),
+      ...annotations.map((annotation) => `${annotation.type}: ${annotation.text}`),
+    ].filter(Boolean).join("\n");
 
-    if (error) {
-      toast.error("Erreur lors de la validation");
+    const { data, error } = await supabase.functions.invoke("review-avocat-dossier", {
+      body: {
+        dossier_id: selectedDossier.id,
+        action: "validate",
+        note,
+      },
+    });
+
+    setReviewingAction(null);
+
+    if (error || data?.error) {
+      toast.error(data?.error || error?.message || "Erreur lors de la validation");
       return;
     }
 
-    toast.success("Dossier validé — envoi LRAR déclenché automatiquement · Client notifié");
-    loadData();
+    toast.success(data?.message || "Dossier validé — le client peut poursuivre l'envoi LRAR");
+    void loadData();
     setPage(0);
     setSelectedDossier(null);
   };
@@ -207,21 +218,35 @@ const AvocatSpace = () => {
   // Return dossier for corrections
   const handleReturn = async () => {
     if (!selectedDossier) return;
-    const { error } = await supabase
-      .from("dossiers")
-      .update({
-        validation_juridique_status: "bloquee",
-        date_validation_juridique: new Date().toISOString(),
-      })
-      .eq("id", selectedDossier.id);
 
-    if (error) {
-      toast.error("Erreur lors du retour");
+    const note = [
+      reviewNote.trim(),
+      ...annotations.map((annotation) => `${annotation.type}: ${annotation.text}`),
+    ].filter(Boolean).join("\n");
+
+    if (note.length < 8) {
+      toast.error("Ajoutez une note de correction avant de bloquer le dossier");
       return;
     }
 
-    toast.info("Dossier retourné — le client sera notifié des corrections requises");
-    loadData();
+    setReviewingAction("block");
+    const { data, error } = await supabase.functions.invoke("review-avocat-dossier", {
+      body: {
+        dossier_id: selectedDossier.id,
+        action: "block",
+        note,
+      },
+    });
+
+    setReviewingAction(null);
+
+    if (error || data?.error) {
+      toast.error(data?.error || error?.message || "Erreur lors du retour");
+      return;
+    }
+
+    toast.info(data?.message || "Dossier retourné — le client sera notifié des corrections requises");
+    void loadData();
     setPage(0);
     setSelectedDossier(null);
   };
@@ -260,7 +285,7 @@ const AvocatSpace = () => {
       <NavGroup label="Dossiers">
         <NavItem icon="📂" label="À relire" active={page === 0} badge={pendingDossiers.length > 0 ? { text: String(pendingDossiers.length), color: "red" } : undefined} onClick={() => setPage(0)} />
         <NavItem icon="✏️" label="Éditeur" active={page === 1} onClick={() => setPage(1)} />
-        <NavItem icon="✅" label="Validés" active={page === 2} onClick={() => setPage(2)} />
+        <NavItem icon="✅" label="Traités" active={page === 2} onClick={() => setPage(2)} />
       </NavGroup>
       <NavGroup label="Compte">
         <NavItem icon="📊" label="Statistiques" active={page === 3} onClick={() => setPage(3)} />
@@ -474,6 +499,21 @@ const AvocatSpace = () => {
                 {/* Compliance Report */}
                 {recoursResult && <ComplianceReportPanel result={recoursResult} />}
 
+                <div className="bg-card border border-border rounded-xl p-4 mt-4">
+                  <div className="font-syne text-[0.65rem] font-bold tracking-wider uppercase text-muted-foreground mb-2">
+                    Note de décision
+                  </div>
+                  <textarea
+                    className="w-full bg-background border-[1.5px] border-border rounded-[9px] px-3 py-2.5 text-foreground text-xs outline-none focus:border-primary/55 h-[84px] resize-none"
+                    placeholder="Note interne ou consigne client. Obligatoire si vous demandez des corrections."
+                    value={reviewNote}
+                    onChange={(e) => setReviewNote(e.target.value)}
+                  />
+                  <p className="text-[0.68rem] text-muted-foreground mt-2">
+                    Les annotations seront ajoutées à cette note dans le journal et dans la notification client.
+                  </p>
+                </div>
+
                 {/* Checklist */}
                 <Box variant="warn" title="Checklist avant validation" className="mt-4">
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 mt-2">
@@ -511,16 +551,17 @@ const AvocatSpace = () => {
                   </button>
                   <button
                     className="font-syne font-bold text-[0.78rem] px-5 py-2.5 rounded-[7px] bg-destructive/20 text-destructive border border-destructive/30 transition-all"
+                    disabled={reviewingAction !== null}
                     onClick={handleReturn}
                   >
-                    Retourner (corrections requises)
+                    {reviewingAction === "block" ? "Retour en cours…" : "Bloquer et demander corrections"}
                   </button>
                   <button
                     className="font-syne font-bold text-[0.78rem] px-5 py-2.5 rounded-[7px] bg-green-500/20 text-green-600 border border-green-500/30 transition-all disabled:opacity-50 disabled:cursor-not-allowed"
-                    disabled={!allChecked || (recoursResult ? !recoursResult.can_send : false)}
+                    disabled={reviewingAction !== null || !allChecked || (recoursResult ? !recoursResult.can_send : false)}
                     onClick={handleValidate}
                   >
-                    ✓ Valider & déclencher envoi
+                    {reviewingAction === "validate" ? "Validation…" : "✓ Valider et débloquer l'envoi"}
                   </button>
                 </div>
               </div>
@@ -532,16 +573,16 @@ const AvocatSpace = () => {
         {page === 2 && (
           <div>
             <Eyebrow>Historique</Eyebrow>
-            <BigTitle>Dossiers validés ({validatedDossiers.length})</BigTitle>
+            <BigTitle>Dossiers traités ({validatedDossiers.length})</BigTitle>
 
             {validatedDossiers.length === 0 ? (
-              <Box variant="info" title="Aucun dossier validé">Vos dossiers validés apparaîtront ici.</Box>
+              <Box variant="info" title="Aucun dossier traité">Vos dossiers validés ou bloqués apparaîtront ici.</Box>
             ) : (
               <div className="bg-card border border-border rounded-xl overflow-hidden">
                 <table className="w-full border-collapse">
                   <thead>
                     <tr>
-                      {["Réf.", "Client", "Type visa", "Validé le", "Statut LRAR"].map((h) => (
+                      {["Réf.", "Client", "Type visa", "Décision", "Statut LRAR"].map((h) => (
                         <th key={h} className="font-syne text-[0.6rem] font-bold tracking-wider uppercase text-muted-foreground px-3.5 py-2 text-left border-b border-border">{h}</th>
                       ))}
                     </tr>
@@ -552,12 +593,14 @@ const AvocatSpace = () => {
                         <td className="px-3.5 py-2.5 text-xs text-muted-foreground font-syne border-b border-border">{d.dossier_ref.split("-").pop()}</td>
                         <td className="px-3.5 py-2.5 text-xs font-semibold border-b border-border">{d.client_last_name} {d.client_first_name}</td>
                         <td className="px-3.5 py-2.5 text-xs text-muted-foreground border-b border-border">{VISA_LABELS[d.visa_type] || d.visa_type}</td>
-                        <td className="px-3.5 py-2.5 text-xs text-muted-foreground border-b border-border">
-                          {format(new Date(d.updated_at), "dd/MM/yyyy", { locale: fr })}
+                        <td className="px-3.5 py-2.5 border-b border-border">
+                          <Pill variant={d.validation_juridique_status === "bloquee" ? "red" : "ok"}>
+                            {d.validation_juridique_status === "bloquee" ? "Bloqué" : "Validé"}
+                          </Pill>
                         </td>
                         <td className="px-3.5 py-2.5 border-b border-border">
-                          <Pill variant={d.lrar_status === "distribuee" || d.lrar_status === "lrar_envoye" || d.lrar_status === "envoyee" ? "ok" : "new"}>
-                            {d.lrar_status === "lrar_envoye" || d.lrar_status === "envoyee" ? "Envoyé" : d.lrar_status === "distribuee" ? "Distribué" : "En attente"}
+                          <Pill variant={d.validation_juridique_status === "bloquee" ? "red" : d.lrar_status === "distribuee" || d.lrar_status === "lrar_envoye" || d.lrar_status === "envoyee" ? "ok" : "new"}>
+                            {d.validation_juridique_status === "bloquee" ? "Corrections" : d.lrar_status === "lrar_envoye" || d.lrar_status === "envoyee" ? "Envoyé" : d.lrar_status === "distribuee" ? "Distribué" : "Prêt"}
                           </Pill>
                         </td>
                       </tr>
@@ -578,7 +621,7 @@ const AvocatSpace = () => {
               {[
                 { val: String(totalDossiers), label: "Dossiers traités", color: "text-primary", top: "bg-primary" },
                 { val: String(pendingDossiers.length), label: "En attente", color: "text-amber-500", top: "bg-amber-500" },
-                { val: String(validatedDossiers.length), label: "Validés", color: "text-green-600", top: "bg-green-600" },
+                { val: String(validatedDossiers.length), label: "Traités", color: "text-green-600", top: "bg-green-600" },
                 { val: avocatProfile ? `${avocatProfile.delai_moyen_jours * 24}h` : "N/A", label: "Délai moyen", color: "text-purple-500", top: "bg-purple-500" },
               ].map((k) => (
                 <div key={k.label} className="bg-card border border-border rounded-[10px] p-3 relative overflow-hidden cursor-pointer hover:border-primary/30 hover:-translate-y-px transition-all">
