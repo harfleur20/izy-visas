@@ -829,7 +829,7 @@ const AdminSpace = () => {
                       return (
                         <tr key={log.id} className="hover:bg-foreground/[0.022] transition-colors">
                           <td className="px-3.5 py-2.5 text-xs text-muted-foreground border-b border-foreground/[0.03] whitespace-nowrap">{formatDateTime(log.created_at)}</td>
-                          <td className="px-3.5 py-2.5 text-xs font-semibold border-b border-foreground/[0.03]">{log.action_type.replaceAll("_", " ")}</td>
+                          <td className="px-3.5 py-2.5 text-xs font-semibold border-b border-foreground/[0.03]">{log.action_type.split("_").join(" ")}</td>
                           <td className="px-3.5 py-2.5 text-xs text-muted-foreground border-b border-foreground/[0.03]">{cible}</td>
                           <td className="px-3.5 py-2.5 text-xs text-muted-foreground border-b border-foreground/[0.03]">{log.admin_role}</td>
                           <td className="px-3.5 py-2.5 text-xs text-muted-foreground border-b border-foreground/[0.03] max-w-[280px] truncate">{change}</td>
