@@ -24,6 +24,12 @@ function jsonResponse(data: unknown, status = 200) {
   });
 }
 
+function normalizeSendOption(value?: string | null): "A" | "B" | "C" | null {
+  if (!value) return null;
+  const normalized = value.charAt(0).toUpperCase();
+  return normalized === "A" || normalized === "B" || normalized === "C" ? normalized : null;
+}
+
 // ── Fetch PDF from trusted Supabase Storage only ────────────────────────────
 
 type StorageConstraint = {
@@ -306,6 +312,7 @@ serve(async (req) => {
     const dossierRef = dossier.dossier_ref;
     const clientName = `${dossier.client_first_name || ""} ${dossier.client_last_name || ""}`.trim() || "Client";
     const refusType = dossier.refus_type;
+    const optionChoisie = normalizeSendOption(dossier.option_choisie || dossier.option_envoi);
     const allowedDossierFiles = [{ bucket: "dossiers", pathPrefix: `${dossierId}/` }];
     const allowedRecoursFiles = [
       ...allowedDossierFiles,
@@ -316,14 +323,28 @@ serve(async (req) => {
     const inventory: { number: number; title: string; pages: number; pdfBytes: Uint8Array }[] = [];
 
     // Piece 1 — Lettre de recours
-    const recoursSource = recoursSignedPdfUrl || dossier.url_lettre_definitive || dossier.url_lettre_neutre;
+    if (optionChoisie === "C" && !dossier.url_lettre_signee_avocat) {
+      return jsonResponse({
+        error: "Lettre de recours signee par l'avocat introuvable",
+        code: "LAWYER_SIGNED_LETTER_REQUIRED",
+      }, 409);
+    }
+
+    const recoursSource = optionChoisie === "C"
+      ? dossier.url_lettre_signee_avocat
+      : recoursSignedPdfUrl || dossier.url_lettre_definitive || dossier.url_lettre_neutre;
     if (!recoursSource) {
       return jsonResponse({ error: "Lettre de recours signee introuvable" }, 400);
     }
 
     const recoursPdf = await fetchPdfFromTrustedStorage(supabase, recoursSource, "dossiers", allowedRecoursFiles);
     const recoursDoc = await PDFDocument.load(recoursPdf);
-    inventory.push({ number: 1, title: "Lettre de recours gracieux", pages: recoursDoc.getPageCount(), pdfBytes: recoursPdf });
+    inventory.push({
+      number: 1,
+      title: optionChoisie === "C" ? "Lettre de recours signee par avocat" : "Lettre de recours gracieux",
+      pages: recoursDoc.getPageCount(),
+      pdfBytes: recoursPdf,
+    });
 
     // Piece 2 — Décision de refus or Preuve de dépôt + Demande de motifs
     if (refusType === "implicite") {

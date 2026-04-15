@@ -167,6 +167,14 @@ serve(async (req) => {
       avocat_barreau: typedAvocat.barreau,
     };
 
+    if (!sameAvocat) {
+      dossierUpdate.url_lettre_signee_avocat = null;
+      dossierUpdate.date_signature_avocat = null;
+      dossierUpdate.signed_by_avocat_id = null;
+      dossierUpdate.signature_avocat_mode = null;
+      dossierUpdate.url_lrar_pdf = null;
+    }
+
     if (shouldMarkForReview) {
       dossierUpdate.validation_juridique_status = "a_verifier_avocat";
     }

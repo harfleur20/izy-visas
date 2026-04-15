@@ -201,6 +201,13 @@ async function handleSend(req: Request) {
     }, 409);
   }
 
+  if (optionChoisie === "C" && !dossier.url_lettre_signee_avocat) {
+    return jsonResponse({
+      error: "Option C: la lettre signée par l'avocat est requise avant l'envoi LRAR.",
+      code: "LAWYER_SIGNED_LETTER_REQUIRED",
+    }, 409);
+  }
+
   // ── Vérification 1 : Procuration signée ──
   if (!dossier.procuration_signee) {
     // Alert admin

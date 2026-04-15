@@ -54,6 +54,8 @@ type ActiveDossier = {
   option_choisie?: string | null;
   option_envoi?: string | null;
   url_lettre_definitive?: string | null;
+  url_lettre_signee_avocat?: string | null;
+  date_signature_avocat?: string | null;
   validation_juridique_status?: string | null;
   procuration_signee?: boolean | null;
   date_signature_procuration?: string | null;
@@ -223,7 +225,7 @@ const ClientSpace = () => {
     const loadOrCreateDossier = async () => {
       const { data } = await supabase
         .from("dossiers")
-        .select("id, dossier_ref, procuration_signee, date_signature_procuration, procuration_expiration, date_notification_refus, lrar_status, option_choisie, option_envoi, url_lettre_definitive, validation_juridique_status")
+        .select("id, dossier_ref, procuration_signee, date_signature_procuration, procuration_expiration, date_notification_refus, lrar_status, option_choisie, option_envoi, url_lettre_definitive, url_lettre_signee_avocat, date_signature_avocat, validation_juridique_status")
         .eq("user_id", user.id)
         .order("created_at", { ascending: false })
         .limit(1)
@@ -254,7 +256,7 @@ const ClientSpace = () => {
             recipient_postal_code: "44036",
             recipient_city: "Nantes Cedex 1",
           })
-          .select("id, dossier_ref, procuration_signee, date_signature_procuration, procuration_expiration, date_notification_refus, lrar_status, option_choisie, option_envoi, url_lettre_definitive, validation_juridique_status")
+          .select("id, dossier_ref, procuration_signee, date_signature_procuration, procuration_expiration, date_notification_refus, lrar_status, option_choisie, option_envoi, url_lettre_definitive, url_lettre_signee_avocat, date_signature_avocat, validation_juridique_status")
           .single();
 
         if (!error && newDossier) {
@@ -586,7 +588,7 @@ const ClientSpace = () => {
     // Fetch fresh dossier state for reliable checks
     const { data: d } = await supabase
       .from("dossiers")
-      .select("date_notification_refus, motifs_refus, consulat_nom, visa_type, lettre_neutre_contenu, option_choisie, lrar_status, sent_at, url_lettre_definitive, validation_juridique_status, procuration_signee, procuration_expiration")
+      .select("date_notification_refus, motifs_refus, consulat_nom, visa_type, lettre_neutre_contenu, option_choisie, lrar_status, sent_at, url_lettre_definitive, url_lettre_signee_avocat, date_signature_avocat, validation_juridique_status, procuration_signee, procuration_expiration")
       .eq("id", activeDossier.id)
       .single();
 
@@ -713,6 +715,10 @@ const ClientSpace = () => {
       }
       if (opt === "C" && d.validation_juridique_status !== "validee_avocat") {
         block("Validation avocat requise", "L'avocat doit valider le dossier avant l'envoi LRAR.", 10);
+        return;
+      }
+      if (opt === "C" && !d.url_lettre_signee_avocat) {
+        block("Signature avocat requise", "L'avocat doit déposer la lettre signée avant l'envoi LRAR.", 10);
         return;
       }
       setStep(11); return;
@@ -913,6 +919,10 @@ const ClientSpace = () => {
     { icon: "📬", label: "Envoi", onClick: () => navigateToStep(11), active: step >= 8 && step <= 11 },
     { icon: "📊", label: "Suivi", onClick: () => navigateToStep(13), active: step === 13 },
   ];
+  const optionCLawyerReady = selectedOption !== "C" || (
+    activeDossier?.validation_juridique_status === "validee_avocat" &&
+    Boolean(activeDossier?.url_lettre_signee_avocat)
+  );
 
   return (
     <ShellLayout
@@ -1383,18 +1393,23 @@ const ClientSpace = () => {
               </button>
             </div>
 
-            {selectedOption === "C" && activeDossier.validation_juridique_status !== "validee_avocat" && (
-              <Box variant="alert" title="Relecture avocat en attente">
-                L'option C nécessite la validation de l'avocat avant l'envoi LRAR automatique.
+            {selectedOption === "C" && !optionCLawyerReady && (
+              <Box
+                variant="alert"
+                title={activeDossier.url_lettre_signee_avocat ? "Validation avocat en attente" : "Signature avocat en attente"}
+              >
+                {activeDossier.url_lettre_signee_avocat
+                  ? "L'avocat doit encore valider formellement le dossier avant l'envoi LRAR automatique."
+                  : "L'avocat doit déposer la lettre de recours signée avant de valider le dossier."}
               </Box>
             )}
 
             <div className="flex gap-2.5 mt-7">
               <button className="font-syne font-bold text-[0.78rem] px-5 py-2.5 rounded-[7px] bg-foreground/[0.07] text-muted-foreground border border-border-2 transition-all" onClick={() => setStep(8)}>← Retour mode d'envoi</button>
               <button
-                disabled={!paymentConfirmed || !selectedOption || (selectedOption !== "A" && !procurationSignee) || (selectedOption === "C" && activeDossier.validation_juridique_status !== "validee_avocat")}
+                disabled={!paymentConfirmed || !selectedOption || (selectedOption !== "A" && !procurationSignee) || !optionCLawyerReady}
                 className={`font-syne font-bold text-[0.78rem] px-5 py-2.5 rounded-[7px] transition-all ${
-                  !paymentConfirmed || !selectedOption || (selectedOption !== "A" && !procurationSignee) || (selectedOption === "C" && activeDossier.validation_juridique_status !== "validee_avocat")
+                  !paymentConfirmed || !selectedOption || (selectedOption !== "A" && !procurationSignee) || !optionCLawyerReady
                     ? "bg-muted text-muted-foreground cursor-not-allowed opacity-50"
                     : "bg-primary-hover text-foreground hover:bg-[#5585ff]"
                 }`}
@@ -1403,6 +1418,10 @@ const ClientSpace = () => {
                   if (!paymentConfirmed) {
                     toast({ title: "Paiement requis", description: "Attendez la confirmation du paiement avant de continuer.", variant: "destructive" });
                     setStep(9);
+                    return;
+                  }
+                  if (!optionCLawyerReady) {
+                    toast({ title: "Signature avocat requise", description: "L'avocat doit déposer la lettre signée et valider le dossier avant l'envoi.", variant: "destructive" });
                     return;
                   }
                   const saved = await updateActiveDossier({ lrar_status: "signature_verifiee" });

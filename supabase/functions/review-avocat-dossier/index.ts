@@ -18,6 +18,10 @@ type DossierRow = {
   lrar_status: string | null;
   validation_juridique_status: string | null;
   lettre_neutre_contenu: string | null;
+  option_choisie: string | null;
+  option_envoi: string | null;
+  url_lettre_signee_avocat: string | null;
+  signed_by_avocat_id: string | null;
 };
 
 type ReviewChecklist = Partial<Record<
@@ -63,6 +67,12 @@ function jsonResponse(data: unknown, status = 200) {
     status,
     headers: { ...corsHeaders, "Content-Type": "application/json" },
   });
+}
+
+function normalizeSendOption(value?: string | null): "A" | "B" | "C" | null {
+  if (!value) return null;
+  const normalized = value.charAt(0).toUpperCase();
+  return normalized === "A" || normalized === "B" || normalized === "C" ? normalized : null;
 }
 
 function getRequestMetadata(req: Request) {
@@ -142,7 +152,7 @@ serve(async (req) => {
 
     const { data: dossier, error: dossierError } = await supabaseAdmin
       .from("dossiers")
-      .select("id, dossier_ref, user_id, avocat_id, client_first_name, client_last_name, lrar_status, validation_juridique_status, lettre_neutre_contenu")
+      .select("id, dossier_ref, user_id, avocat_id, client_first_name, client_last_name, lrar_status, validation_juridique_status, lettre_neutre_contenu, option_choisie, option_envoi, url_lettre_signee_avocat, signed_by_avocat_id")
       .eq("id", dossierId)
       .single();
 
@@ -163,21 +173,41 @@ serve(async (req) => {
 
     if (action === "validate") {
       assertChecklistComplete(checklist);
+
+      const optionChoisie = normalizeSendOption(typedDossier.option_choisie || typedDossier.option_envoi);
+      if (optionChoisie === "C") {
+        if (!typedDossier.url_lettre_signee_avocat) {
+          throw new HttpError(409, "Lettre signee avocat requise avant validation");
+        }
+        if (typedDossier.signed_by_avocat_id !== authContext.user.id) {
+          throw new HttpError(409, "La lettre signee doit etre deposee par l'avocat assigne");
+        }
+      }
     }
 
     const wasOpen = !["validee_avocat", "bloquee"].includes(typedDossier.validation_juridique_status || "");
     const nextStatus = action === "validate" ? "validee_avocat" : "bloquee";
     const nextLrarStatus = action === "validate" ? "lettre_finalisee" : "validation_avocat_bloquee";
 
+    const updatePayload: Record<string, unknown> = {
+      validation_juridique_status: nextStatus,
+      validation_juridique_mode: "manuelle_avocat",
+      validation_juridique_note: note || null,
+      date_validation_juridique: new Date().toISOString(),
+      lrar_status: nextLrarStatus,
+    };
+
+    if (action === "block") {
+      updatePayload.url_lettre_signee_avocat = null;
+      updatePayload.date_signature_avocat = null;
+      updatePayload.signed_by_avocat_id = null;
+      updatePayload.signature_avocat_mode = null;
+      updatePayload.url_lrar_pdf = null;
+    }
+
     const { error: updateError } = await supabaseAdmin
       .from("dossiers")
-      .update({
-        validation_juridique_status: nextStatus,
-        validation_juridique_mode: "manuelle_avocat",
-        validation_juridique_note: note || null,
-        date_validation_juridique: new Date().toISOString(),
-        lrar_status: nextLrarStatus,
-      })
+      .update(updatePayload)
       .eq("id", typedDossier.id);
 
     if (updateError) throw new Error(updateError.message);
@@ -204,7 +234,7 @@ serve(async (req) => {
         ? `Relecture avocat validee - ${typedDossier.dossier_ref}`
         : `Corrections requises - ${typedDossier.dossier_ref}`,
       message: action === "validate"
-        ? `La relecture avocat du dossier ${typedDossier.dossier_ref} est validee. Vous pouvez poursuivre l'envoi LRAR.`
+        ? `La relecture avocat du dossier ${typedDossier.dossier_ref} est validee et la lettre signee a ete deposee. Vous pouvez poursuivre l'envoi LRAR.`
         : `La relecture avocat du dossier ${typedDossier.dossier_ref} demande des corrections: ${note}`,
       type: action === "validate" ? "dossier" : "alert",
       lien: "/client",
@@ -221,6 +251,7 @@ serve(async (req) => {
         client: clientName,
         previous_status: typedDossier.validation_juridique_status,
         next_status: nextStatus,
+        signed_pdf_path: action === "validate" ? typedDossier.url_lettre_signee_avocat : null,
         note: note || null,
       },
     });

@@ -374,6 +374,7 @@ export type Database = {
           date_notification_refus: string | null
           date_qualification: string | null
           date_signature_procuration: string | null
+          date_signature_avocat: string | null
           date_validation_juridique: string | null
           delivered_at: string | null
           destinataire_recours: string | null
@@ -404,6 +405,8 @@ export type Database = {
           refus_type: string
           score_ocr_decision: number | null
           sent_at: string | null
+          signed_by_avocat_id: string | null
+          signature_avocat_mode: string | null
           statut_final: string | null
           tracking_number: string | null
           type_signataire: string | null
@@ -412,6 +415,7 @@ export type Database = {
           url_decision_refus: string | null
           url_lettre_definitive: string | null
           url_lettre_neutre: string | null
+          url_lettre_signee_avocat: string | null
           url_lrar_pdf: string | null
           url_procuration_pdf: string | null
           use_capdemarches: boolean
@@ -449,6 +453,7 @@ export type Database = {
           date_notification_refus?: string | null
           date_qualification?: string | null
           date_signature_procuration?: string | null
+          date_signature_avocat?: string | null
           date_validation_juridique?: string | null
           delivered_at?: string | null
           destinataire_recours?: string | null
@@ -479,6 +484,8 @@ export type Database = {
           refus_type?: string
           score_ocr_decision?: number | null
           sent_at?: string | null
+          signed_by_avocat_id?: string | null
+          signature_avocat_mode?: string | null
           statut_final?: string | null
           tracking_number?: string | null
           type_signataire?: string | null
@@ -487,6 +494,7 @@ export type Database = {
           url_decision_refus?: string | null
           url_lettre_definitive?: string | null
           url_lettre_neutre?: string | null
+          url_lettre_signee_avocat?: string | null
           url_lrar_pdf?: string | null
           url_procuration_pdf?: string | null
           use_capdemarches?: boolean
@@ -524,6 +532,7 @@ export type Database = {
           date_notification_refus?: string | null
           date_qualification?: string | null
           date_signature_procuration?: string | null
+          date_signature_avocat?: string | null
           date_validation_juridique?: string | null
           delivered_at?: string | null
           destinataire_recours?: string | null
@@ -554,6 +563,8 @@ export type Database = {
           refus_type?: string
           score_ocr_decision?: number | null
           sent_at?: string | null
+          signed_by_avocat_id?: string | null
+          signature_avocat_mode?: string | null
           statut_final?: string | null
           tracking_number?: string | null
           type_signataire?: string | null
@@ -562,6 +573,7 @@ export type Database = {
           url_decision_refus?: string | null
           url_lettre_definitive?: string | null
           url_lettre_neutre?: string | null
+          url_lettre_signee_avocat?: string | null
           url_lrar_pdf?: string | null
           url_procuration_pdf?: string | null
           use_capdemarches?: boolean

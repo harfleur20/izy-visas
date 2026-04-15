@@ -3,9 +3,16 @@ import { supabase } from "@/integrations/supabase/client";
 import { LrarComposition } from "@/components/LrarComposition";
 import { toast } from "sonner";
 import type { Database } from "@/integrations/supabase/types";
+import { Box } from "@/components/ui-custom";
 
 type Dossier = Database["public"]["Tables"]["dossiers"]["Row"];
 type PieceJustificative = Database["public"]["Tables"]["pieces_justificatives"]["Row"];
+
+function normalizeSendOption(value?: string | null): "A" | "B" | "C" | null {
+  if (!value) return null;
+  const normalized = value.charAt(0).toUpperCase();
+  return normalized === "A" || normalized === "B" || normalized === "C" ? normalized : null;
+}
 
 interface LrarCompositionWrapperProps {
   dossierId: string;
@@ -76,12 +83,29 @@ export function LrarCompositionWrapper({
     );
   }
 
+  const optionChoisie = normalizeSendOption(dossier.option_choisie || dossier.option_envoi);
+  if (optionChoisie === "C" && !dossier.url_lettre_signee_avocat) {
+    return (
+      <div>
+        <Box variant="alert" title="Signature avocat requise">
+          La lettre signée par l'avocat doit être déposée avant de composer et envoyer la LRAR.
+        </Box>
+        <button
+          onClick={onBack}
+          className="font-syne font-bold text-[0.78rem] px-5 py-2.5 rounded-[7px] bg-foreground/[0.07] text-muted-foreground border border-border-2 transition-all"
+        >
+          ← Retour
+        </button>
+      </div>
+    );
+  }
+
   // Build mandatory pieces (always 2: lettre de recours + décision de refus)
   const mandatoryPieces = [
     {
-      title: "Lettre de recours",
+      title: optionChoisie === "C" ? "Lettre de recours signée par avocat" : "Lettre de recours",
       pages: 4, // Will be dynamically set after YouSign signing
-      date: "Signée YouSign — Obligatoire",
+      date: optionChoisie === "C" ? "Signée par l'avocat — Obligatoire" : "Signée YouSign — Obligatoire",
     },
     {
       title: "Décision de refus de visa",

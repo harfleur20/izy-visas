@@ -106,6 +106,11 @@ serve(async (req) => {
       avocat_nom: selectedAvocat.nom,
       avocat_prenom: selectedAvocat.prenom,
       avocat_barreau: selectedAvocat.barreau,
+      url_lettre_signee_avocat: null,
+      date_signature_avocat: null,
+      signed_by_avocat_id: null,
+      signature_avocat_mode: null,
+      url_lrar_pdf: null,
     }).eq("id", dossier_id);
 
     // Increment dossiers_en_cours

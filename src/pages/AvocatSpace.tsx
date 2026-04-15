@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 
 import ShellLayout from "@/components/ShellLayout";
 import { NavItem, NavGroup } from "@/components/NavItem";
@@ -36,6 +36,12 @@ interface Dossier {
   consulat_nom: string | null;
   consulat_ville: string | null;
   option_choisie: string | null;
+  option_envoi: string | null;
+  url_lettre_definitive: string | null;
+  url_lettre_signee_avocat: string | null;
+  date_signature_avocat: string | null;
+  signed_by_avocat_id: string | null;
+  signature_avocat_mode: string | null;
 }
 
 interface AvocatProfile {
@@ -64,6 +70,16 @@ const VISA_LABELS: Record<string, string> = {
 
 const REVIEWABLE_STATUSES = new Set(["a_verifier_avocat"]);
 const aTitles = ["Dossiers à relire", "Éditeur de recours", "Dossiers validés", "Statistiques", "Mon profil"];
+const MAX_SIGNED_LETTER_SIZE = 15 * 1024 * 1024;
+
+const normalizeSendOption = (value?: string | null): "A" | "B" | "C" | null => {
+  if (!value) return null;
+  const normalized = value.charAt(0).toUpperCase();
+  return normalized === "A" || normalized === "B" || normalized === "C" ? normalized : null;
+};
+
+const dossierRequiresAvocatSignature = (dossier: Dossier) =>
+  normalizeSendOption(dossier.option_choisie || dossier.option_envoi) === "C";
 
 const AvocatSpace = () => {
   const [page, setPage] = useState(0);
@@ -81,6 +97,8 @@ const AvocatSpace = () => {
   const [annotationType, setAnnotationType] = useState<"probleme" | "suggestion">("probleme");
   const [reviewNote, setReviewNote] = useState("");
   const [reviewingAction, setReviewingAction] = useState<"validate" | "block" | null>(null);
+  const [uploadingSignedLetter, setUploadingSignedLetter] = useState(false);
+  const signedLetterInputRef = useRef<HTMLInputElement | null>(null);
 
   // Checklist state
   const [checklist, setChecklist] = useState({
@@ -197,6 +215,17 @@ const AvocatSpace = () => {
       toast.error("Envoi bloqué — des références non validées");
       return;
     }
+    if (dossierRequiresAvocatSignature(selectedDossier) && !selectedDossier.url_lettre_signee_avocat) {
+      toast.error("Déposez le PDF signé par l'avocat avant de valider");
+      return;
+    }
+    if (
+      dossierRequiresAvocatSignature(selectedDossier) &&
+      selectedDossier.signed_by_avocat_id !== user?.id
+    ) {
+      toast.error("Le PDF signé doit être déposé par l'avocat assigné au dossier");
+      return;
+    }
 
     setReviewingAction("validate");
     const note = [
@@ -224,6 +253,91 @@ const AvocatSpace = () => {
     void loadData();
     setPage(0);
     setSelectedDossier(null);
+  };
+
+  const openStoredPdf = async (storagePath?: string | null) => {
+    if (!storagePath) {
+      toast.error("PDF indisponible");
+      return;
+    }
+
+    const { data, error } = await supabase.storage
+      .from("dossiers")
+      .createSignedUrl(storagePath, 300);
+
+    if (error || !data?.signedUrl) {
+      toast.error("Impossible d'ouvrir le PDF");
+      return;
+    }
+
+    window.open(data.signedUrl, "_blank", "noopener,noreferrer");
+  };
+
+  const handleSignedLetterUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    event.target.value = "";
+
+    if (!file || !selectedDossier || !user) return;
+
+    const isPdf = file.type === "application/pdf" || file.name.toLowerCase().endsWith(".pdf");
+    if (!isPdf) {
+      toast.error("Déposez uniquement un PDF signé");
+      return;
+    }
+
+    if (file.size > MAX_SIGNED_LETTER_SIZE) {
+      toast.error("PDF trop volumineux", { description: "Limite actuelle : 15 Mo." });
+      return;
+    }
+
+    if (!REVIEWABLE_STATUSES.has(selectedDossier.validation_juridique_status)) {
+      toast.error("Ce dossier n'est plus en attente de validation avocat");
+      return;
+    }
+
+    setUploadingSignedLetter(true);
+    try {
+      const safeName = file.name
+        .normalize("NFD")
+        .replace(/[\u0300-\u036f]/g, "")
+        .replace(/[^a-zA-Z0-9._-]/g, "_")
+        .slice(-90);
+      const storagePath = `${selectedDossier.id}/lettre_signee_avocat_${Date.now()}_${safeName}`;
+      const { error: uploadError } = await supabase.storage
+        .from("dossiers")
+        .upload(storagePath, file, {
+          contentType: "application/pdf",
+          upsert: true,
+        });
+
+      if (uploadError) throw uploadError;
+
+      const signedAt = new Date().toISOString();
+      const { data, error: updateError } = await supabase
+        .from("dossiers")
+        .update({
+          url_lettre_signee_avocat: storagePath,
+          date_signature_avocat: signedAt,
+          signed_by_avocat_id: user.id,
+          signature_avocat_mode: "upload_pdf",
+          url_lrar_pdf: null,
+        })
+        .eq("id", selectedDossier.id)
+        .select("*")
+        .single();
+
+      if (updateError) throw updateError;
+
+      const updatedDossier = data as Dossier;
+      setSelectedDossier(updatedDossier);
+      setPendingDossiers((prev) => prev.map((d) => (d.id === updatedDossier.id ? updatedDossier : d)));
+      toast.success("Lettre signée avocat enregistrée");
+    } catch (err) {
+      console.error("Signed lawyer letter upload error:", err);
+      toast.error(err instanceof Error ? err.message : "Impossible d'enregistrer le PDF signé");
+    } finally {
+      setUploadingSignedLetter(false);
+    }
   };
 
   // Return dossier for corrections
@@ -512,6 +626,59 @@ const AvocatSpace = () => {
 
                 <div className="bg-card border border-border rounded-xl p-4 mt-4">
                   <div className="font-syne text-[0.65rem] font-bold tracking-wider uppercase text-muted-foreground mb-2">
+                    Signature avocat
+                  </div>
+                  <div className={`rounded-lg border p-3 ${selectedDossier.url_lettre_signee_avocat ? "border-green-500/30 bg-green-500/10" : "border-gold-2/25 bg-gold/[0.08]"}`}>
+                    <div className="font-syne font-bold text-sm mb-1">
+                      {selectedDossier.url_lettre_signee_avocat ? "PDF signé enregistré" : "PDF signé requis"}
+                    </div>
+                    <p className="text-xs text-muted-foreground leading-relaxed">
+                      {selectedDossier.url_lettre_signee_avocat
+                        ? `Déposé le ${selectedDossier.date_signature_avocat ? new Date(selectedDossier.date_signature_avocat).toLocaleString("fr-FR") : "date non disponible"}. Ce PDF sera utilisé pour composer la LRAR.`
+                        : "Ouvrez la lettre définitive, signez-la hors plateforme, puis déposez le PDF signé avant validation."}
+                    </p>
+                    <div className="flex gap-2 mt-3 flex-wrap">
+                      <button
+                        type="button"
+                        className="font-syne font-bold text-xs px-3 py-2 rounded-lg bg-foreground/[0.07] text-muted-foreground border border-border hover:bg-foreground/[0.12] transition-colors"
+                        onClick={() => openStoredPdf(selectedDossier.url_lettre_definitive)}
+                      >
+                        Ouvrir la lettre à signer
+                      </button>
+                      {selectedDossier.url_lettre_signee_avocat && (
+                        <button
+                          type="button"
+                          className="font-syne font-bold text-xs px-3 py-2 rounded-lg bg-green-500/15 text-green-600 border border-green-500/30 hover:bg-green-500/20 transition-colors"
+                          onClick={() => openStoredPdf(selectedDossier.url_lettre_signee_avocat)}
+                        >
+                          Ouvrir le PDF signé
+                        </button>
+                      )}
+                      <button
+                        type="button"
+                        className="font-syne font-bold text-xs px-3 py-2 rounded-lg bg-primary/20 text-primary border border-primary/30 disabled:opacity-50 disabled:cursor-not-allowed"
+                        disabled={uploadingSignedLetter || !REVIEWABLE_STATUSES.has(selectedDossier.validation_juridique_status)}
+                        onClick={() => signedLetterInputRef.current?.click()}
+                      >
+                        {uploadingSignedLetter
+                          ? "Upload en cours..."
+                          : selectedDossier.url_lettre_signee_avocat
+                            ? "Remplacer le PDF signé"
+                            : "Uploader le PDF signé"}
+                      </button>
+                      <input
+                        ref={signedLetterInputRef}
+                        type="file"
+                        accept="application/pdf,.pdf"
+                        className="hidden"
+                        onChange={handleSignedLetterUpload}
+                      />
+                    </div>
+                  </div>
+                </div>
+
+                <div className="bg-card border border-border rounded-xl p-4 mt-4">
+                  <div className="font-syne text-[0.65rem] font-bold tracking-wider uppercase text-muted-foreground mb-2">
                     Note de décision
                   </div>
                   <textarea
@@ -573,6 +740,7 @@ const AvocatSpace = () => {
                       reviewingAction !== null ||
                       !allChecked ||
                       (!selectedDossier.lettre_neutre_contenu && !recoursResult?.letter) ||
+                      (dossierRequiresAvocatSignature(selectedDossier) && !selectedDossier.url_lettre_signee_avocat) ||
                       !REVIEWABLE_STATUSES.has(selectedDossier.validation_juridique_status) ||
                       (recoursResult ? !recoursResult.can_send : false)
                     }
