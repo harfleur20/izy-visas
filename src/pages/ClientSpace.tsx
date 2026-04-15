@@ -30,6 +30,7 @@ type OcrDetails = {
   canAutoCorrect?: boolean;
   typeMismatchWarning?: string;
   decisionWarning?: string;
+  identityWarning?: string;
   languageNotice?: string;
 };
 
@@ -42,6 +43,8 @@ type PieceOcrRow = {
   motif_rejet: string | null;
   url_fichier_original: string | null;
   type_document_detecte: string | null;
+  type_document_attendu: string | null;
+  ocr_text_extract: string | null;
   langue_detectee: string | null;
   ocr_details: OcrDetails | null;
 };
@@ -49,6 +52,9 @@ type PieceOcrRow = {
 type ActiveDossier = {
   id: string;
   dossier_ref: string;
+  client_first_name?: string | null;
+  client_last_name?: string | null;
+  client_passport_number?: string | null;
   date_notification_refus?: string | null;
   lrar_status?: string | null;
   option_choisie?: string | null;
@@ -86,7 +92,79 @@ type PieceRequiseCheckRow = {
 type PieceJustificativeCheckRow = {
   nom_piece: string;
   statut_ocr: string;
+  ocr_details: OcrDetails | null;
+  ocr_text_extract: string | null;
+  type_document_attendu: string | null;
+  type_document_detecte: string | null;
 };
+
+const hasBlockingOcrWarning = (details?: OcrDetails | null) =>
+  Boolean(details?.typeMismatchWarning || details?.decisionWarning || details?.identityWarning);
+
+const normalizeForIdentity = (value?: string | null) =>
+  (value || "")
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/[^a-zA-Z0-9\s]/g, " ")
+    .replace(/\s+/g, " ")
+    .trim()
+    .toLowerCase();
+
+const significantTokens = (value?: string | null) =>
+  normalizeForIdentity(value)
+    .split(" ")
+    .filter((token) => token.length >= 2);
+
+const requiresOwnerIdentityCheck = (nomPiece: string, expectedType?: string | null) => {
+  const normalizedName = normalizeForIdentity(nomPiece);
+  return (
+    ["decision_refus", "passeport", "formulaire_visa"].includes(expectedType || "") ||
+    /decision.*refus|refus.*visa|passeport|passport|formulaire.*visa/.test(normalizedName)
+  );
+};
+
+const textMatchesOwnerIdentity = (text: string | null | undefined, dossier?: ActiveDossier | null) => {
+  const normalizedText = normalizeForIdentity(text);
+  if (!normalizedText || !dossier) return false;
+
+  const lastTokens = significantTokens(dossier.client_last_name);
+  const firstTokens = significantTokens(dossier.client_first_name);
+  const passport = normalizeForIdentity(dossier.client_passport_number).replace(/\s/g, "");
+
+  const lastMatches = lastTokens.length === 0 || lastTokens.some((token) => normalizedText.includes(token));
+  const firstMatches = firstTokens.length === 0 || firstTokens.some((token) => normalizedText.includes(token));
+  const passportMatches = Boolean(passport) && normalizedText.replace(/\s/g, "").includes(passport);
+
+  return (lastMatches && firstMatches) || passportMatches;
+};
+
+const getIdentityWarning = (
+  nomPiece: string,
+  expectedType: string | null | undefined,
+  ocrText: string | null | undefined,
+  dossier?: ActiveDossier | null,
+) => {
+  if (!dossier || !requiresOwnerIdentityCheck(nomPiece, expectedType)) return undefined;
+  if (!dossier.client_first_name && !dossier.client_last_name && !dossier.client_passport_number) return undefined;
+  if (textMatchesOwnerIdentity(ocrText, dossier)) return undefined;
+
+  const ownerName = [dossier.client_first_name, dossier.client_last_name].filter(Boolean).join(" ");
+  return `Ce document ne semble pas correspondre au titulaire du dossier${ownerName ? ` (${ownerName})` : ""}. Déposez un document au nom du client.`;
+};
+
+const getTypeMismatchWarning = (
+  nomPiece: string,
+  expectedType: string | null | undefined,
+  detectedType: string | null | undefined,
+) => {
+  if (!expectedType || expectedType === "autre" || !detectedType || detectedType === expectedType) return undefined;
+  return `Le fichier fourni pour ${nomPiece} ne correspond pas au type de document attendu.`;
+};
+
+const hasBlockingPieceIssue = (piece: PieceJustificativeCheckRow, dossier?: ActiveDossier | null) =>
+  hasBlockingOcrWarning(piece.ocr_details) ||
+  Boolean(getTypeMismatchWarning(piece.nom_piece, piece.type_document_attendu, piece.type_document_detecte)) ||
+  Boolean(getIdentityWarning(piece.nom_piece, piece.type_document_attendu, piece.ocr_text_extract, dossier));
 
 const getPieceToastPayload = (name: string, score: number | null, details: OcrDetails) => {
   if (details.typeMismatchWarning) {
@@ -100,6 +178,13 @@ const getPieceToastPayload = (name: string, score: number | null, details: OcrDe
     return {
       title: `⚠️ ${name} — Vérification requise`,
       description: details.decisionWarning,
+    };
+  }
+
+  if (details.identityWarning) {
+    return {
+      title: `⚠️ ${name} — Vérification requise`,
+      description: details.identityWarning,
     };
   }
 
@@ -126,6 +211,28 @@ const REJECTED_OCR_STATUSES = new Set(["rejete", "rejected", "erreur", "failed"]
 const PENDING_OCR_STATUSES = new Set(["pending", "en_cours", "analyzing", "uploading", "correcting"]);
 
 // Removed getErrorMessage — all errors are now handled with user-friendly messages inline
+
+const extractFunctionErrorMessage = async (error: unknown, data?: unknown) => {
+  if (data && typeof data === "object" && "error" in data && typeof (data as { error?: unknown }).error === "string") {
+    return (data as { error: string }).error;
+  }
+
+  const context = error && typeof error === "object" && "context" in error
+    ? (error as { context?: Response }).context
+    : undefined;
+
+  if (context) {
+    try {
+      const body = await context.clone().json();
+      if (body?.error && typeof body.error === "string") return body.error;
+      if (body?.message && typeof body.message === "string") return body.message;
+    } catch {
+      // Keep the generic SDK error below.
+    }
+  }
+
+  return error instanceof Error ? error.message : "";
+};
 
 // ── Step prerequisite definitions ────────────────────────────────
 // Each step declares what must be true BEFORE entering it.
@@ -225,7 +332,7 @@ const ClientSpace = () => {
     const loadOrCreateDossier = async () => {
       const { data } = await supabase
         .from("dossiers")
-        .select("id, dossier_ref, procuration_signee, date_signature_procuration, procuration_expiration, date_notification_refus, lrar_status, option_choisie, option_envoi, url_lettre_definitive, url_lettre_signee_avocat, date_signature_avocat, validation_juridique_status")
+        .select("id, dossier_ref, client_first_name, client_last_name, client_passport_number, procuration_signee, date_signature_procuration, procuration_expiration, date_notification_refus, lrar_status, option_choisie, option_envoi, url_lettre_definitive, url_lettre_signee_avocat, date_signature_avocat, validation_juridique_status")
         .eq("user_id", user.id)
         .order("created_at", { ascending: false })
         .limit(1)
@@ -256,7 +363,7 @@ const ClientSpace = () => {
             recipient_postal_code: "44036",
             recipient_city: "Nantes Cedex 1",
           })
-          .select("id, dossier_ref, procuration_signee, date_signature_procuration, procuration_expiration, date_notification_refus, lrar_status, option_choisie, option_envoi, url_lettre_definitive, url_lettre_signee_avocat, date_signature_avocat, validation_juridique_status")
+          .select("id, dossier_ref, client_first_name, client_last_name, client_passport_number, procuration_signee, date_signature_procuration, procuration_expiration, date_notification_refus, lrar_status, option_choisie, option_envoi, url_lettre_definitive, url_lettre_signee_avocat, date_signature_avocat, validation_juridique_status")
           .single();
 
         if (!error && newDossier) {
@@ -347,12 +454,16 @@ const ClientSpace = () => {
     const loadPieces = async () => {
       const { data } = await supabase
         .from("pieces_justificatives")
-        .select("id, nom_piece, statut_ocr, score_qualite, nombre_pages, motif_rejet, url_fichier_original, type_document_detecte, langue_detectee, ocr_details")
+        .select("id, nom_piece, statut_ocr, score_qualite, nombre_pages, motif_rejet, url_fichier_original, type_document_detecte, type_document_attendu, ocr_text_extract, langue_detectee, ocr_details")
         .eq("dossier_id", dossierId)
         .order("created_at", { ascending: true });
 
       const mapped: UploadedPiece[] = (data || []).map((row) => {
         const details = (row.ocr_details || {}) as OcrDetails;
+        const typeMismatchWarning =
+          details.typeMismatchWarning || getTypeMismatchWarning(row.nom_piece, row.type_document_attendu, row.type_document_detecte);
+        const identityWarning =
+          details.identityWarning || getIdentityWarning(row.nom_piece, row.type_document_attendu, row.ocr_text_extract, activeDossier);
         let status: UploadedPiece["status"] = "analyzing";
         if (row.statut_ocr === "accepte") status = "accepted";
         else if (row.statut_ocr === "rejete" || row.statut_ocr === "erreur") status = "rejected";
@@ -367,10 +478,13 @@ const ClientSpace = () => {
           rejectionMessage: row.motif_rejet || undefined,
           canAutoCorrect: details.canAutoCorrect || false,
           fileUrl: row.url_fichier_original || undefined,
-          typeMismatchWarning: details.typeMismatchWarning || undefined,
+          typeMismatchWarning,
           decisionWarning: details.decisionWarning || undefined,
+          identityWarning,
           languageNotice: details.languageNotice || undefined,
           typeDocumentDetecte: row.type_document_detecte || undefined,
+          typeDocumentAttendu: row.type_document_attendu || undefined,
+          ocrTextExtract: row.ocr_text_extract || undefined,
         };
       });
 
@@ -394,6 +508,10 @@ const ClientSpace = () => {
           if (!row || row.statut_ocr === "en_cours") return;
 
           const details = (row.ocr_details || {}) as OcrDetails;
+          const typeMismatchWarning =
+            details.typeMismatchWarning || getTypeMismatchWarning(row.nom_piece, row.type_document_attendu, row.type_document_detecte);
+          const identityWarning =
+            details.identityWarning || getIdentityWarning(row.nom_piece, row.type_document_attendu, row.ocr_text_extract, activeDossier);
           let status: UploadedPiece["status"] = "analyzing";
           if (row.statut_ocr === "accepte") status = "accepted";
           else if (row.statut_ocr === "rejete" || row.statut_ocr === "erreur") status = "rejected";
@@ -407,10 +525,13 @@ const ClientSpace = () => {
             rejectionMessage: row.motif_rejet || undefined,
             canAutoCorrect: details.canAutoCorrect || false,
             fileUrl: row.url_fichier_original || undefined,
-            typeMismatchWarning: details.typeMismatchWarning || undefined,
+            typeMismatchWarning,
             decisionWarning: details.decisionWarning || undefined,
+            identityWarning,
             languageNotice: details.languageNotice || undefined,
             typeDocumentDetecte: row.type_document_detecte || undefined,
+            typeDocumentAttendu: row.type_document_attendu || undefined,
+            ocrTextExtract: row.ocr_text_extract || undefined,
           };
 
           setUploadedPieces((prev) => {
@@ -424,7 +545,11 @@ const ClientSpace = () => {
           });
 
           if (status === "accepted") {
-            const toastPayload = getPieceToastPayload(row.nom_piece, row.score_qualite, details);
+            const toastPayload = getPieceToastPayload(row.nom_piece, row.score_qualite, {
+              ...details,
+              typeMismatchWarning,
+              identityWarning,
+            });
             toast({ title: toastPayload.title, description: toastPayload.description });
           } else if (status === "rejected") {
             toast({ title: `❌ ${row.nom_piece} rejetée`, description: row.motif_rejet || "Qualité insuffisante", variant: "destructive" });
@@ -473,8 +598,11 @@ const ClientSpace = () => {
 
   const hasRejectedPieces = uploadedPieces.some((p) => p.status === "rejected");
   const hasAnalyzingPieces = uploadedPieces.some((p) => p.status === "uploading" || p.status === "analyzing" || p.status === "correcting");
+  const hasWarningPieces = uploadedPieces.some((p) =>
+    p.status === "accepted" && Boolean(p.typeMismatchWarning || p.decisionWarning || p.identityWarning)
+  );
   const hasMissingMandatoryPieces = mandatoryPiecesStatus.missing.length > 0;
-  const piecesButtonBlocked = mandatoryPiecesStatus.loading || hasRejectedPieces || hasAnalyzingPieces || hasMissingMandatoryPieces;
+  const piecesButtonBlocked = mandatoryPiecesStatus.loading || hasRejectedPieces || hasAnalyzingPieces || hasWarningPieces || hasMissingMandatoryPieces;
 
   const checkVerifiedPayment = useCallback(async (dossierRef: string, option: SendOption) => {
     const { data } = await supabase
@@ -517,7 +645,7 @@ const ClientSpace = () => {
 
     const { data: uploadedRows, error: uploadedError } = await supabase
       .from("pieces_justificatives")
-      .select("nom_piece, statut_ocr")
+      .select("nom_piece, statut_ocr, ocr_details, ocr_text_extract, type_document_attendu, type_document_detecte")
       .eq("dossier_id", dossierId);
 
     if (uploadedError) {
@@ -527,7 +655,7 @@ const ClientSpace = () => {
     const pieces = (uploadedRows || []) as PieceJustificativeCheckRow[];
     const acceptedNames = new Set(
       pieces
-        .filter((piece) => ACCEPTED_OCR_STATUSES.has(piece.statut_ocr))
+        .filter((piece) => ACCEPTED_OCR_STATUSES.has(piece.statut_ocr) && !hasBlockingPieceIssue(piece, activeDossier))
         .map((piece) => piece.nom_piece),
     );
 
@@ -536,8 +664,9 @@ const ClientSpace = () => {
       missing: requiredNames.filter((name) => !acceptedNames.has(name)),
       hasRejected: pieces.some((piece) => REJECTED_OCR_STATUSES.has(piece.statut_ocr)),
       hasPending: pieces.some((piece) => PENDING_OCR_STATUSES.has(piece.statut_ocr)),
+      hasWarning: pieces.some((piece) => ACCEPTED_OCR_STATUSES.has(piece.statut_ocr) && hasBlockingPieceIssue(piece, activeDossier)),
     };
-  }, []);
+  }, [activeDossier]);
 
   const checkDeadline = (dateStr: string) => {
     if (!dateStr) return;
@@ -633,6 +762,10 @@ const ClientSpace = () => {
         }
         if (pieceStatus.hasPending || hasAnalyzingPieces) {
           block("Analyse des pièces en cours", "Attendez la fin du contrôle OCR avant de générer la lettre.", 5);
+          return;
+        }
+        if (pieceStatus.hasWarning || hasWarningPieces) {
+          block("Pièces à corriger", "Remplacez les documents signalés par l'OCR avant de générer la lettre.", 5);
           return;
         }
         if (pieceStatus.missing.length > 0) {
@@ -739,7 +872,7 @@ const ClientSpace = () => {
     }
 
     setStep(target);
-  }, [activeDossier, refDate, hasRejectedPieces, hasAnalyzingPieces, dlResult, selectedVisaType, checkMandatoryPiecesReady, checkVerifiedPayment]);
+  }, [activeDossier, refDate, hasRejectedPieces, hasAnalyzingPieces, hasWarningPieces, dlResult, selectedVisaType, checkMandatoryPiecesReady, checkVerifiedPayment]);
 
   const handleReceivabilityContinue = async () => {
     if (refDate && activeDossier) {
@@ -788,8 +921,9 @@ const ClientSpace = () => {
       const { data, error } = await supabase.functions.invoke("finalize-letter", {
         body: { dossier_id: activeDossier.id, option },
       });
-      if (error) throw error;
-      if (data?.error) throw new Error(data.error);
+      if (error || data?.error) {
+        throw new Error(await extractFunctionErrorMessage(error, data));
+      }
 
       const saved = await updateActiveDossier({
         option_choisie: option,
@@ -811,6 +945,8 @@ const ClientSpace = () => {
       } else if (msg.includes("bloquants") || msg.includes("Regénérez")) {
         userMessage = "Votre lettre contient des éléments à corriger. Retournez à l'étape de la lettre pour la regénérer.";
         setStep(7);
+      } else if (msg.includes("Migration Supabase")) {
+        userMessage = "La mise à jour Supabase de l'option avocat n'est pas encore déployée. Déployez la migration puis réessayez.";
       } else if (msg.includes("avocat") || msg.includes("Option C")) {
         userMessage = "Des références juridiques nécessitent une relecture par un avocat. Choisissez l'option C ou corrigez votre lettre.";
       } else if (msg.includes("indisponible")) {
@@ -846,8 +982,9 @@ const ClientSpace = () => {
       const { data, error } = await supabase.functions.invoke(functionName, {
         body: { dossier_ref: activeDossier.dossier_ref, option: selectedOption },
       });
-      if (error) throw error;
-      if (data?.error) throw new Error(data.error);
+      if (error || data?.error) {
+        throw new Error(await extractFunctionErrorMessage(error, data));
+      }
 
       setActiveDossier((prev) => prev ? { ...prev, lrar_status: "paiement_en_attente" } : prev);
 
@@ -876,6 +1013,14 @@ const ClientSpace = () => {
         userMessage = "Votre dossier est introuvable. Rechargez la page et réessayez.";
       } else if (msg.includes("Non autorise") || msg.includes("Non authentifie")) {
         userMessage = "Votre session a expiré. Reconnectez-vous pour continuer.";
+      } else if (
+        msg.includes("Piece rejetee") ||
+        msg.includes("Pieces obligatoires") ||
+        msg.includes("OCR") ||
+        msg.includes("titulaire du dossier") ||
+        msg.includes("type de document attendu")
+      ) {
+        userMessage = msg;
       }
 
       toast({
@@ -1150,6 +1295,11 @@ const ClientSpace = () => {
             {hasRejectedPieces && (
               <Box variant="alert" title="⚠️ Pièces rejetées">Certains documents ont été rejetés par le contrôle qualité. Corrigez-les ou réuploadez-les avant de continuer.</Box>
             )}
+            {hasWarningPieces && (
+              <Box variant="alert" title="Pièces à corriger">
+                Certains documents sont lisibles mais ne correspondent pas à la pièce attendue ou au titulaire du dossier. Remplacez-les avant de continuer.
+              </Box>
+            )}
             <div className="flex gap-2.5 mt-7">
               <button className="font-syne font-bold text-[0.78rem] px-5 py-2.5 rounded-[7px] bg-foreground/[0.07] text-muted-foreground border border-border-2 transition-all" onClick={() => setStep(2)}>← Retour</button>
               <button
@@ -1162,7 +1312,7 @@ const ClientSpace = () => {
                   if (saved) await navigateToStep(7);
                 }}
               >
-                {mandatoryPiecesStatus.loading ? "Vérification des pièces…" : hasAnalyzingPieces ? "Analyse en cours…" : "Valider les pièces →"}
+                {mandatoryPiecesStatus.loading ? "Vérification des pièces…" : hasAnalyzingPieces ? "Analyse en cours…" : hasWarningPieces ? "Pièces à corriger" : "Valider les pièces →"}
               </button>
             </div>
           </div>

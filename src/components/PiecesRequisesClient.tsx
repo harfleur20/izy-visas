@@ -50,6 +50,9 @@ type MandatoryPiecesStatus = {
   missing: string[];
 };
 
+const hasBlockingWarning = (piece: UploadedPiece) =>
+  Boolean(piece.typeMismatchWarning || piece.decisionWarning || piece.identityWarning);
+
 const VISA_LABELS: Record<string, string> = {
   court_sejour: "Court séjour Schengen",
   etudiant: "Long séjour étudiant",
@@ -159,7 +162,7 @@ export function PiecesRequisesClient({
     const requiredNames = [...section1, ...section2].map((piece) => piece.nom_piece);
     const acceptedNames = new Set(
       uploadedPieces
-        .filter((piece) => piece.status === "accepted")
+        .filter((piece) => piece.status === "accepted" && !hasBlockingWarning(piece))
         .map((piece) => piece.name),
     );
 

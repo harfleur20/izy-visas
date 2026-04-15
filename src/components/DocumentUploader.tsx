@@ -18,8 +18,11 @@ export interface UploadedPiece {
   storagePath?: string;
   decisionWarning?: string;
   typeMismatchWarning?: string;
+  identityWarning?: string;
   languageNotice?: string;
   typeDocumentDetecte?: string;
+  typeDocumentAttendu?: string;
+  ocrTextExtract?: string;
   file?: File;
 }
 
@@ -39,6 +42,7 @@ type OcrDetails = {
   canAutoCorrect?: boolean;
   typeMismatchWarning?: string;
   decisionWarning?: string;
+  identityWarning?: string;
   languageNotice?: string;
 };
 
@@ -56,6 +60,14 @@ const getAcceptedToastMessage = (name: string, details: OcrDetails) => {
       level: "info" as const,
       title: `${name} — Vérification requise`,
       description: details.decisionWarning,
+    };
+  }
+
+  if (details.identityWarning) {
+    return {
+      level: "info" as const,
+      title: `${name} — Vérification requise`,
+      description: details.identityWarning,
     };
   }
 
@@ -124,6 +136,7 @@ export function DocumentUploader({
             languageNotice: details.languageNotice || undefined,
             typeMismatchWarning: details.typeMismatchWarning || undefined,
             decisionWarning: details.decisionWarning || undefined,
+            identityWarning: details.identityWarning || undefined,
             canAutoCorrect: details.canAutoCorrect || false,
             file: matchingPiece?.file,
           });
@@ -362,14 +375,6 @@ export function DocumentUploader({
               onRemove={onPieceRemoved}
               onReplace={handleReplace}
               onAutoCorrect={handleAutoCorrect}
-              onConfirmMismatch={(p) => {
-                onPieceUploaded({
-                  ...p,
-                  typeMismatchWarning: undefined,
-                  decisionWarning: undefined,
-                });
-                toast.success(`${p.name} confirmée`);
-              }}
             />
           ))}
         </div>
@@ -411,13 +416,11 @@ function PieceCard({
   onRemove,
   onReplace,
   onAutoCorrect,
-  onConfirmMismatch,
 }: {
   piece: UploadedPiece;
   onRemove?: (id: string) => void;
   onReplace?: (id: string) => void;
   onAutoCorrect: (piece: UploadedPiece) => void;
-  onConfirmMismatch?: (piece: UploadedPiece) => void;
 }) {
   const isLoading = piece.status === "uploading" || piece.status === "analyzing" || piece.status === "correcting";
   const isAccepted = piece.status === "accepted";
@@ -486,9 +489,6 @@ function PieceCard({
                 <div className="mt-2 bg-accent/30 border border-accent/50 rounded-lg p-3">
                   <p className="text-xs text-foreground">{piece.typeMismatchWarning}</p>
                   <div className="flex flex-col sm:flex-row gap-2 mt-2">
-                    <Button variant="outline" size="sm" className="text-xs h-10 sm:h-7" onClick={() => onConfirmMismatch?.(piece)}>
-                      Confirmer
-                    </Button>
                     <Button variant="outline" size="sm" className="text-xs h-10 sm:h-7" onClick={() => onReplace?.(piece.id)}>
                       Changer le fichier
                     </Button>
@@ -499,9 +499,16 @@ function PieceCard({
                 <div className="mt-2 bg-accent/30 border border-accent/50 rounded-lg p-3">
                   <p className="text-xs text-foreground">{piece.decisionWarning}</p>
                   <div className="flex flex-col sm:flex-row gap-2 mt-2">
-                    <Button variant="outline" size="sm" className="text-xs h-10 sm:h-7" onClick={() => onConfirmMismatch?.(piece)}>
-                      Confirmer quand même
+                    <Button variant="outline" size="sm" className="text-xs h-10 sm:h-7" onClick={() => onReplace?.(piece.id)}>
+                      Changer le fichier
                     </Button>
+                  </div>
+                </div>
+              )}
+              {piece.identityWarning && (
+                <div className="mt-2 bg-destructive/[0.06] border border-destructive/20 rounded-lg p-3">
+                  <p className="text-xs text-foreground">{piece.identityWarning}</p>
+                  <div className="flex flex-col sm:flex-row gap-2 mt-2">
                     <Button variant="outline" size="sm" className="text-xs h-10 sm:h-7" onClick={() => onReplace?.(piece.id)}>
                       Changer le fichier
                     </Button>

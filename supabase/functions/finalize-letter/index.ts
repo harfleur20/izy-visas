@@ -135,6 +135,11 @@ function hasUnresolvedLegalReview(dossier: DossierRow): boolean {
   return false;
 }
 
+function isMissingAvocatSignatureColumn(errorMessage: string): boolean {
+  return /url_lettre_signee_avocat|date_signature_avocat|signed_by_avocat_id|signature_avocat_mode|schema cache|Could not find/i
+    .test(errorMessage);
+}
+
 async function assignAvocatIfNeeded(
   supabaseUrl: string,
   authHeader: string,
@@ -291,25 +296,53 @@ serve(async (req) => {
       throw new Error(`Upload lettre définitive impossible: ${uploadError.message}`);
     }
 
-    await supabase
+    const updatePayload = {
+      option_choisie: option,
+      option_envoi: optionEnvoi,
+      type_signataire: typeSignataire,
+      url_lettre_definitive: storagePath,
+      url_lettre_signee_avocat: null,
+      date_signature_avocat: null,
+      signed_by_avocat_id: null,
+      signature_avocat_mode: null,
+      url_lrar_pdf: null,
+      date_finalisation_lettre: new Date().toISOString(),
+      validation_juridique_mode: "hybride",
+      validation_juridique_status: option === "C" ? "a_verifier_avocat" : "validee_automatique",
+      date_validation_juridique: option === "C" ? null : new Date().toISOString(),
+      lrar_status: newStatus,
+    };
+
+    const { error: updateError } = await supabase
       .from("dossiers")
-      .update({
-        option_choisie: option,
-        option_envoi: optionEnvoi,
-        type_signataire: typeSignataire,
-        url_lettre_definitive: storagePath,
-        url_lettre_signee_avocat: null,
-        date_signature_avocat: null,
-        signed_by_avocat_id: null,
-        signature_avocat_mode: null,
-        url_lrar_pdf: null,
-        date_finalisation_lettre: new Date().toISOString(),
-        validation_juridique_mode: "hybride",
-        validation_juridique_status: option === "C" ? "a_verifier_avocat" : "validee_automatique",
-        date_validation_juridique: option === "C" ? null : new Date().toISOString(),
-        lrar_status: newStatus,
-      })
+      .update(updatePayload)
       .eq("id", dossier_id);
+
+    if (updateError) {
+      const message = updateError.message || "";
+      if (option !== "C" && isMissingAvocatSignatureColumn(message)) {
+        const {
+          url_lettre_signee_avocat: _urlLettreSigneeAvocat,
+          date_signature_avocat: _dateSignatureAvocat,
+          signed_by_avocat_id: _signedByAvocatId,
+          signature_avocat_mode: _signatureAvocatMode,
+          ...fallbackPayload
+        } = updatePayload;
+
+        const { error: fallbackError } = await supabase
+          .from("dossiers")
+          .update(fallbackPayload)
+          .eq("id", dossier_id);
+
+        if (fallbackError) {
+          throw new Error(`Finalisation impossible: ${fallbackError.message}`);
+        }
+      } else if (option === "C" && isMissingAvocatSignatureColumn(message)) {
+        throw new HttpError(500, "Migration Supabase option C non appliquee. Lancez supabase db push avant d'utiliser l'option avocat.");
+      } else {
+        throw new Error(`Finalisation impossible: ${message}`);
+      }
+    }
 
     return jsonResponse({
       letter_definitive: letter,

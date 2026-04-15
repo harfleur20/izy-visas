@@ -92,6 +92,12 @@ interface MistralOcrResult {
   problemes_detectes: string[];
 }
 
+type OwnerIdentity = {
+  firstName: string;
+  lastName: string;
+  passportNumber: string;
+};
+
 const VISION_PROMPT = `Tu es un expert en contrôle qualité de documents juridiques pour demande de visa.
 
 Analyse ce document et réponds UNIQUEMENT en JSON valide sans aucun texte avant ou après.
@@ -187,6 +193,69 @@ function validateDecisionRefus(result: MistralOcrResult): { valid: boolean; warn
   return { valid: true, warning: null };
 }
 
+function normalizeForIdentity(value?: string | null): string {
+  return (value || "")
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/[^a-zA-Z0-9\s]/g, " ")
+    .replace(/\s+/g, " ")
+    .trim()
+    .toLowerCase();
+}
+
+function significantTokens(value?: string | null): string[] {
+  return normalizeForIdentity(value)
+    .split(" ")
+    .filter((token) => token.length >= 2);
+}
+
+function requiresOwnerIdentityCheck(expectedType: string, nomPiece: string): boolean {
+  const normalizedName = normalizeForIdentity(nomPiece);
+  return (
+    ["decision_refus", "passeport", "formulaire_visa"].includes(expectedType) ||
+    /decision.*refus|refus.*visa|passeport|passport|formulaire.*visa/.test(normalizedName)
+  );
+}
+
+function textMatchesOwnerIdentity(text: string, owner: OwnerIdentity): boolean {
+  const normalizedText = normalizeForIdentity(text);
+  if (!normalizedText) return false;
+
+  const lastTokens = significantTokens(owner.lastName);
+  const firstTokens = significantTokens(owner.firstName);
+  const passport = normalizeForIdentity(owner.passportNumber).replace(/\s/g, "");
+
+  const lastMatches = lastTokens.length === 0 || lastTokens.some((token) => normalizedText.includes(token));
+  const firstMatches = firstTokens.length === 0 || firstTokens.some((token) => normalizedText.includes(token));
+  const passportMatches = !passport || normalizedText.replace(/\s/g, "").includes(passport);
+
+  return (lastMatches && firstMatches) || passportMatches;
+}
+
+async function loadOwnerIdentity(
+  supabaseAdmin: ReturnType<typeof getSupabaseAdmin>,
+  dossierId: string,
+  userId: string,
+): Promise<OwnerIdentity> {
+  const { data: dossier } = await supabaseAdmin
+    .from("dossiers")
+    .select("client_first_name, client_last_name, client_passport_number")
+    .eq("id", dossierId)
+    .maybeSingle();
+
+  const { data: profile } = await supabaseAdmin
+    .from("profiles")
+    .select("first_name, last_name, passport_number")
+    .eq("id", userId)
+    .maybeSingle();
+
+  return {
+    firstName: dossier?.client_first_name || profile?.first_name || "",
+    lastName: dossier?.client_last_name || profile?.last_name || "",
+    passportNumber: dossier?.client_passport_number || profile?.passport_number || "",
+  };
+}
+
 // ── Background OCR processing ───────────────────────────────────────────
 async function processOcrInBackground(
   pieceId: string,
@@ -205,6 +274,7 @@ async function processOcrInBackground(
 ) {
   const supabaseAdmin = getSupabaseAdmin();
   const mistralApiKey = Deno.env.get("MISTRAL_API_KEY");
+  const ownerIdentity = await loadOwnerIdentity(supabaseAdmin, dossierId, userId);
 
   if (!mistralApiKey) {
     await supabaseAdmin.from("pieces_justificatives").update({
@@ -345,14 +415,14 @@ async function processOcrInBackground(
   }
 
   // ── Determine acceptance ────────────────────────────────────────────
-  const accepted = ocrResult.lisible && ocrResult.score_qualite >= OCR_SCORE_MINIMUM;
-  const rejectionMessage = !accepted ? getRejectionMessage(ocrResult) : null;
+  const qualityAccepted = ocrResult.lisible && ocrResult.score_qualite >= OCR_SCORE_MINIMUM;
+  const rejectionMessage = !qualityAccepted ? getRejectionMessage(ocrResult) : null;
   const effectiveTypeAttendu = isDecisionRefus ? "decision_refus" : guessExpectedType(nomPiece);
-  const canAutoCorrectVal = !accepted && canAutoCorrectCheck(ocrResult, autoCorrect);
+  const canAutoCorrectVal = !qualityAccepted && canAutoCorrectCheck(ocrResult, autoCorrect);
 
   // Type mismatch warning — only when we have a specific expected type
   let typeMismatchWarning: string | null = null;
-  if (accepted && effectiveTypeAttendu !== "autre" && ocrResult.type_document_detecte !== effectiveTypeAttendu) {
+  if (qualityAccepted && effectiveTypeAttendu !== "autre" && ocrResult.type_document_detecte !== effectiveTypeAttendu) {
     const detectedLabel = TYPE_LABELS[ocrResult.type_document_detecte] || ocrResult.type_document_detecte;
     const attenduLabel = TYPE_LABELS[effectiveTypeAttendu] || effectiveTypeAttendu;
     typeMismatchWarning = `⚠️ Ce document semble être un(e) "${detectedLabel}" alors que nous attendons un(e) "${attenduLabel}". Vérifiez que vous avez sélectionné le bon fichier.`;
@@ -360,16 +430,30 @@ async function processOcrInBackground(
 
   // Decision refus validation
   let decisionWarning: string | null = null;
-  if (isDecisionRefus && accepted) {
+  if (isDecisionRefus && qualityAccepted) {
     const validation = validateDecisionRefus(ocrResult);
     if (!validation.valid) {
       decisionWarning = validation.warning;
     }
   }
 
+  let identityWarning: string | null = null;
+  if (
+    qualityAccepted &&
+    requiresOwnerIdentityCheck(effectiveTypeAttendu, nomPiece) &&
+    (ownerIdentity.firstName || ownerIdentity.lastName || ownerIdentity.passportNumber) &&
+    !textMatchesOwnerIdentity(ocrResult.texte_extrait || "", ownerIdentity)
+  ) {
+    const ownerName = [ownerIdentity.firstName, ownerIdentity.lastName].filter(Boolean).join(" ");
+    identityWarning = `⚠️ Ce document ne semble pas correspondre au titulaire du dossier${ownerName ? ` (${ownerName})` : ""}. Déposez un document au nom du client.`;
+  }
+
+  const businessRejection = typeMismatchWarning || decisionWarning || identityWarning;
+  const accepted = qualityAccepted && !businessRejection;
+
   // Language notice
   let languageNotice: string | null = null;
-  if (accepted) {
+  if (qualityAccepted) {
     if (ocrResult.langue_detectee === "ar") {
       languageNotice = "🌍 Document en arabe détecté — Traduction automatique disponible si nécessaire";
     } else if (ocrResult.langue_detectee === "mixte") {
@@ -387,7 +471,7 @@ async function processOcrInBackground(
       statut_ocr: accepted ? "accepte" : "rejete",
       score_qualite: ocrResult.score_qualite,
       nombre_pages: ocrResult.pages_detectees || 1,
-      motif_rejet: accepted ? null : (rejectionMessage || ocrResult.motif_rejet || "qualité insuffisante"),
+      motif_rejet: accepted ? null : (businessRejection || rejectionMessage || ocrResult.motif_rejet || "qualité insuffisante"),
       correction_appliquee: autoCorrect,
       taille_fichier_ko: Math.round(fileSize / 1024),
       format_fichier: ext,
@@ -400,6 +484,7 @@ async function processOcrInBackground(
         canAutoCorrect: canAutoCorrectVal,
         typeMismatchWarning,
         decisionWarning,
+        identityWarning,
         languageNotice,
       },
       type_document_detecte: ocrResult.type_document_detecte,
