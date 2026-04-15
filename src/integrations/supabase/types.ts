@@ -373,8 +373,8 @@ export type Database = {
           date_generation_neutre: string | null
           date_notification_refus: string | null
           date_qualification: string | null
-          date_signature_procuration: string | null
           date_signature_avocat: string | null
+          date_signature_procuration: string | null
           date_validation_juridique: string | null
           delivered_at: string | null
           destinataire_recours: string | null
@@ -405,8 +405,8 @@ export type Database = {
           refus_type: string
           score_ocr_decision: number | null
           sent_at: string | null
-          signed_by_avocat_id: string | null
           signature_avocat_mode: string | null
+          signed_by_avocat_id: string | null
           statut_final: string | null
           tracking_number: string | null
           type_signataire: string | null
@@ -452,8 +452,8 @@ export type Database = {
           date_generation_neutre?: string | null
           date_notification_refus?: string | null
           date_qualification?: string | null
-          date_signature_procuration?: string | null
           date_signature_avocat?: string | null
+          date_signature_procuration?: string | null
           date_validation_juridique?: string | null
           delivered_at?: string | null
           destinataire_recours?: string | null
@@ -484,8 +484,8 @@ export type Database = {
           refus_type?: string
           score_ocr_decision?: number | null
           sent_at?: string | null
-          signed_by_avocat_id?: string | null
           signature_avocat_mode?: string | null
+          signed_by_avocat_id?: string | null
           statut_final?: string | null
           tracking_number?: string | null
           type_signataire?: string | null
@@ -531,8 +531,8 @@ export type Database = {
           date_generation_neutre?: string | null
           date_notification_refus?: string | null
           date_qualification?: string | null
-          date_signature_procuration?: string | null
           date_signature_avocat?: string | null
+          date_signature_procuration?: string | null
           date_validation_juridique?: string | null
           delivered_at?: string | null
           destinataire_recours?: string | null
@@ -563,8 +563,8 @@ export type Database = {
           refus_type?: string
           score_ocr_decision?: number | null
           sent_at?: string | null
-          signed_by_avocat_id?: string | null
           signature_avocat_mode?: string | null
+          signed_by_avocat_id?: string | null
           statut_final?: string | null
           tracking_number?: string | null
           type_signataire?: string | null
