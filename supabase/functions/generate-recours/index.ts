@@ -414,9 +414,9 @@ DONNÉES DU DOSSIER
 DEMANDEUR :
 Nom : ${clientName.toUpperCase()}
 Prénom : ${clientPrenom}
-Date de naissance : ${dossier.client_date_naissance || profile?.date_naissance || "Non précisée"}
-Lieu de naissance : ${dossier.client_lieu_naissance || profile?.lieu_naissance || "Non précisé"}
-Nationalité : ${dossier.client_nationalite || profile?.nationalite || "Non précisée"}
+Date de naissance : ${isTunnelMode ? (body.identity?.dateNaissance || "Non précisée") : (dossier?.client_date_naissance || profile?.date_naissance || "Non précisée")}
+Lieu de naissance : ${isTunnelMode ? (body.identity?.lieuNaissance || "Non précisé") : (dossier?.client_lieu_naissance || profile?.lieu_naissance || "Non précisé")}
+Nationalité : ${isTunnelMode ? (body.identity?.nationalite || "Non précisée") : (dossier?.client_nationalite || profile?.nationalite || "Non précisée")}
 N° de passeport : ${passportNumber}
 Téléphone : ${clientPhone || "Non fourni"}
 Email : ${email || "Non fourni"}
