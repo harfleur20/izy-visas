@@ -5,9 +5,9 @@ import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
 import {
   ArrowRight, ArrowLeft, Camera, FolderOpen, CheckCircle2,
-  AlertTriangle, Info, Globe, X,
+  AlertTriangle, Info, Globe, X, Loader2,
 } from "lucide-react";
-import type { TunnelPieceFile, TunnelOcrData } from "@/hooks/useTunnelState";
+import type { TunnelPieceFile, TunnelOcrData, TunnelIdentityData } from "@/hooks/useTunnelState";
 
 interface PieceRequise {
   id: string;
@@ -31,20 +31,25 @@ interface PieceRequise {
 
 interface TunnelPiecesProps {
   ocrData: TunnelOcrData;
+  identity: TunnelIdentityData;
   pieces: TunnelPieceFile[];
   onAddPiece: (piece: TunnelPieceFile) => void;
   onRemovePiece: (id: string) => void;
   onNext: () => void;
   onBack: () => void;
 }
+
+type AnalyzingState = Record<string, { loading: boolean; error: string | null }>;
+
 export default function TunnelPieces({
-  ocrData, pieces, onAddPiece, onRemovePiece, onNext, onBack,
+  ocrData, identity, pieces, onAddPiece, onRemovePiece, onNext, onBack,
 }: TunnelPiecesProps) {
   const [allPieces, setAllPieces] = useState<PieceRequise[]>([]);
   const [loading, setLoading] = useState(true);
   const inputRef = useRef<HTMLInputElement>(null);
   const cameraRef = useRef<HTMLInputElement>(null);
   const [uploadingFor, setUploadingFor] = useState<string | null>(null);
+  const [analyzing, setAnalyzing] = useState<AnalyzingState>({});
 
   useEffect(() => {
     supabase
@@ -82,16 +87,62 @@ export default function TunnelPieces({
   const uploadedNames = new Set(pieces.map((p) => p.nomPiece));
   const mandatoryMissing = mandatory.filter((p) => !uploadedNames.has(p.nom_piece));
 
-  const handleFile = useCallback((file: File, nomPiece: string) => {
-    const piece: TunnelPieceFile = {
-      id: `piece-${Date.now()}-${Math.random().toString(36).slice(2)}`,
-      file,
-      nomPiece,
-      typePiece: "obligatoire",
-    };
-    onAddPiece(piece);
-    setUploadingFor(null);
-  }, [onAddPiece]);
+  const analyzeFile = useCallback(async (file: File, nomPiece: string) => {
+    const acceptedTypes = ["application/pdf", "image/jpeg", "image/jpg", "image/png"];
+    if (!acceptedTypes.includes(file.type)) {
+      setAnalyzing((prev) => ({ ...prev, [nomPiece]: { loading: false, error: "Format non accepté. Seuls PDF, JPG et PNG sont acceptés." } }));
+      return;
+    }
+    if (file.size > 10 * 1024 * 1024) {
+      setAnalyzing((prev) => ({ ...prev, [nomPiece]: { loading: false, error: "Fichier trop volumineux (max 10 Mo)." } }));
+      return;
+    }
+
+    setAnalyzing((prev) => ({ ...prev, [nomPiece]: { loading: true, error: null } }));
+
+    try {
+      const formData = new FormData();
+      formData.append("file", file);
+      formData.append("nom_piece", nomPiece);
+      formData.append("tunnel_mode", "true");
+      formData.append("owner_first_name", identity.firstName);
+      formData.append("owner_last_name", identity.lastName);
+      formData.append("owner_passport_number", identity.passportNumber || "");
+
+      const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
+      const anonKey = import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY;
+
+      const res = await fetch(`${supabaseUrl}/functions/v1/check-document-ocr`, {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${anonKey}`,
+          apikey: anonKey,
+        },
+        body: formData,
+      });
+
+      const data = await res.json();
+
+      if (data.accepted) {
+        const piece: TunnelPieceFile = {
+          id: `piece-${Date.now()}-${Math.random().toString(36).slice(2)}`,
+          file,
+          nomPiece,
+          typePiece: "obligatoire",
+          scoreQualite: data.score,
+          statutOcr: "accepte",
+        };
+        onAddPiece(piece);
+        setAnalyzing((prev) => ({ ...prev, [nomPiece]: { loading: false, error: null } }));
+      } else {
+        const errorMsg = data.rejectionMessage || data.identityWarning || data.typeMismatchWarning || "Document rejeté. Veuillez réessayer.";
+        setAnalyzing((prev) => ({ ...prev, [nomPiece]: { loading: false, error: errorMsg } }));
+      }
+    } catch (err) {
+      console.error("OCR analysis error:", err);
+      setAnalyzing((prev) => ({ ...prev, [nomPiece]: { loading: false, error: "Erreur lors de l'analyse. Veuillez réessayer." } }));
+    }
+  }, [identity, onAddPiece]);
 
   const triggerUpload = (nomPiece: string, camera = false) => {
     setUploadingFor(nomPiece);
@@ -100,6 +151,15 @@ export default function TunnelPieces({
       else inputRef.current?.click();
     }, 0);
   };
+
+  const handleFileInput = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (file && uploadingFor) {
+      analyzeFile(file, uploadingFor);
+      setUploadingFor(null);
+    }
+    e.target.value = "";
+  }, [uploadingFor, analyzeFile]);
 
   return (
     <div className="fixed inset-0 bg-background overflow-y-auto">
@@ -139,9 +199,18 @@ export default function TunnelPieces({
                   key={p.id}
                   piece={p}
                   uploaded={pieces.find((up) => up.nomPiece === p.nom_piece)}
+                  analyzingState={analyzing[p.nom_piece]}
                   onUpload={() => triggerUpload(p.nom_piece)}
                   onCamera={() => triggerUpload(p.nom_piece, true)}
-                  onRemove={(id) => onRemovePiece(id)}
+                  onRemove={(id) => {
+                    onRemovePiece(id);
+                    setAnalyzing((prev) => {
+                      const next = { ...prev };
+                      delete next[p.nom_piece];
+                      return next;
+                    });
+                  }}
+                  onRetry={() => triggerUpload(p.nom_piece)}
                 />
               ))}
             </Section>
@@ -159,9 +228,18 @@ export default function TunnelPieces({
                     key={p.id}
                     piece={p}
                     uploaded={pieces.find((up) => up.nomPiece === p.nom_piece)}
+                    analyzingState={analyzing[p.nom_piece]}
                     onUpload={() => triggerUpload(p.nom_piece)}
                     onCamera={() => triggerUpload(p.nom_piece, true)}
-                    onRemove={(id) => onRemovePiece(id)}
+                    onRemove={(id) => {
+                      onRemovePiece(id);
+                      setAnalyzing((prev) => {
+                        const next = { ...prev };
+                        delete next[p.nom_piece];
+                        return next;
+                      });
+                    }}
+                    onRetry={() => triggerUpload(p.nom_piece)}
                   />
                 ))}
               </Section>
@@ -175,11 +253,7 @@ export default function TunnelPieces({
           type="file"
           className="hidden"
           accept=".pdf,.jpg,.jpeg,.png"
-          onChange={(e) => {
-            const file = e.target.files?.[0];
-            if (file && uploadingFor) handleFile(file, uploadingFor);
-            e.target.value = "";
-          }}
+          onChange={handleFileInput}
         />
         <input
           ref={cameraRef}
@@ -187,11 +261,7 @@ export default function TunnelPieces({
           className="hidden"
           accept="image/*"
           capture="environment"
-          onChange={(e) => {
-            const file = e.target.files?.[0];
-            if (file && uploadingFor) handleFile(file, uploadingFor);
-            e.target.value = "";
-          }}
+          onChange={handleFileInput}
         />
 
         {/* Bottom bar */}
@@ -238,22 +308,30 @@ function Section({ title, icon, count, badgeVariant, children }: {
   );
 }
 
-function PieceRow({ piece, uploaded, onUpload, onCamera, onRemove }: {
+function PieceRow({ piece, uploaded, analyzingState, onUpload, onCamera, onRemove, onRetry }: {
   piece: PieceRequise;
   uploaded?: TunnelPieceFile;
+  analyzingState?: { loading: boolean; error: string | null };
   onUpload: () => void;
   onCamera: () => void;
   onRemove: (id: string) => void;
+  onRetry: () => void;
 }) {
+  const isAnalyzing = analyzingState?.loading;
+  const hasError = analyzingState?.error;
+
   return (
     <div className={`border rounded-xl p-3 transition-all ${
-      uploaded ? "border-green-500/30 bg-green-500/[0.04]" : "border-border bg-card"
+      uploaded ? "border-green-500/30 bg-green-500/[0.04]"
+        : hasError ? "border-destructive/30 bg-destructive/[0.04]"
+        : "border-border bg-card"
     }`}>
       <div className="flex items-start gap-3">
         <div className="flex-1 min-w-0">
           <div className="flex items-center gap-2 flex-wrap">
             <span className="font-syne font-bold text-sm">{piece.nom_piece}</span>
             {uploaded && <CheckCircle2 className="w-4 h-4 text-green-500 flex-shrink-0" />}
+            {isAnalyzing && <Loader2 className="w-4 h-4 text-primary animate-spin flex-shrink-0" />}
             {piece.traduction_requise && (
               <span className="inline-flex items-center gap-1 text-[0.55rem] text-yellow-600 bg-yellow-500/10 px-1.5 py-0.5 rounded">
                 <Globe className="w-3 h-3" /> Traduction
@@ -264,11 +342,26 @@ function PieceRow({ piece, uploaded, onUpload, onCamera, onRemove }: {
         </div>
       </div>
 
-      {uploaded ? (
+      {isAnalyzing ? (
+        <div className="mt-2 flex items-center gap-2 text-xs text-primary">
+          <Loader2 className="w-3.5 h-3.5 animate-spin" />
+          <span>Vérification en cours…</span>
+        </div>
+      ) : uploaded ? (
         <div className="mt-2 flex items-center gap-2">
-          <span className="text-xs text-green-400 truncate flex-1">✓ {uploaded.file.name}</span>
+          <span className="text-xs text-green-400 truncate flex-1">✓ {uploaded.file.name} — {uploaded.scoreQualite ? `${uploaded.scoreQualite}/100` : "OK"}</span>
           <button onClick={() => onRemove(uploaded.id)} className="text-muted-foreground hover:text-destructive">
             <X className="w-4 h-4" />
+          </button>
+        </div>
+      ) : hasError ? (
+        <div className="mt-2 space-y-2">
+          <p className="text-xs text-destructive whitespace-pre-line">{hasError}</p>
+          <button
+            onClick={onRetry}
+            className="flex items-center gap-1.5 text-xs font-semibold px-3 py-2 rounded-lg bg-destructive/10 text-destructive hover:bg-destructive/20 transition-colors"
+          >
+            Réessayer
           </button>
         </div>
       ) : (

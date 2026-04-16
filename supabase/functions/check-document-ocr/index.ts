@@ -37,7 +37,6 @@ const TYPE_LABELS: Record<string, string> = {
   inconnu: "Document non identifié",
 };
 
-// Map piece names (from pieces_requises) to expected document types for mismatch detection
 function guessExpectedType(nomPiece: string): string {
   const n = nomPiece.toLowerCase();
   if (/passeport|passport/.test(n)) return "passeport";
@@ -256,7 +255,136 @@ async function loadOwnerIdentity(
   };
 }
 
-// ── Background OCR processing ───────────────────────────────────────────
+// ── Run OCR analysis (shared between tunnel and normal modes) ──────────
+async function runOcrAnalysis(
+  bytes: Uint8Array,
+  fileType: string,
+  fileName: string,
+  signedUrl: string | null,
+): Promise<MistralOcrResult> {
+  const mistralApiKey = Deno.env.get("MISTRAL_API_KEY");
+  if (!mistralApiKey) {
+    throw new Error("Service OCR non configuré");
+  }
+
+  const client = new Mistral({ apiKey: mistralApiKey });
+
+  if (fileType === "application/pdf" && signedUrl) {
+    const ocrRes = await fetch("https://api.mistral.ai/v1/ocr", {
+      method: "POST",
+      headers: {
+        "Authorization": `Bearer ${mistralApiKey}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        model: "mistral-ocr-latest",
+        document: { type: "document_url", document_url: signedUrl },
+        include_image_base64: false,
+      }),
+    });
+
+    if (!ocrRes.ok) {
+      const errText = await ocrRes.text();
+      console.error("[OCR] Mistral OCR API error:", ocrRes.status, errText);
+      throw new Error(`OCR API error: ${ocrRes.status}`);
+    }
+
+    const ocrResponse = await ocrRes.json();
+    const allText = (ocrResponse.pages || [])
+      .map((p: any) => p.markdown || p.text || "")
+      .join("\n");
+    const pageCount = ocrResponse.pages?.length || 1;
+    const hasText = allText.trim().length > 50;
+
+    const result: MistralOcrResult = {
+      lisible: hasText,
+      score_qualite: hasText ? 85 : 15,
+      motif_rejet: hasText ? null : "Document vide ou texte non extractible",
+      type_document_detecte: "autre",
+      langue_detectee: /[أ-ي]/.test(allText) ? "ar" : /[a-zA-Z]/.test(allText) ? (/[àâéèêëïôùûüç]/.test(allText) ? "fr" : "en") : "autre",
+      date_detectee: null,
+      texte_extrait: allText.substring(0, 500),
+      pages_detectees: pageCount,
+      document_tronque: false,
+      texte_manuscrit_present: false,
+      reflet_present: false,
+      angle_excessif: false,
+      problemes_detectes: hasText ? [] : ["Aucun texte détecté"],
+    };
+
+    if (hasText) {
+      classifyDocumentType(result, allText);
+      const dateMatch = allText.match(/(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{4})/);
+      if (dateMatch) {
+        result.date_detectee = `${dateMatch[1]}/${dateMatch[2]}/${dateMatch[3]}`;
+      }
+    }
+
+    return result;
+  } else {
+    // Images: convert to base64 and use Pixtral vision
+    let binary = "";
+    for (let i = 0; i < bytes.length; i++) {
+      binary += String.fromCharCode(bytes[i]);
+    }
+    const base64Content = btoa(binary);
+    const mimeType = fileType === "image/png" ? "image/png" : "image/jpeg";
+
+    const visionResponse = await client.chat.complete({
+      model: "pixtral-12b-2409",
+      messages: [{
+        role: "user",
+        content: [
+          { type: "image_url", imageUrl: { url: `data:${mimeType};base64,${base64Content}` } },
+          { type: "text", text: VISION_PROMPT },
+        ],
+      }],
+    });
+
+    const responseText = (visionResponse.choices?.[0]?.message?.content || "") as string;
+    const jsonMatch = responseText.match(/\{[\s\S]*\}/);
+
+    if (!jsonMatch) {
+      throw new Error("Analyse impossible");
+    }
+
+    return JSON.parse(jsonMatch[0]);
+  }
+}
+
+function classifyDocumentType(result: MistralOcrResult, allText: string) {
+  if (/refus[éeè]?\s*(de\s*)?visa|visa\s*refus/i.test(allText)) {
+    result.type_document_detecte = "decision_refus";
+  } else if (/passeport|passport/i.test(allText)) {
+    result.type_document_detecte = "passeport";
+  } else if (/relevé\s*(de\s*)?compte|bank\s*statement|solde/i.test(allText)) {
+    result.type_document_detecte = "releve_bancaire";
+  } else if (/contrat\s*(de\s*)?travail|employment\s*contract/i.test(allText)) {
+    result.type_document_detecte = "contrat_travail";
+  } else if (/campus\s*france/i.test(allText)) {
+    result.type_document_detecte = "attestation_campus_france";
+  } else if (/acte\s*(de\s*)?mariage|marriage/i.test(allText)) {
+    result.type_document_detecte = "acte_mariage";
+  } else if (/acte\s*(de\s*)?naissance|birth/i.test(allText)) {
+    result.type_document_detecte = "acte_naissance";
+  } else if (/hébergement|attestation\s*d'accueil/i.test(allText)) {
+    result.type_document_detecte = "justificatif_hebergement";
+  } else if (/billet\s*(d')?avion|boarding\s*pass|flight\s*ticket|itinéraire\s*(de\s*)?vol|e-?ticket/i.test(allText)) {
+    result.type_document_detecte = "billet_avion";
+  } else if (/assurance\s*(de\s*)?voyage|travel\s*insurance|couverture\s*médicale/i.test(allText)) {
+    result.type_document_detecte = "assurance_voyage";
+  } else if (/attestation\s*(d')?emploi|certificat\s*(de\s*)?travail/i.test(allText)) {
+    result.type_document_detecte = "attestation_emploi";
+  } else if (/certificat\s*(de\s*)?scolarité|inscription\s*universitaire|student/i.test(allText)) {
+    result.type_document_detecte = "certificat_scolarite";
+  } else if (/justificatif\s*(de\s*)?domicile|facture|quittance\s*(de\s*)?loyer/i.test(allText)) {
+    result.type_document_detecte = "justificatif_domicile";
+  } else if (/réservation\s*(d')?hôtel|hotel\s*booking|confirmation\s*(de\s*)?réservation/i.test(allText)) {
+    result.type_document_detecte = "reservation_hotel";
+  }
+}
+
+// ── Background OCR processing (normal mode with DB) ─────────────────────
 async function processOcrInBackground(
   pieceId: string,
   storagePath: string,
@@ -273,137 +401,12 @@ async function processOcrInBackground(
   autoCorrect: boolean,
 ) {
   const supabaseAdmin = getSupabaseAdmin();
-  const mistralApiKey = Deno.env.get("MISTRAL_API_KEY");
   const ownerIdentity = await loadOwnerIdentity(supabaseAdmin, dossierId, userId);
 
-  if (!mistralApiKey) {
-    await supabaseAdmin.from("pieces_justificatives").update({
-      statut_ocr: "erreur",
-      motif_rejet: "Service OCR non configuré",
-    }).eq("id", pieceId);
-    return;
-  }
-
-  const client = new Mistral({ apiKey: mistralApiKey });
   let ocrResult: MistralOcrResult;
 
   try {
-    if (fileType === "application/pdf" && signedUrl) {
-      const ocrRes = await fetch("https://api.mistral.ai/v1/ocr", {
-        method: "POST",
-        headers: {
-          "Authorization": `Bearer ${mistralApiKey}`,
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          model: "mistral-ocr-latest",
-          document: { type: "document_url", document_url: signedUrl },
-          include_image_base64: false,
-        }),
-      });
-
-      if (!ocrRes.ok) {
-        const errText = await ocrRes.text();
-        console.error("[OCR] Mistral OCR API error:", ocrRes.status, errText);
-        throw new Error(`OCR API error: ${ocrRes.status}`);
-      }
-
-      const ocrResponse = await ocrRes.json();
-      const allText = (ocrResponse.pages || [])
-        .map((p: any) => p.markdown || p.text || "")
-        .join("\n");
-      const pageCount = ocrResponse.pages?.length || 1;
-      const hasText = allText.trim().length > 50;
-
-      ocrResult = {
-        lisible: hasText,
-        score_qualite: hasText ? 85 : 15,
-        motif_rejet: hasText ? null : "Document vide ou texte non extractible",
-        type_document_detecte: "autre",
-        langue_detectee: /[أ-ي]/.test(allText) ? "ar" : /[a-zA-Z]/.test(allText) ? (/[àâéèêëïôùûüç]/.test(allText) ? "fr" : "en") : "autre",
-        date_detectee: null,
-        texte_extrait: allText.substring(0, 500),
-        pages_detectees: pageCount,
-        document_tronque: false,
-        texte_manuscrit_present: false,
-        reflet_present: false,
-        angle_excessif: false,
-        problemes_detectes: hasText ? [] : ["Aucun texte détecté"],
-      };
-
-      if (hasText) {
-        // Fast local classification instead of a second LLM call
-        const lowerText = allText.toLowerCase();
-        if (/refus[éeè]?\s*(de\s*)?visa|visa\s*refus/i.test(allText)) {
-          ocrResult.type_document_detecte = "decision_refus";
-        } else if (/passeport|passport/i.test(allText)) {
-          ocrResult.type_document_detecte = "passeport";
-        } else if (/relevé\s*(de\s*)?compte|bank\s*statement|solde/i.test(allText)) {
-          ocrResult.type_document_detecte = "releve_bancaire";
-        } else if (/contrat\s*(de\s*)?travail|employment\s*contract/i.test(allText)) {
-          ocrResult.type_document_detecte = "contrat_travail";
-        } else if (/campus\s*france/i.test(allText)) {
-          ocrResult.type_document_detecte = "attestation_campus_france";
-        } else if (/acte\s*(de\s*)?mariage|marriage/i.test(allText)) {
-          ocrResult.type_document_detecte = "acte_mariage";
-        } else if (/acte\s*(de\s*)?naissance|birth/i.test(allText)) {
-          ocrResult.type_document_detecte = "acte_naissance";
-        } else if (/hébergement|attestation\s*d'accueil/i.test(allText)) {
-          ocrResult.type_document_detecte = "justificatif_hebergement";
-        } else if (/billet\s*(d')?avion|boarding\s*pass|flight\s*ticket|itinéraire\s*(de\s*)?vol|e-?ticket/i.test(allText)) {
-          ocrResult.type_document_detecte = "billet_avion";
-        } else if (/assurance\s*(de\s*)?voyage|travel\s*insurance|couverture\s*médicale/i.test(allText)) {
-          ocrResult.type_document_detecte = "assurance_voyage";
-        } else if (/attestation\s*(d')?emploi|certificat\s*(de\s*)?travail/i.test(allText)) {
-          ocrResult.type_document_detecte = "attestation_emploi";
-        } else if (/certificat\s*(de\s*)?scolarité|inscription\s*universitaire|student/i.test(allText)) {
-          ocrResult.type_document_detecte = "certificat_scolarite";
-        } else if (/justificatif\s*(de\s*)?domicile|facture|quittance\s*(de\s*)?loyer/i.test(allText)) {
-          ocrResult.type_document_detecte = "justificatif_domicile";
-        } else if (/réservation\s*(d')?hôtel|hotel\s*booking|confirmation\s*(de\s*)?réservation/i.test(allText)) {
-          ocrResult.type_document_detecte = "reservation_hotel";
-        }
-
-        // Extract date with regex
-        const dateMatch = allText.match(/(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{4})/);
-        if (dateMatch) {
-          ocrResult.date_detectee = `${dateMatch[1]}/${dateMatch[2]}/${dateMatch[3]}`;
-        }
-      }
-    } else {
-      // Images: convert to base64 and use Pixtral vision
-      let binary = "";
-      for (let i = 0; i < bytes.length; i++) {
-        binary += String.fromCharCode(bytes[i]);
-      }
-      const base64Content = btoa(binary);
-      const mimeType = fileType === "image/png" ? "image/png" : "image/jpeg";
-
-      const visionResponse = await client.chat.complete({
-        model: "pixtral-12b-2409",
-        messages: [{
-          role: "user",
-          content: [
-            { type: "image_url", imageUrl: { url: `data:${mimeType};base64,${base64Content}` } },
-            { type: "text", text: VISION_PROMPT },
-          ],
-        }],
-      });
-
-      const responseText = (visionResponse.choices?.[0]?.message?.content || "") as string;
-      const jsonMatch = responseText.match(/\{[\s\S]*\}/);
-
-      if (!jsonMatch) {
-        await supabaseAdmin.from("pieces_justificatives").update({
-          statut_ocr: "rejete",
-          motif_rejet: "Analyse impossible",
-          date_analyse_ocr: new Date().toISOString(),
-        }).eq("id", pieceId);
-        return;
-      }
-
-      ocrResult = JSON.parse(jsonMatch[0]);
-    }
+    ocrResult = await runOcrAnalysis(bytes, fileType, fileName, signedUrl);
   } catch (err: any) {
     console.error("[OCR] Mistral API error:", err);
     await supabaseAdmin.from("pieces_justificatives").update({
@@ -415,45 +418,14 @@ async function processOcrInBackground(
   }
 
   // ── Determine acceptance ────────────────────────────────────────────
-  const qualityAccepted = ocrResult.lisible && ocrResult.score_qualite >= OCR_SCORE_MINIMUM;
-  const rejectionMessage = !qualityAccepted ? getRejectionMessage(ocrResult) : null;
-  const effectiveTypeAttendu = isDecisionRefus ? "decision_refus" : guessExpectedType(nomPiece);
-  const canAutoCorrectVal = !qualityAccepted && canAutoCorrectCheck(ocrResult, autoCorrect);
-
-  // Type mismatch warning — only when we have a specific expected type
-  let typeMismatchWarning: string | null = null;
-  if (qualityAccepted && effectiveTypeAttendu !== "autre" && ocrResult.type_document_detecte !== effectiveTypeAttendu) {
-    const detectedLabel = TYPE_LABELS[ocrResult.type_document_detecte] || ocrResult.type_document_detecte;
-    const attenduLabel = TYPE_LABELS[effectiveTypeAttendu] || effectiveTypeAttendu;
-    typeMismatchWarning = `⚠️ Ce document semble être un(e) "${detectedLabel}" alors que nous attendons un(e) "${attenduLabel}". Vérifiez que vous avez sélectionné le bon fichier.`;
-  }
-
-  // Decision refus validation
-  let decisionWarning: string | null = null;
-  if (isDecisionRefus && qualityAccepted) {
-    const validation = validateDecisionRefus(ocrResult);
-    if (!validation.valid) {
-      decisionWarning = validation.warning;
-    }
-  }
-
-  let identityWarning: string | null = null;
-  if (
-    qualityAccepted &&
-    requiresOwnerIdentityCheck(effectiveTypeAttendu, nomPiece) &&
-    (ownerIdentity.firstName || ownerIdentity.lastName || ownerIdentity.passportNumber) &&
-    !textMatchesOwnerIdentity(ocrResult.texte_extrait || "", ownerIdentity)
-  ) {
-    const ownerName = [ownerIdentity.firstName, ownerIdentity.lastName].filter(Boolean).join(" ");
-    identityWarning = `⚠️ Ce document ne semble pas correspondre au titulaire du dossier${ownerName ? ` (${ownerName})` : ""}. Déposez un document au nom du client.`;
-  }
+  const { accepted, rejectionMessage, typeMismatchWarning, decisionWarning, identityWarning, canAutoCorrectVal } =
+    evaluateOcrResult(ocrResult, isDecisionRefus, nomPiece, ownerIdentity, autoCorrect);
 
   const businessRejection = typeMismatchWarning || decisionWarning || identityWarning;
-  const accepted = qualityAccepted && !businessRejection;
 
   // Language notice
   let languageNotice: string | null = null;
-  if (qualityAccepted) {
+  if (accepted) {
     if (ocrResult.langue_detectee === "ar") {
       languageNotice = "🌍 Document en arabe détecté — Traduction automatique disponible si nécessaire";
     } else if (ocrResult.langue_detectee === "mixte") {
@@ -464,7 +436,6 @@ async function processOcrInBackground(
   const coutOcr = (ocrResult.pages_detectees || 1) * OCR_COST_PER_PAGE;
   const ext = fileName.split(".").pop()?.toLowerCase() || "pdf";
 
-  // ── Update the existing record with OCR results ────────────────────
   const { error: dbError } = await supabaseAdmin
     .from("pieces_justificatives")
     .update({
@@ -488,7 +459,7 @@ async function processOcrInBackground(
         languageNotice,
       },
       type_document_detecte: ocrResult.type_document_detecte,
-      type_document_attendu: effectiveTypeAttendu,
+      type_document_attendu: isDecisionRefus ? "decision_refus" : guessExpectedType(nomPiece),
       langue_detectee: ocrResult.langue_detectee,
       date_detectee: ocrResult.date_detectee,
       pages_detectees: ocrResult.pages_detectees || 1,
@@ -507,6 +478,51 @@ async function processOcrInBackground(
   console.log(`[OCR] ${fileName}: score=${ocrResult.score_qualite}, accepted=${accepted}, type=${ocrResult.type_document_detecte}`);
 }
 
+// ── Shared evaluation logic ──────────────────────────────────────────
+function evaluateOcrResult(
+  ocrResult: MistralOcrResult,
+  isDecisionRefus: boolean,
+  nomPiece: string,
+  ownerIdentity: OwnerIdentity,
+  autoCorrect: boolean,
+) {
+  const qualityAccepted = ocrResult.lisible && ocrResult.score_qualite >= OCR_SCORE_MINIMUM;
+  const rejectionMessage = !qualityAccepted ? getRejectionMessage(ocrResult) : null;
+  const effectiveTypeAttendu = isDecisionRefus ? "decision_refus" : guessExpectedType(nomPiece);
+  const canAutoCorrectVal = !qualityAccepted && canAutoCorrectCheck(ocrResult, autoCorrect);
+
+  let typeMismatchWarning: string | null = null;
+  if (qualityAccepted && effectiveTypeAttendu !== "autre" && ocrResult.type_document_detecte !== effectiveTypeAttendu) {
+    const detectedLabel = TYPE_LABELS[ocrResult.type_document_detecte] || ocrResult.type_document_detecte;
+    const attenduLabel = TYPE_LABELS[effectiveTypeAttendu] || effectiveTypeAttendu;
+    typeMismatchWarning = `⚠️ Ce document semble être un(e) "${detectedLabel}" alors que nous attendons un(e) "${attenduLabel}". Vérifiez que vous avez sélectionné le bon fichier.`;
+  }
+
+  let decisionWarning: string | null = null;
+  if (isDecisionRefus && qualityAccepted) {
+    const validation = validateDecisionRefus(ocrResult);
+    if (!validation.valid) {
+      decisionWarning = validation.warning;
+    }
+  }
+
+  let identityWarning: string | null = null;
+  if (
+    qualityAccepted &&
+    requiresOwnerIdentityCheck(effectiveTypeAttendu, nomPiece) &&
+    (ownerIdentity.firstName || ownerIdentity.lastName || ownerIdentity.passportNumber) &&
+    !textMatchesOwnerIdentity(ocrResult.texte_extrait || "", ownerIdentity)
+  ) {
+    const ownerName = [ownerIdentity.firstName, ownerIdentity.lastName].filter(Boolean).join(" ");
+    identityWarning = `⚠️ Ce document ne semble pas correspondre au titulaire du dossier${ownerName ? ` (${ownerName})` : ""}. Déposez un document au nom du client.`;
+  }
+
+  const businessRejection = typeMismatchWarning || decisionWarning || identityWarning;
+  const accepted = qualityAccepted && !businessRejection;
+
+  return { accepted, qualityAccepted, rejectionMessage, typeMismatchWarning, decisionWarning, identityWarning, canAutoCorrectVal };
+}
+
 // ── Main handler ────────────────────────────────────────────────────────
 serve(async (req) => {
   if (req.method === "OPTIONS") {
@@ -523,8 +539,18 @@ serve(async (req) => {
     const isDecisionRefus = formData.get("is_decision_refus") === "true";
     const autoCorrect = formData.get("auto_correct") === "true";
 
-    if (!file || !dossierId || !userId || !nomPiece) {
-      return jsonResponse({ error: "Missing: file, dossier_id, user_id, nom_piece" }, 400);
+    // ── Tunnel mode: OCR only, no DB, no storage ───────────────────────
+    const tunnelMode = formData.get("tunnel_mode") === "true";
+    const ownerFirstName = formData.get("owner_first_name") as string || "";
+    const ownerLastName = formData.get("owner_last_name") as string || "";
+    const ownerPassportNumber = formData.get("owner_passport_number") as string || "";
+
+    if (!file || !nomPiece) {
+      return jsonResponse({ error: "Missing: file, nom_piece" }, 400);
+    }
+
+    if (!tunnelMode && (!dossierId || !userId)) {
+      return jsonResponse({ error: "Missing: dossier_id, user_id" }, 400);
     }
 
     // ── Format validation ───────────────────────────────────────────────
@@ -550,9 +576,68 @@ serve(async (req) => {
       });
     }
 
-    // ── Read file & upload to storage ───────────────────────────────────
     const arrayBuffer = await file.arrayBuffer();
     const bytes = new Uint8Array(arrayBuffer);
+
+    // ── TUNNEL MODE: synchronous OCR, return result directly ────────────
+    if (tunnelMode) {
+      let signedUrl: string | null = null;
+
+      // For PDFs in tunnel mode, we need a temporary URL - upload to temp storage
+      if (fileType === "application/pdf") {
+        const supabaseAdmin = getSupabaseAdmin();
+        const tempPath = `tunnel_temp/${Date.now()}_${Math.random().toString(36).slice(2)}.pdf`;
+        await supabaseAdmin.storage.from("dossiers").upload(tempPath, bytes, { contentType: fileType, upsert: true });
+        const { data: urlData } = await supabaseAdmin.storage.from("dossiers").createSignedUrl(tempPath, 300);
+        signedUrl = urlData?.signedUrl || null;
+
+        // Schedule cleanup
+        // @ts-ignore
+        if (typeof EdgeRuntime !== "undefined" && EdgeRuntime.waitUntil) {
+          // @ts-ignore
+          EdgeRuntime.waitUntil(
+            (async () => {
+              await new Promise(r => setTimeout(r, 60000));
+              await supabaseAdmin.storage.from("dossiers").remove([tempPath]);
+            })()
+          );
+        }
+      }
+
+      try {
+        const ocrResult = await runOcrAnalysis(bytes, fileType, fileName, signedUrl);
+
+        const ownerIdentity: OwnerIdentity = {
+          firstName: ownerFirstName,
+          lastName: ownerLastName,
+          passportNumber: ownerPassportNumber,
+        };
+
+        const evaluation = evaluateOcrResult(ocrResult, isDecisionRefus, nomPiece, ownerIdentity, autoCorrect);
+
+        console.log(`[OCR-TUNNEL] ${fileName}: score=${ocrResult.score_qualite}, accepted=${evaluation.accepted}, type=${ocrResult.type_document_detecte}`);
+
+        return jsonResponse({
+          accepted: evaluation.accepted,
+          score: ocrResult.score_qualite,
+          type_document_detecte: ocrResult.type_document_detecte,
+          rejectionMessage: evaluation.accepted ? null : (evaluation.typeMismatchWarning || evaluation.identityWarning || evaluation.decisionWarning || evaluation.rejectionMessage || ocrResult.motif_rejet),
+          typeMismatchWarning: evaluation.typeMismatchWarning,
+          identityWarning: evaluation.identityWarning,
+          problemes: ocrResult.problemes_detectes,
+        });
+      } catch (err: any) {
+        console.error("[OCR-TUNNEL] Error:", err);
+        return jsonResponse({
+          accepted: false,
+          rejectionCode: "ocr_error",
+          rejectionMessage: "❌ Erreur lors de l'analyse. Veuillez réessayer.",
+          score: 0,
+        });
+      }
+    }
+
+    // ── NORMAL MODE: upload to storage + background OCR ─────────────────
     const supabaseAdmin = getSupabaseAdmin();
     const ext = fileName.split(".").pop()?.toLowerCase() || "pdf";
     const storagePath = `${dossierId}/pieces/${Date.now()}_${nomPiece.replace(/[^a-zA-Z0-9]/g, "_")}.${ext}`;
@@ -566,13 +651,11 @@ serve(async (req) => {
       return jsonResponse({ error: "Erreur lors de l'upload du fichier" }, 500);
     }
 
-    // Get signed URL
     const { data: urlData } = await supabaseAdmin.storage
       .from("dossiers")
       .createSignedUrl(storagePath, 3600);
     const signedUrl = urlData?.signedUrl || null;
 
-    // ── Insert piece with "en_cours" status immediately ─────────────────
     const { data: insertData, error: dbError } = await supabaseAdmin
       .from("pieces_justificatives")
       .insert({
@@ -598,7 +681,6 @@ serve(async (req) => {
 
     const pieceId = insertData.id;
 
-    // ── Dispatch background OCR via EdgeRuntime.waitUntil ────────────────
     // @ts-ignore: EdgeRuntime is available in Deno Deploy
     if (typeof EdgeRuntime !== "undefined" && EdgeRuntime.waitUntil) {
       // @ts-ignore
@@ -609,14 +691,12 @@ serve(async (req) => {
         )
       );
     } else {
-      // Fallback: run inline (slower but works)
       await processOcrInBackground(
         pieceId, storagePath, signedUrl, bytes, fileType, fileName, fileSize,
         dossierId, userId, nomPiece, typePiece, isDecisionRefus, autoCorrect,
       );
     }
 
-    // ── Return immediately with piece ID ────────────────────────────────
     return jsonResponse({
       id: pieceId,
       status: "analyzing",
