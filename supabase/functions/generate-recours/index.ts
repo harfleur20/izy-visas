@@ -85,65 +85,119 @@ serve(async (req) => {
     const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
     const SUPABASE_ANON_KEY = Deno.env.get("SUPABASE_ANON_KEY")!;
     const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
-    const authHeader = req.headers.get("Authorization");
-    const supabaseUser = createClient(
-      SUPABASE_URL,
-      SUPABASE_ANON_KEY,
-      { global: authHeader ? { headers: { Authorization: authHeader } } : undefined },
-    );
-    const authContext = await requireAuthenticatedContext(req, supabase, supabaseUser);
 
-    const { dossier_id } = await req.json();
+    const body = await req.json();
+    const isTunnelMode = body.tunnel_mode === true;
 
-    if (!dossier_id) {
-      return new Response(JSON.stringify({ error: "dossier_id requis" }), {
-        status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" },
-      });
+    // ═══ TUNNEL MODE: accept inline data without auth or dossier ═══
+    let clientName = "";
+    let clientPrenom = "";
+    let clientPhone = "";
+    let visaType = "";
+    let visaTypeExact = "";
+    let motifCodes: string[] = [];
+    let motifTexteOriginal: string[] = [];
+    let motifRefus = "";
+    let decisionDate = "";
+    let decisionRef = "";
+    let consulat = "";
+    let passportNumber = "";
+    let dossierRef = "TUNNEL-DRAFT";
+    let destinataireRecours = "crrv_nantes";
+    let clientVille = "";
+    let email = "";
+    let piecesJointes: { name: string; pages: number }[] = [];
+    let dossier_id: string | null = null;
+    let authContext: RecoursAccessContext | null = null;
+    // deno-lint-ignore no-explicit-any
+    let dossier: any = null;
+
+    if (isTunnelMode) {
+      // Extract from inline payload
+      const { identity, ocr, pieces: tunnelPieces } = body;
+      if (!identity || !ocr) {
+        return new Response(JSON.stringify({ error: "identity et ocr requis en tunnel_mode" }), {
+          status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
+      clientName = identity.lastName || "";
+      clientPrenom = identity.firstName || "";
+      visaType = ocr.visaType || "";
+      visaTypeExact = ocr.typeVisaTexteOriginal || visaType;
+      motifCodes = ocr.motifsRefus || [];
+      motifTexteOriginal = ocr.motifsTexteOriginal || [];
+      motifRefus = motifTexteOriginal.join("\n") || motifCodes.join(", ");
+      decisionDate = ocr.dateNotificationRefus || "";
+      decisionRef = ocr.numeroDecision || "";
+      consulat = [ocr.consulatNom, ocr.consulatVille, ocr.consulatPays].filter(Boolean).join(", ");
+      passportNumber = identity.passportNumber || "";
+      destinataireRecours = ocr.destinataireRecours || "crrv_nantes";
+      piecesJointes = (tunnelPieces || []).map((p: { nomPiece: string; pages?: number }) => ({
+        name: p.nomPiece,
+        pages: p.pages || 1,
+      }));
+    } else {
+      // ═══ AUTHENTICATED MODE ═══
+      const authHeader = req.headers.get("Authorization");
+      const supabaseUser = createClient(
+        SUPABASE_URL,
+        SUPABASE_ANON_KEY,
+        { global: authHeader ? { headers: { Authorization: authHeader } } : undefined },
+      );
+      authContext = await requireAuthenticatedContext(req, supabase, supabaseUser);
+
+      dossier_id = body.dossier_id;
+
+      if (!dossier_id) {
+        return new Response(JSON.stringify({ error: "dossier_id requis" }), {
+          status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
+
+      // ═══ STEP 1: Fetch dossier ═══
+      const { data: dossierData, error: dossierErr } = await supabase
+        .from("dossiers").select("*").eq("id", dossier_id).single();
+
+      if (dossierErr || !dossierData) {
+        return new Response(JSON.stringify({ error: "Dossier introuvable" }), {
+          status: 404, headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
+
+      dossier = dossierData;
+      assertRecoursGenerationAccess(authContext, dossier);
+
+      const { data: profile } = await supabase
+        .from("profiles").select("*").eq("id", dossier.user_id).single();
+
+      const { data: pieces } = await supabase
+        .from("pieces_justificatives")
+        .select("nom_piece, type_piece, statut_ocr, nombre_pages")
+        .eq("dossier_id", dossier_id)
+        .order("created_at", { ascending: true });
+
+      piecesJointes = (pieces || []).map((p: { nom_piece: string; nombre_pages: number | null }) => ({
+        name: p.nom_piece,
+        pages: p.nombre_pages || 1,
+      }));
+
+      clientName = dossier.client_last_name || "";
+      clientPrenom = dossier.client_first_name || "";
+      clientPhone = dossier.client_phone || profile?.phone || "";
+      visaType = dossier.visa_type || "";
+      visaTypeExact = dossier.type_visa_texte_original || visaType;
+      motifCodes = (dossier.motifs_refus || []) as string[];
+      motifTexteOriginal = (dossier.motifs_texte_original || []) as string[];
+      motifRefus = motifTexteOriginal.join("\n") || motifCodes.join(", ");
+      decisionDate = dossier.date_notification_refus || "";
+      decisionRef = dossier.numero_decision || "";
+      consulat = [dossier.consulat_nom, dossier.consulat_ville, dossier.consulat_pays].filter(Boolean).join(", ");
+      passportNumber = dossier.client_passport_number || profile?.passport_number || "";
+      dossierRef = dossier.dossier_ref;
+      destinataireRecours = dossier.destinataire_recours || "crrv_nantes";
+      clientVille = dossier.client_ville || profile?.ville || "";
+      email = dossier.client_email || "";
     }
-
-    // ═══ STEP 1: Fetch dossier ═══
-    const { data: dossier, error: dossierErr } = await supabase
-      .from("dossiers").select("*").eq("id", dossier_id).single();
-
-    if (dossierErr || !dossier) {
-      return new Response(JSON.stringify({ error: "Dossier introuvable" }), {
-        status: 404, headers: { ...corsHeaders, "Content-Type": "application/json" },
-      });
-    }
-
-    assertRecoursGenerationAccess(authContext, dossier);
-
-    const { data: profile } = await supabase
-      .from("profiles").select("*").eq("id", dossier.user_id).single();
-
-    const { data: pieces } = await supabase
-      .from("pieces_justificatives")
-      .select("nom_piece, type_piece, statut_ocr, nombre_pages")
-      .eq("dossier_id", dossier_id)
-      .order("created_at", { ascending: true });
-
-    const piecesJointes = (pieces || []).map((p: { nom_piece: string; nombre_pages: number | null }) => ({
-      name: p.nom_piece,
-      pages: p.nombre_pages || 1,
-    }));
-
-    // ═══ Validate required fields ═══
-    const clientName = dossier.client_last_name || "";
-    const clientPrenom = dossier.client_first_name || "";
-    const clientPhone = dossier.client_phone || profile?.phone || "";
-    const visaType = dossier.visa_type || "";
-    const visaTypeExact = dossier.type_visa_texte_original || visaType;
-    const motifCodes = (dossier.motifs_refus || []) as string[];
-    const motifTexteOriginal = (dossier.motifs_texte_original || []) as string[];
-    const motifRefus = motifTexteOriginal.join("\n") || motifCodes.join(", ");
-    const decisionDate = dossier.date_notification_refus || "";
-    const decisionRef = dossier.numero_decision || "";
-    const consulat = [dossier.consulat_nom, dossier.consulat_ville, dossier.consulat_pays].filter(Boolean).join(", ");
-    const passportNumber = dossier.client_passport_number || profile?.passport_number || "";
-    const dossierRef = dossier.dossier_ref;
-    const destinataireRecours = dossier.destinataire_recours || "crrv_nantes";
-    const clientVille = dossier.client_ville || profile?.ville || "";
-    const email = dossier.client_email || "";
 
     const requiredFields: Record<string, unknown> = {
       "NOM DU CLIENT": clientName, "TYPE DE VISA": visaType,
