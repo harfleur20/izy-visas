@@ -41,7 +41,7 @@ export default function TunnelIdentity({ identity, onUpdate, onNext, onBack }: T
 
   const titles: Record<SubStep, string> = {
     name: "Comment vous appelez-vous ?",
-    birth: "À quelle date avez-vous reçu la décision de refus de visa ?",
+    birth: "Informations de naissance",
     passport: "Numéro de passeport",
   };
 
