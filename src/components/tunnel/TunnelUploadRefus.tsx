@@ -196,10 +196,10 @@ export default function TunnelUploadRefus({ firstName, lastName, onComplete, onB
 
       <div className="w-full max-w-[420px] animate-in fade-in slide-in-from-bottom-4 duration-500">
         <h2 className="font-fraunces text-[clamp(1.2rem,3vw,1.8rem)] text-cream text-center mb-3 leading-tight">
-          Importez votre décision de refus
+          Insérez votre décision de refus de visa ici
         </h2>
         <p className="text-sm text-muted-foreground text-center mb-8">
-          Photographiez ou importez le document officiel reçu du consulat.
+          Cette décision est encore contestable. Photographiez ou importez le document officiel reçu du consulat.
         </p>
 
         {/* Upload buttons */}

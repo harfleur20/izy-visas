@@ -113,10 +113,10 @@ export default function TunnelPieces({
         </div>
 
         <h2 className="font-fraunces text-[clamp(1.3rem,3.5vw,1.8rem)] text-cream mb-2 leading-tight">
-          Pièces justificatives
+          Renseignez les pièces suivantes pour contester
         </h2>
         <p className="text-sm text-muted-foreground mb-6 leading-relaxed">
-          Ajoutez les documents qui renforcent votre recours. Les pièces obligatoires sont indispensables.
+          Les pièces obligatoires sont indispensables pour renforcer votre recours.
         </p>
 
         {loading ? (
