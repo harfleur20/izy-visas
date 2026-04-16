@@ -149,7 +149,6 @@ export default function TunnelUploadRefus({ firstName, lastName, onComplete, onB
       };
 
       onComplete(ocrData, file);
-      onComplete(ocrData, file);
     } catch (err) {
       clearInterval(progressInterval);
       console.error("Analysis error:", err);
