@@ -100,21 +100,31 @@ serve(async (req) => {
     const file = formData.get("file") as File | null;
     const dossierId = formData.get("dossier_id") as string;
     const userId = formData.get("user_id") as string;
+    const tunnelMode = formData.get("tunnel_mode") === "true";
 
     if (!file || !dossierId || !userId) {
       return jsonResponse({ error: "Paramètres manquants : file, dossier_id, user_id" }, 400);
     }
 
-    // Fetch dossier owner info for cross-validation
     const supabaseAdmin = getSupabaseAdmin();
-    const { data: dossierOwner } = await supabaseAdmin
-      .from("dossiers")
-      .select("client_first_name, client_last_name")
-      .eq("id", dossierId)
-      .single();
+    let ownerFirstName = "";
+    let ownerLastName = "";
 
-    const ownerFirstName = (dossierOwner?.client_first_name || "").trim().toLowerCase();
-    const ownerLastName = (dossierOwner?.client_last_name || "").trim().toLowerCase();
+    if (tunnelMode) {
+      // In tunnel mode, owner name is passed directly (no dossier in DB yet)
+      ownerFirstName = (formData.get("owner_first_name") as string || "").trim().toLowerCase();
+      ownerLastName = (formData.get("owner_last_name") as string || "").trim().toLowerCase();
+    } else {
+      // Fetch dossier owner info for cross-validation
+      const { data: dossierOwner } = await supabaseAdmin
+        .from("dossiers")
+        .select("client_first_name, client_last_name")
+        .eq("id", dossierId)
+        .single();
+
+      ownerFirstName = (dossierOwner?.client_first_name || "").trim().toLowerCase();
+      ownerLastName = (dossierOwner?.client_last_name || "").trim().toLowerCase();
+    }
 
     // ── Step 1: Format & size validation ─────────────────────────────────
     const fileType = file.type;
@@ -143,7 +153,9 @@ serve(async (req) => {
     // supabaseAdmin already declared above
 
     const ext = fileName.split(".").pop()?.toLowerCase() || "pdf";
-    const storagePath = `${dossierId}/decision_refus/decision_${Date.now()}.${ext}`;
+    const storagePath = tunnelMode
+      ? `tunnel_temp/${Date.now()}_${Math.random().toString(36).slice(2, 8)}/decision.${ext}`
+      : `${dossierId}/decision_refus/decision_${Date.now()}.${ext}`;
 
     const { error: uploadErr } = await supabaseAdmin.storage
       .from("dossiers")
