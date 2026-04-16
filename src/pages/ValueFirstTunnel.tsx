@@ -1,6 +1,9 @@
 import { useTunnelState } from "@/hooks/useTunnelState";
 import TunnelSplash from "@/components/tunnel/TunnelSplash";
 import TunnelIdentity from "@/components/tunnel/TunnelIdentity";
+import TunnelUploadRefus from "@/components/tunnel/TunnelUploadRefus";
+import TunnelVerification from "@/components/tunnel/TunnelVerification";
+import TunnelVerdict from "@/components/tunnel/TunnelVerdict";
 
 export default function ValueFirstTunnel() {
   const tunnel = useTunnelState();
@@ -20,10 +23,40 @@ export default function ValueFirstTunnel() {
         />
       );
 
-    // Placeholder screens — will be implemented in next phases
     case "upload_refus":
+      return (
+        <TunnelUploadRefus
+          firstName={tunnel.state.identity.firstName}
+          lastName={tunnel.state.identity.lastName}
+          onComplete={(ocrData, file) => {
+            tunnel.setOcrData(ocrData);
+            tunnel.setDecisionFile(file);
+            tunnel.setStep("verification");
+          }}
+          onBack={() => tunnel.setStep("identity")}
+        />
+      );
+
     case "verification":
+      return tunnel.state.ocrData ? (
+        <TunnelVerification
+          ocrData={tunnel.state.ocrData}
+          onUpdate={(data) => tunnel.setOcrData(data)}
+          onNext={() => tunnel.setStep("verdict")}
+          onBack={() => tunnel.setStep("upload_refus")}
+        />
+      ) : null;
+
     case "verdict":
+      return tunnel.state.ocrData ? (
+        <TunnelVerdict
+          ocrData={tunnel.state.ocrData}
+          onNext={() => tunnel.setStep("pieces")}
+          onBack={() => tunnel.setStep("verification")}
+        />
+      ) : null;
+
+    // Placeholder screens — will be implemented in next phases
     case "pieces":
     case "letter":
     case "payment":
@@ -33,7 +66,7 @@ export default function ValueFirstTunnel() {
           <div className="text-center space-y-4">
             <p className="text-muted-foreground font-dm">Étape "{step}" — en construction</p>
             <button
-              onClick={() => tunnel.setStep("identity")}
+              onClick={() => tunnel.setStep("verdict")}
               className="text-sm text-primary hover:underline"
             >
               ← Retour
