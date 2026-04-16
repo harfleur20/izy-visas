@@ -122,11 +122,12 @@ function checkIdentityCoherence(
     };
   }
 
-  // Case 2: Identity has only nom, OCR has both — partial match
+  // Case 2: Identity has only nom, OCR has both — needs confirmation
   if (hasOcrNom && hasOcrPrenom && hasIdentityNom && !hasIdentityPrenom && nomMatch) {
     return {
-      level: "ok",
-      message: `Nom confirmé. Le prénom sur la décision est : ${ocrPrenom}.`,
+      level: "warning",
+      message: `Votre nom correspond, mais la décision mentionne aussi un prénom : "${ocrPrenom}". Est-ce bien vous ?`,
+      suggestion: "Si oui, vous pouvez ajouter ce prénom à votre identité pour éviter toute ambiguïté.",
     };
   }
 
