@@ -353,13 +353,14 @@ async function runOcrAnalysis(
 }
 
 function classifyDocumentType(result: MistralOcrResult, allText: string) {
+  // Order matters: most specific first, broadest last
   if (/refus[éeè]?\s*(de\s*)?visa|visa\s*refus/i.test(allText)) {
     result.type_document_detecte = "decision_refus";
   } else if (/passeport|passport/i.test(allText)) {
     result.type_document_detecte = "passeport";
-  } else if (/relevé\s*(de\s*)?compte|bank\s*statement|solde/i.test(allText)) {
+  } else if (/relevé\s*(de\s*)?compte|bank\s*statement|solde\s*(comptable|créditeur)|opérations\s*bancaires/i.test(allText)) {
     result.type_document_detecte = "releve_bancaire";
-  } else if (/contrat\s*(de\s*)?travail|employment\s*contract/i.test(allText)) {
+  } else if (/contrat\s*(de\s*)?travail|employment\s*contract|embauche/i.test(allText)) {
     result.type_document_detecte = "contrat_travail";
   } else if (/campus\s*france/i.test(allText)) {
     result.type_document_detecte = "attestation_campus_france";
@@ -369,17 +370,17 @@ function classifyDocumentType(result: MistralOcrResult, allText: string) {
     result.type_document_detecte = "acte_naissance";
   } else if (/hébergement|attestation\s*d'accueil/i.test(allText)) {
     result.type_document_detecte = "justificatif_hebergement";
-  } else if (/billet\s*(d')?avion|boarding\s*pass|flight\s*ticket|itinéraire\s*(de\s*)?vol|e-?ticket|flight\s+[A-Z]{2}\s*\d|booking\s*ref|departure.*arrival|baggage\s*allowance|reservation\s*confirm/i.test(allText)) {
+  } else if (/billet\s*(d[''])?avion|boarding\s*pass|flight\s*ticket|itin[ée]raire\s*(de\s*)?vol|e-?ticket|flight\s+[A-Z]{2}\s*\d|booking\s*ref|departure.*arrival|baggage\s*allowance|reservation\s*confirm/i.test(allText)) {
     result.type_document_detecte = "billet_avion";
-  } else if (/assurance\s*(de\s*)?voyage|travel\s*insurance|couverture\s*médicale/i.test(allText)) {
+  } else if (/attestation\s*(d[''])?assurance|assurance\s*(de\s*)?voyage|travel\s*insurance|couverture\s*m[ée]dicale|police\s*(d[''])?assurance|garanties?\s*souscrite|assistance\s*police|assurance\s*maladie/i.test(allText)) {
     result.type_document_detecte = "assurance_voyage";
-  } else if (/attestation\s*(d')?emploi|certificat\s*(de\s*)?travail/i.test(allText)) {
+  } else if (/attestation\s*(d[''])?emploi|certificat\s*(de\s*)?travail/i.test(allText)) {
     result.type_document_detecte = "attestation_emploi";
-  } else if (/certificat\s*(de\s*)?scolarité|inscription\s*universitaire|student/i.test(allText)) {
+  } else if (/certificat\s*(de\s*)?scolarit[ée]|inscription\s*universitaire|student/i.test(allText)) {
     result.type_document_detecte = "certificat_scolarite";
   } else if (/justificatif\s*(de\s*)?domicile|facture|quittance\s*(de\s*)?loyer/i.test(allText)) {
     result.type_document_detecte = "justificatif_domicile";
-  } else if (/réservation\s*(d')?hôtel|hotel\s*booking|confirmation\s*(de\s*)?réservation/i.test(allText)) {
+  } else if (/r[ée]servation\s*(d[''])?h[ôo]tel|hotel\s*booking|confirmation\s*(de\s*)?r[ée]servation/i.test(allText)) {
     result.type_document_detecte = "reservation_hotel";
   }
 }
