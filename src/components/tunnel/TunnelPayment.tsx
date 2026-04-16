@@ -1,10 +1,10 @@
 import { useState, useEffect } from "react";
 import { Button } from "@/components/ui/button";
-import { ArrowLeft, ArrowRight, Check, Download, Send, Scale } from "lucide-react";
+import { ArrowLeft, ArrowRight, Check, Download, Send, Scale, CreditCard, Smartphone } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
-import { toast } from "@/hooks/use-toast";
 
 type SendOption = "A" | "B" | "C";
+type PaymentMethod = "stripe" | "taramoney";
 
 interface OptionCard {
   id: SendOption;
@@ -48,19 +48,17 @@ function getPrice(option: SendOption, tarifs: Tarifs) {
 }
 
 interface TunnelPaymentProps {
-  identity: { firstName: string; lastName: string };
-  ocrData: { visaType: string };
-  letterContent: string | null;
+  paymentMethod: PaymentMethod;
   onOptionSelected: (option: string) => void;
+  onPaymentMethodSelected: (method: PaymentMethod) => void;
   onNext: () => void;
   onBack: () => void;
 }
 
 export default function TunnelPayment({
-  identity,
-  ocrData,
-  letterContent,
+  paymentMethod,
   onOptionSelected,
+  onPaymentMethodSelected,
   onNext,
   onBack,
 }: TunnelPaymentProps) {
@@ -70,7 +68,6 @@ export default function TunnelPayment({
     envoi_mysendingbox_eur: 30,
     honoraires_avocat_eur: 70,
   });
-  const [loading, setLoading] = useState(false);
 
   useEffect(() => {
     supabase
@@ -169,6 +166,43 @@ export default function TunnelPayment({
           })}
         </div>
 
+        {/* Payment method selector */}
+        <div className="w-full max-w-lg mb-6">
+          <h3 className="font-syne font-bold text-xs uppercase tracking-wider text-muted-foreground mb-3">
+            Mode de paiement
+          </h3>
+          <div className="grid grid-cols-2 gap-3">
+            <button
+              onClick={() => onPaymentMethodSelected("stripe")}
+              className={`p-3 rounded-xl border-2 transition-all flex items-center gap-2 ${
+                paymentMethod === "stripe"
+                  ? "border-primary bg-primary/10"
+                  : "border-border-2 bg-background-2 hover:border-muted"
+              }`}
+            >
+              <CreditCard className={`w-5 h-5 ${paymentMethod === "stripe" ? "text-primary" : "text-muted-foreground"}`} />
+              <div className="text-left">
+                <p className="font-syne font-bold text-xs">Carte bancaire</p>
+                <p className="text-[10px] text-muted-foreground">Visa, Mastercard</p>
+              </div>
+            </button>
+            <button
+              onClick={() => onPaymentMethodSelected("taramoney")}
+              className={`p-3 rounded-xl border-2 transition-all flex items-center gap-2 ${
+                paymentMethod === "taramoney"
+                  ? "border-primary bg-primary/10"
+                  : "border-border-2 bg-background-2 hover:border-muted"
+              }`}
+            >
+              <Smartphone className={`w-5 h-5 ${paymentMethod === "taramoney" ? "text-primary" : "text-muted-foreground"}`} />
+              <div className="text-left">
+                <p className="font-syne font-bold text-xs">Mobile Money</p>
+                <p className="text-[10px] text-muted-foreground">WhatsApp, Dikalo</p>
+              </div>
+            </button>
+          </div>
+        </div>
+
         {/* Price breakdown */}
         <div className="w-full max-w-lg bg-background-2 rounded-2xl p-4 mb-8 border border-border-2">
           <h3 className="font-syne font-bold text-xs uppercase tracking-wider text-muted-foreground mb-3">
@@ -202,7 +236,6 @@ export default function TunnelPayment({
         <div className="w-full max-w-lg">
           <Button
             onClick={handleContinue}
-            disabled={loading}
             size="lg"
             className="w-full h-14 text-base font-syne font-bold rounded-2xl gap-2 bg-primary hover:bg-primary-hover"
           >
@@ -210,7 +243,9 @@ export default function TunnelPayment({
             <ArrowRight className="w-5 h-5" />
           </Button>
           <p className="text-center text-xs text-muted-foreground mt-3">
-            Paiement sécurisé par Stripe · Vous serez redirigé après inscription
+            {paymentMethod === "stripe"
+              ? "Paiement sécurisé par Stripe · Vous serez redirigé après inscription"
+              : "Paiement via Mobile Money · Liens envoyés après inscription"}
           </p>
         </div>
       </div>

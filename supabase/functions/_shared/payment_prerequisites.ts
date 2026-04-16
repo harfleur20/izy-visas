@@ -210,7 +210,10 @@ export async function assertPaymentPrerequisites(
   supabase: SupabaseLike,
   dossier: PaymentDossier,
   requestedOption: SendOption,
+  options?: { fromTunnel?: boolean },
 ) {
+  const fromTunnel = options?.fromTunnel === true;
+
   if (!dossier.date_notification_refus) {
     throw new HttpError(409, "Recevabilite requise avant paiement.");
   }
@@ -221,18 +224,31 @@ export async function assertPaymentPrerequisites(
     throw new HttpError(409, "Decision de refus incomplete avant paiement.");
   }
 
-  if (!dossier.lettre_neutre_contenu || !dossier.url_lettre_definitive) {
-    throw new HttpError(409, "Lettre de recours non finalisee avant paiement.");
+  // Tunnel dossiers only have lettre_neutre_contenu, not url_lettre_definitive yet
+  if (!fromTunnel) {
+    if (!dossier.lettre_neutre_contenu || !dossier.url_lettre_definitive) {
+      throw new HttpError(409, "Lettre de recours non finalisee avant paiement.");
+    }
+  } else {
+    if (!dossier.lettre_neutre_contenu) {
+      throw new HttpError(409, "Lettre de recours non generee avant paiement.");
+    }
   }
 
   if (dossier.validation_juridique_status === "bloquee") {
     throw new HttpError(409, "Validation juridique bloquee. Corrigez la lettre avant paiement.");
   }
 
-  const finalizedOption = normalizeOption(dossier.option_choisie || dossier.option_envoi);
-  if (finalizedOption !== requestedOption) {
-    throw new HttpError(409, "Mode d'envoi non finalise pour cette option avant paiement.");
+  // Tunnel dossiers set option_choisie during migration — skip strict match check
+  if (!fromTunnel) {
+    const finalizedOption = normalizeOption(dossier.option_choisie || dossier.option_envoi);
+    if (finalizedOption !== requestedOption) {
+      throw new HttpError(409, "Mode d'envoi non finalise pour cette option avant paiement.");
+    }
   }
 
-  await assertMandatoryPiecesReady(supabase, dossier);
+  // Tunnel pieces are in pending OCR state — skip mandatory pieces check
+  if (!fromTunnel) {
+    await assertMandatoryPiecesReady(supabase, dossier);
+  }
 }

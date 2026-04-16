@@ -54,6 +54,7 @@ export interface TunnelState {
   lettreContenu: string | null;
   lettreNeutreUrl: string | null;
   optionChoisie: string | null;
+  paymentMethod: "stripe" | "taramoney";
   email: string | null;
   stripeSessionId: string | null;
 }
@@ -77,6 +78,7 @@ const INITIAL_STATE: TunnelState = {
   lettreContenu: null,
   lettreNeutreUrl: null,
   optionChoisie: null,
+  paymentMethod: "stripe",
   email: null,
   stripeSessionId: null,
 };
@@ -133,6 +135,10 @@ export function useTunnelState() {
     setState((prev) => ({ ...prev, optionChoisie: option }));
   }, []);
 
+  const setPaymentMethod = useCallback((method: "stripe" | "taramoney") => {
+    setState((prev) => ({ ...prev, paymentMethod: method }));
+  }, []);
+
   const setEmail = useCallback((email: string | null) => {
     setState((prev) => ({ ...prev, email }));
   }, []);
@@ -155,6 +161,7 @@ export function useTunnelState() {
     removePiece,
     setLettre,
     setOption,
+    setPaymentMethod,
     setEmail,
     setStripeSessionId,
     reset,

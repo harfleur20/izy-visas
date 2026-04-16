@@ -123,7 +123,7 @@ serve(async (req) => {
     );
 
     const authContext = await requireAuthenticatedContext(req, supabaseAdmin, supabaseUser);
-    const { dossier_ref, option } = await req.json();
+    const { dossier_ref, option, from_tunnel } = await req.json();
     if (!dossier_ref) throw new HttpError(400, "dossier_ref is required");
     assertSendOption(option);
 
@@ -135,7 +135,7 @@ serve(async (req) => {
 
     if (dossierError || !dossier) throw new HttpError(404, `Dossier introuvable: ${dossier_ref}`);
     assertDossierAccess(authContext, dossier);
-    await assertPaymentPrerequisites(supabaseAdmin, dossier, option);
+    await assertPaymentPrerequisites(supabaseAdmin, dossier, option, { fromTunnel: from_tunnel === true });
 
     const { data: tarifs } = await supabaseAdmin
       .from("tarification")

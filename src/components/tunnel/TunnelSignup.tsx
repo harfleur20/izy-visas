@@ -1,10 +1,12 @@
 import { useState } from "react";
-import { ArrowLeft } from "lucide-react";
+import { ArrowLeft, Loader2 } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { lovable } from "@/integrations/lovable/index";
 import { toast } from "@/hooks/use-toast";
 import { PhoneInput, isValidPhoneNumber } from "@/components/PhoneInput";
 import type { TunnelIdentityData, TunnelOcrData, TunnelPieceFile } from "@/hooks/useTunnelState";
+
+type PaymentMethod = "stripe" | "taramoney";
 
 interface TunnelSignupProps {
   identity: TunnelIdentityData;
@@ -12,7 +14,17 @@ interface TunnelSignupProps {
   pieces: TunnelPieceFile[];
   letterContent: string | null;
   optionChoisie: string | null;
+  paymentMethod: PaymentMethod;
   onBack: () => void;
+}
+
+async function triggerPayment(dossierRef: string, option: string, method: PaymentMethod) {
+  const functionName = method === "stripe" ? "create-payment" : "create-taramoney-payment";
+  const { data, error } = await supabase.functions.invoke(functionName, {
+    body: { dossier_ref: dossierRef, option, from_tunnel: true },
+  });
+  if (error) throw new Error(error.message || "Erreur lors de la création du paiement");
+  return data;
 }
 
 export default function TunnelSignup({
@@ -21,6 +33,7 @@ export default function TunnelSignup({
   pieces,
   letterContent,
   optionChoisie,
+  paymentMethod,
   onBack,
 }: TunnelSignupProps) {
   const [email, setEmail] = useState("");
@@ -28,6 +41,69 @@ export default function TunnelSignup({
   const [phone, setPhone] = useState("");
   const [phoneError, setPhoneError] = useState("");
   const [loading, setLoading] = useState(false);
+  const [statusMessage, setStatusMessage] = useState("");
+
+  const processPostSignup = async () => {
+    const option = optionChoisie || "B";
+
+    // Step 1: Migrate tunnel data
+    setStatusMessage("Création de votre dossier…");
+    const { data: migrationResult, error: migrationError } = await supabase.functions.invoke(
+      "migrate-tunnel-dossier",
+      {
+        body: {
+          identity,
+          ocrData,
+          pieces: pieces.map((p) => ({
+            nomPiece: p.nomPiece,
+            typePiece: p.typePiece,
+            fileName: p.file.name,
+            fileSize: p.file.size,
+          })),
+          letterContent,
+          optionChoisie: option,
+        },
+      }
+    );
+
+    if (migrationError || !migrationResult?.dossier_ref) {
+      console.error("Migration error:", migrationError);
+      toast({
+        title: "Compte créé",
+        description: "Votre compte a été créé. Finalisez le paiement dans votre espace.",
+        variant: "destructive",
+      });
+      window.location.href = "/client?from_tunnel=true";
+      return;
+    }
+
+    const dossierRef = migrationResult.dossier_ref;
+
+    // Step 2: Trigger payment
+    setStatusMessage("Redirection vers le paiement…");
+    try {
+      const paymentResult = await triggerPayment(dossierRef, option, paymentMethod);
+
+      if (paymentMethod === "stripe" && paymentResult?.url) {
+        // Redirect to Stripe Checkout
+        window.location.href = paymentResult.url;
+      } else if (paymentMethod === "taramoney" && paymentResult?.primaryLink) {
+        // Store links and redirect to client space with taramoney info
+        sessionStorage.setItem("taramoney_links", JSON.stringify(paymentResult.links));
+        window.location.href = "/client?payment=taramoney_pending&dossier_ref=" + dossierRef;
+      } else {
+        // Fallback: redirect to client space
+        window.location.href = "/client?from_tunnel=true&dossier_ref=" + dossierRef;
+      }
+    } catch (paymentErr) {
+      console.error("Payment error:", paymentErr);
+      toast({
+        title: "Dossier créé",
+        description: "Votre dossier est prêt. Finalisez le paiement dans votre espace client.",
+      });
+      window.location.href = "/client?from_tunnel=true&dossier_ref=" + dossierRef;
+    }
+  };
 
   const handleSignup = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -37,6 +113,7 @@ export default function TunnelSignup({
     }
     setPhoneError("");
     setLoading(true);
+    setStatusMessage("Création de votre compte…");
 
     try {
       const { data: signupData, error: signupError } = await supabase.auth.signUp({
@@ -57,48 +134,13 @@ export default function TunnelSignup({
       });
 
       if (signupError) throw signupError;
-      const user = signupData.user;
-      if (!user) throw new Error("Erreur lors de la création du compte");
+      if (!signupData.user) throw new Error("Erreur lors de la création du compte");
 
-      // Now create the dossier via edge function
-      const { data: migrationResult, error: migrationError } = await supabase.functions.invoke(
-        "migrate-tunnel-dossier",
-        {
-          body: {
-            identity,
-            ocrData,
-            pieces: pieces.map((p) => ({
-              nomPiece: p.nomPiece,
-              typePiece: p.typePiece,
-              fileName: p.file.name,
-              fileSize: p.file.size,
-            })),
-            letterContent,
-            optionChoisie,
-          },
-        }
-      );
-
-      if (migrationError) {
-        console.error("Migration error:", migrationError);
-        // Account created but migration failed — redirect to client space anyway
-        toast({
-          title: "Compte créé",
-          description: "Votre compte a été créé. Certaines données devront être re-saisies.",
-          variant: "destructive",
-        });
-      } else {
-        toast({
-          title: "Bienvenue !",
-          description: "Votre dossier a été créé. Finalisez le paiement dans votre espace.",
-        });
-      }
-
-      // Redirect to client space — payment will happen there
-      window.location.href = "/client?from_tunnel=true&option=" + (optionChoisie || "B");
+      await processPostSignup();
     } catch (err: unknown) {
       const message = err instanceof Error ? err.message : "Erreur lors de l'inscription";
       toast({ title: "Erreur", description: message, variant: "destructive" });
+      setStatusMessage("");
     } finally {
       setLoading(false);
     }
@@ -110,11 +152,18 @@ export default function TunnelSignup({
       // Store tunnel data in sessionStorage before redirect
       sessionStorage.setItem(
         "tunnel_data",
-        JSON.stringify({ identity, ocrData, pieces: pieces.map(p => ({ nomPiece: p.nomPiece, typePiece: p.typePiece, fileName: p.file.name })), letterContent, optionChoisie })
+        JSON.stringify({
+          identity,
+          ocrData,
+          pieces: pieces.map((p) => ({ nomPiece: p.nomPiece, typePiece: p.typePiece, fileName: p.file.name })),
+          letterContent,
+          optionChoisie,
+          paymentMethod,
+        })
       );
 
       const result = await lovable.auth.signInWithOAuth("google", {
-        redirect_uri: window.location.origin + "/client?from_tunnel=true&option=" + (optionChoisie || "B"),
+        redirect_uri: window.location.origin + "/client?from_tunnel=true&oauth_pending=true",
       });
       if (result.error) {
         toast({ title: "Erreur Google", description: String(result.error), variant: "destructive" });
@@ -143,7 +192,8 @@ export default function TunnelSignup({
         <div className="w-full max-w-[400px]">
           <button
             onClick={onBack}
-            className="flex items-center gap-1.5 text-sm text-muted-foreground hover:text-foreground transition-colors mb-6"
+            disabled={loading}
+            className="flex items-center gap-1.5 text-sm text-muted-foreground hover:text-foreground transition-colors mb-6 disabled:opacity-50"
           >
             <ArrowLeft className="w-4 h-4" /> Retour
           </button>
@@ -166,6 +216,14 @@ export default function TunnelSignup({
               Créez votre compte pour finaliser
             </p>
           </div>
+
+          {/* Loading overlay */}
+          {loading && statusMessage && (
+            <div className="bg-primary/10 border border-primary/30 rounded-xl p-4 mb-4 flex items-center gap-3">
+              <Loader2 className="w-5 h-5 animate-spin text-primary" />
+              <p className="font-dm text-sm text-foreground">{statusMessage}</p>
+            </div>
+          )}
 
           {/* Google */}
           <button onClick={handleGoogleSignup} disabled={loading} className={btnOutline}>
@@ -197,6 +255,7 @@ export default function TunnelSignup({
                 onChange={(e) => setEmail(e.target.value)}
                 placeholder="amina@email.com"
                 required
+                disabled={loading}
               />
             </div>
             <div>
@@ -209,6 +268,7 @@ export default function TunnelSignup({
                 placeholder="••••••••"
                 required
                 minLength={6}
+                disabled={loading}
               />
             </div>
             <div>
@@ -229,11 +289,12 @@ export default function TunnelSignup({
               <p className="text-xs text-muted-foreground font-dm">
                 <span className="text-gold-2 font-semibold">Pré-rempli :</span>{" "}
                 {identity.firstName} {identity.lastName} · {ocrData.visaType} · Option {optionChoisie}
+                {" · "}{paymentMethod === "stripe" ? "Carte" : "Mobile Money"}
               </p>
             </div>
 
             <button type="submit" disabled={loading} className={btnPrimary}>
-              {loading ? "Création en cours…" : "Créer mon compte"}
+              {loading ? "Traitement en cours…" : "Créer mon compte & payer"}
             </button>
           </form>
 
