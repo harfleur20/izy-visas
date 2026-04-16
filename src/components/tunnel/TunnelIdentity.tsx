@@ -26,8 +26,8 @@ export default function TunnelIdentity({ identity, onUpdate, onNext, onBack }: T
   const canAdvanceName = identity.firstName.trim().length >= 2 && identity.lastName.trim().length >= 2;
   const canAdvanceBirth = identity.dateNaissance.trim().length > 0 && identity.lieuNaissance.trim().length > 0 && identity.nationalite.trim().length > 0;
   const canAdvancePassport = identity.passportNumber.trim().length >= 5;
-  const isEmailValid = /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(identity.email);
-  const isPhoneValid = identity.phone.length === 0 || isValidPhoneNumber(identity.phone);
+  const isEmailValid = /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(identity.email || "");
+  const isPhoneValid = !identity.phone || identity.phone.length === 0 || isValidPhoneNumber(identity.phone);
   const canAdvanceContact = isEmailValid && isPhoneValid;
 
   const handleNext = () => {
