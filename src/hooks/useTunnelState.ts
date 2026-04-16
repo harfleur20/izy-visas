@@ -78,6 +78,7 @@ const INITIAL_STATE: TunnelState = {
   lettreContenu: null,
   lettreNeutreUrl: null,
   optionChoisie: null,
+  paymentMethod: "stripe",
   email: null,
   stripeSessionId: null,
 };
