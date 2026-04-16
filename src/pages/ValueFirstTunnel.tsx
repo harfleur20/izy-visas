@@ -4,6 +4,8 @@ import TunnelIdentity from "@/components/tunnel/TunnelIdentity";
 import TunnelUploadRefus from "@/components/tunnel/TunnelUploadRefus";
 import TunnelVerification from "@/components/tunnel/TunnelVerification";
 import TunnelVerdict from "@/components/tunnel/TunnelVerdict";
+import TunnelPieces from "@/components/tunnel/TunnelPieces";
+import TunnelLetter from "@/components/tunnel/TunnelLetter";
 
 export default function ValueFirstTunnel() {
   const tunnel = useTunnelState();
@@ -56,9 +58,32 @@ export default function ValueFirstTunnel() {
         />
       ) : null;
 
-    // Placeholder screens — will be implemented in next phases
     case "pieces":
+      return tunnel.state.ocrData ? (
+        <TunnelPieces
+          ocrData={tunnel.state.ocrData}
+          pieces={tunnel.state.pieces}
+          onAddPiece={tunnel.addPiece}
+          onRemovePiece={tunnel.removePiece}
+          onNext={() => tunnel.setStep("letter")}
+          onBack={() => tunnel.setStep("verdict")}
+        />
+      ) : null;
+
     case "letter":
+      return tunnel.state.ocrData ? (
+        <TunnelLetter
+          identity={tunnel.state.identity}
+          ocrData={tunnel.state.ocrData}
+          pieces={tunnel.state.pieces}
+          letterContent={tunnel.state.lettreContenu}
+          onLetterGenerated={(content) => tunnel.setLettre(content)}
+          onNext={() => tunnel.setStep("payment")}
+          onBack={() => tunnel.setStep("pieces")}
+        />
+      ) : null;
+
+    // Placeholder screens — will be implemented in next phases
     case "payment":
     case "signup":
       return (
@@ -66,7 +91,7 @@ export default function ValueFirstTunnel() {
           <div className="text-center space-y-4">
             <p className="text-muted-foreground font-dm">Étape "{step}" — en construction</p>
             <button
-              onClick={() => tunnel.setStep("verdict")}
+              onClick={() => tunnel.setStep("letter")}
               className="text-sm text-primary hover:underline"
             >
               ← Retour

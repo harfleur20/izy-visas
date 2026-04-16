@@ -37,16 +37,6 @@ interface TunnelPiecesProps {
   onNext: () => void;
   onBack: () => void;
 }
-
-const VISA_LABELS: Record<string, string> = {
-  court_sejour: "Court séjour Schengen",
-  etudiant: "Long séjour étudiant",
-  conjoint_francais: "Conjoint de Français",
-  salarie: "Salarié / Travail",
-  passeport_talent: "Passeport talent",
-  visiteur: "Visiteur / Parent d'enfant français",
-};
-
 export default function TunnelPieces({
   ocrData, pieces, onAddPiece, onRemovePiece, onNext, onBack,
 }: TunnelPiecesProps) {
