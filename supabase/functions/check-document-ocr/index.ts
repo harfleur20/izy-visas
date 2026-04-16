@@ -616,7 +616,7 @@ serve(async (req) => {
 
         const evaluation = evaluateOcrResult(ocrResult, isDecisionRefus, nomPiece, ownerIdentity, autoCorrect);
 
-        console.log(`[OCR-TUNNEL] ${fileName}: score=${ocrResult.score_qualite}, accepted=${evaluation.accepted}, type=${ocrResult.type_document_detecte}`);
+        console.log(`[OCR-TUNNEL] ${fileName}: score=${ocrResult.score_qualite}, accepted=${evaluation.accepted}, type=${ocrResult.type_document_detecte}, text_snippet=${(ocrResult.texte_extrait || "").substring(0, 500)}`);
 
         return jsonResponse({
           accepted: evaluation.accepted,
