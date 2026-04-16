@@ -624,10 +624,10 @@ RAPPELS :
       : hasAVerifierRefs
         ? "a_verifier_avocat"
         : "validee_automatique";
-    const isAssignedAvocatReview =
-      authContext.roles.includes("avocat") &&
-      dossier.avocat_id === authContext.user.id &&
-      dossier.validation_juridique_status === "a_verifier_avocat";
+    const isAssignedAvocatReview = !isTunnelMode &&
+      authContext?.roles.includes("avocat") &&
+      dossier?.avocat_id === authContext?.user.id &&
+      dossier?.validation_juridique_status === "a_verifier_avocat";
     const savedValidationStatus = isAssignedAvocatReview && validationStatus === "validee_automatique"
       ? "a_verifier_avocat"
       : validationStatus;
@@ -639,20 +639,22 @@ RAPPELS :
       .replace(/\[UNVERIFIED_REFS\][\s\S]*?\[\/UNVERIFIED_REFS\]/, "")
       .trim();
 
-    // ═══ STEP 11: Save neutral letter to dossier ═══
-    const refsVerifiees = references_status_final.filter(r => r.statut === "verifie_openlegi").map(r => r.texte_reference);
-    const refsAVerifier = references_status_final.filter(r => r.statut !== "verifie_openlegi").map(r => r.texte_reference);
+    // ═══ STEP 11: Save neutral letter to dossier (skip in tunnel mode) ═══
+    if (!isTunnelMode && dossier_id) {
+      const refsVerifiees = references_status_final.filter(r => r.statut === "verifie_openlegi").map(r => r.texte_reference);
+      const refsAVerifier = references_status_final.filter(r => r.statut !== "verifie_openlegi").map(r => r.texte_reference);
 
-    await supabase.from("dossiers").update({
-      lettre_neutre_contenu: cleanLetter,
-      date_generation_neutre: new Date().toISOString(),
-      references_verifiees: refsVerifiees,
-      references_a_verifier: refsAVerifier,
-      lrar_status: "lettre_neutre_generee",
-      validation_juridique_mode: "hybride",
-      validation_juridique_status: savedValidationStatus,
-      date_validation_juridique: savedValidationStatus === "validee_automatique" ? new Date().toISOString() : null,
-    }).eq("id", dossier_id);
+      await supabase.from("dossiers").update({
+        lettre_neutre_contenu: cleanLetter,
+        date_generation_neutre: new Date().toISOString(),
+        references_verifiees: refsVerifiees,
+        references_a_verifier: refsAVerifier,
+        lrar_status: "lettre_neutre_generee",
+        validation_juridique_mode: "hybride",
+        validation_juridique_status: savedValidationStatus,
+        date_validation_juridique: savedValidationStatus === "validee_automatique" ? new Date().toISOString() : null,
+      }).eq("id", dossier_id);
+    }
 
     // Build blocking reason message
     let blocking_reason = "";
