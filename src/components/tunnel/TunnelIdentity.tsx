@@ -8,6 +8,8 @@ import { NATIONALITIES } from "@/lib/nationalities";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from "@/components/ui/command";
 import { cn } from "@/lib/utils";
+import { PhoneInput, isValidPhoneNumber } from "@/components/PhoneInput";
+
 interface TunnelIdentityProps {
   identity: TunnelIdentityData;
   onUpdate: (data: Partial<TunnelIdentityData>) => void;
@@ -15,7 +17,7 @@ interface TunnelIdentityProps {
   onBack: () => void;
 }
 
-type SubStep = "name" | "birth" | "passport";
+type SubStep = "name" | "birth" | "passport" | "contact";
 
 export default function TunnelIdentity({ identity, onUpdate, onNext, onBack }: TunnelIdentityProps) {
   const [subStep, setSubStep] = useState<SubStep>("name");
@@ -24,25 +26,35 @@ export default function TunnelIdentity({ identity, onUpdate, onNext, onBack }: T
   const canAdvanceName = identity.firstName.trim().length >= 2 && identity.lastName.trim().length >= 2;
   const canAdvanceBirth = identity.dateNaissance.trim().length > 0 && identity.lieuNaissance.trim().length > 0 && identity.nationalite.trim().length > 0;
   const canAdvancePassport = identity.passportNumber.trim().length >= 5;
+  const isEmailValid = /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(identity.email);
+  const isPhoneValid = identity.phone.length === 0 || isValidPhoneNumber(identity.phone);
+  const canAdvanceContact = isEmailValid && isPhoneValid;
 
   const handleNext = () => {
     if (subStep === "name") setSubStep("birth");
     else if (subStep === "birth") setSubStep("passport");
+    else if (subStep === "passport") setSubStep("contact");
     else onNext();
   };
 
   const handleBack = () => {
     if (subStep === "name") onBack();
     else if (subStep === "birth") setSubStep("name");
-    else setSubStep("birth");
+    else if (subStep === "passport") setSubStep("birth");
+    else setSubStep("passport");
   };
 
-  const canAdvance = subStep === "name" ? canAdvanceName : subStep === "birth" ? canAdvanceBirth : canAdvancePassport;
+  const canAdvance =
+    subStep === "name" ? canAdvanceName
+    : subStep === "birth" ? canAdvanceBirth
+    : subStep === "passport" ? canAdvancePassport
+    : canAdvanceContact;
 
   const titles: Record<SubStep, string> = {
     name: "Comment vous appelez-vous ?",
     birth: "Informations de naissance",
     passport: "Numéro de passeport",
+    contact: "Vos coordonnées",
   };
 
   return (
@@ -178,6 +190,37 @@ export default function TunnelIdentity({ identity, onUpdate, onNext, onBack }: T
             </div>
             <p className="text-xs text-muted-foreground leading-relaxed">
               Ce numéro figure sur la page d'identité de votre passeport.
+            </p>
+          </div>
+        )}
+
+        {subStep === "contact" && (
+          <div className="space-y-4">
+            <div className="space-y-2">
+              <Label htmlFor="email" className="text-sm text-muted-foreground">Adresse email</Label>
+              <Input
+                id="email"
+                type="email"
+                value={identity.email}
+                onChange={(e) => onUpdate({ email: e.target.value })}
+                placeholder="Ex : amadou@email.com"
+                className="h-12 text-base"
+                autoFocus
+              />
+              {identity.email.length > 0 && !isEmailValid && (
+                <p className="text-destructive text-xs">Adresse email invalide</p>
+              )}
+            </div>
+            <div className="space-y-2">
+              <Label className="text-sm text-muted-foreground">Numéro de téléphone <span className="text-muted-foreground/60">(optionnel)</span></Label>
+              <PhoneInput
+                value={identity.phone}
+                onChange={(v) => onUpdate({ phone: v })}
+                error={identity.phone.length > 4 && !isPhoneValid ? "Numéro invalide" : undefined}
+              />
+            </div>
+            <p className="text-xs text-muted-foreground leading-relaxed">
+              Ces informations apparaîtront sur votre lettre de contestation.
             </p>
           </div>
         )}
