@@ -88,9 +88,6 @@ export default function ValueFirstTunnel() {
     case "payment":
       return tunnel.state.ocrData ? (
         <TunnelPayment
-          identity={tunnel.state.identity}
-          ocrData={tunnel.state.ocrData}
-          letterContent={tunnel.state.lettreContenu}
           paymentMethod={tunnel.state.paymentMethod}
           onOptionSelected={(option) => tunnel.setOption(option)}
           onPaymentMethodSelected={(method) => tunnel.setPaymentMethod(method)}
