@@ -91,7 +91,9 @@ export default function ValueFirstTunnel() {
           identity={tunnel.state.identity}
           ocrData={tunnel.state.ocrData}
           letterContent={tunnel.state.lettreContenu}
+          paymentMethod={tunnel.state.paymentMethod}
           onOptionSelected={(option) => tunnel.setOption(option)}
+          onPaymentMethodSelected={(method) => tunnel.setPaymentMethod(method)}
           onNext={() => tunnel.setStep("signup")}
           onBack={() => tunnel.setStep("letter")}
         />
@@ -105,6 +107,7 @@ export default function ValueFirstTunnel() {
           pieces={tunnel.state.pieces}
           letterContent={tunnel.state.lettreContenu}
           optionChoisie={tunnel.state.optionChoisie}
+          paymentMethod={tunnel.state.paymentMethod}
           onBack={() => tunnel.setStep("payment")}
         />
       ) : null;
