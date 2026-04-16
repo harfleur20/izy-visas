@@ -369,7 +369,7 @@ function classifyDocumentType(result: MistralOcrResult, allText: string) {
     result.type_document_detecte = "acte_naissance";
   } else if (/hébergement|attestation\s*d'accueil/i.test(allText)) {
     result.type_document_detecte = "justificatif_hebergement";
-  } else if (/billet\s*(d')?avion|boarding\s*pass|flight\s*ticket|itinéraire\s*(de\s*)?vol|e-?ticket/i.test(allText)) {
+  } else if (/billet\s*(d')?avion|boarding\s*pass|flight\s*ticket|itinéraire\s*(de\s*)?vol|e-?ticket|flight\s+[A-Z]{2}\s*\d|booking\s*ref|departure.*arrival|baggage\s*allowance|reservation\s*confirm/i.test(allText)) {
     result.type_document_detecte = "billet_avion";
   } else if (/assurance\s*(de\s*)?voyage|travel\s*insurance|couverture\s*médicale/i.test(allText)) {
     result.type_document_detecte = "assurance_voyage";
