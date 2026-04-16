@@ -430,10 +430,10 @@ const ClientSpace = () => {
     if (!paymentStatus) return;
 
     if (paymentStatus === "success") {
-      toast({ title: "Paiement reçu", description: "Confirmation du webhook en cours. La signature sera débloquée après validation." });
-      setStep(9);
+      toast({ title: "✅ Paiement confirmé", description: "Vous pouvez maintenant signer votre lettre de recours." });
+      setStep(10);
     } else if (paymentStatus === "taramoney_pending") {
-      toast({ title: "Paiement Mobile Money en attente", description: "La suite sera débloquée après confirmation Tara." });
+      toast({ title: "Paiement Mobile Money en attente", description: "La signature sera débloquée après confirmation du paiement." });
       setStep(9);
     } else if (paymentStatus === "cancelled") {
       toast({ title: "Paiement annulé", description: "Aucun paiement n'a été enregistré." });
