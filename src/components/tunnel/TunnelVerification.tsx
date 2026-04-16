@@ -96,9 +96,16 @@ function checkIdentityCoherence(
 
   // Case 1: Both nom and prenom match
   const nomMatch = !hasOcrNom || fuzzyMatch(identity.lastName, ocrNom);
-  const prenomMatch = !hasOcrPrenom || !hasIdentityPrenom || fuzzyMatch(identity.firstName, ocrPrenom);
+  const prenomMatch = !hasOcrPrenom || fuzzyMatch(identity.firstName, ocrPrenom);
 
-  if (nomMatch && prenomMatch) {
+  // Only "ok" if both fields are actually provided and match
+  // If OCR has prenom but user didn't enter one, we need to warn (Case 2)
+  if (nomMatch && hasIdentityPrenom && prenomMatch) {
+    return { level: "ok", message: "Identité confirmée." };
+  }
+
+  // Also ok if OCR has no prenom and user has no prenom, but nom matches
+  if (nomMatch && !hasOcrPrenom && !hasIdentityPrenom) {
     return { level: "ok", message: "Identité confirmée." };
   }
 
