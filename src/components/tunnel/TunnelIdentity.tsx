@@ -204,9 +204,9 @@ export default function TunnelIdentity({ identity, onUpdate, onNext, onBack }: T
                 id="email"
                 type="email"
                 value={identity.email}
-                onChange={(e) => onUpdate({ email: e.target.value })}
+                onChange={(e) => onUpdate({ email: e.target.value.toLowerCase() })}
                 placeholder="Ex : amadou@email.com"
-                className="h-12 text-base"
+                className="h-12 text-base lowercase"
                 autoFocus
               />
               {identity.email.length > 0 && !isEmailValid && (
