@@ -303,7 +303,15 @@ serve(async (req) => {
     const formuleAppel = isCRRV ? "Monsieur le Président," : "Monsieur le Sous-directeur,";
     const formulePolitesse = isCRRV ? "Monsieur le Président" : "Monsieur le Sous-directeur";
 
-    const expediteurBlock = `${clientName.toUpperCase()} ${clientPrenom}\nc/o CAPDEMARCHES\n105 rue des Moines\n75017 Paris — FRANCE\nTél. : ${clientPhone || "[TÉLÉPHONE]"}\nEmail : ${email || "[EMAIL]"}`;
+    const expediteurLines = [
+      `${clientName.toUpperCase()}${clientPrenom ? " " + clientPrenom : ""}`,
+      "c/o CAPDEMARCHES",
+      "105 rue des Moines",
+      "75017 Paris — FRANCE",
+    ];
+    if (clientPhone) expediteurLines.push(`Tél. : ${clientPhone}`);
+    if (email) expediteurLines.push(`Email : ${email}`);
+    const expediteurBlock = expediteurLines.join("\n");
 
     const today = new Date();
     const dateEnLettres = dateEnToutesLettres(today);
