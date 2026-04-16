@@ -1,18 +1,13 @@
-import { useState, useMemo } from "react";
+import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { ArrowRight, ArrowLeft, Search } from "lucide-react";
+import { ArrowRight, ArrowLeft, Check, ChevronsUpDown } from "lucide-react";
 import { TunnelIdentityData } from "@/hooks/useTunnelState";
 import { NATIONALITIES } from "@/lib/nationalities";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
-
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from "@/components/ui/command";
+import { cn } from "@/lib/utils";
 interface TunnelIdentityProps {
   identity: TunnelIdentityData;
   onUpdate: (data: Partial<TunnelIdentityData>) => void;
@@ -24,6 +19,7 @@ type SubStep = "name" | "birth" | "passport";
 
 export default function TunnelIdentity({ identity, onUpdate, onNext, onBack }: TunnelIdentityProps) {
   const [subStep, setSubStep] = useState<SubStep>("name");
+  const [natOpen, setNatOpen] = useState(false);
 
   const canAdvanceName = identity.firstName.trim().length >= 2 && identity.lastName.trim().length >= 2;
   const canAdvanceBirth = identity.dateNaissance.trim().length > 0 && identity.lieuNaissance.trim().length > 0 && identity.nationalite.trim().length > 0;
@@ -119,24 +115,50 @@ export default function TunnelIdentity({ identity, onUpdate, onNext, onBack }: T
             </div>
             <div className="space-y-2">
               <Label className="text-sm text-muted-foreground">Nationalité</Label>
-              <Select
-                value={identity.nationalite}
-                onValueChange={(value) => onUpdate({ nationalite: value })}
-              >
-                <SelectTrigger className="h-12 text-base">
-                  <SelectValue placeholder="Sélectionnez votre nationalité" />
-                </SelectTrigger>
-                <SelectContent className="max-h-[280px]">
-                  {NATIONALITIES.map((n) => (
-                    <SelectItem key={n.code} value={n.label}>
+              <Popover open={natOpen} onOpenChange={setNatOpen}>
+                <PopoverTrigger asChild>
+                  <Button
+                    variant="outline"
+                    role="combobox"
+                    aria-expanded={natOpen}
+                    className="w-full h-12 justify-between text-base font-normal"
+                  >
+                    {identity.nationalite ? (
                       <span className="flex items-center gap-2">
-                        <span className="text-lg">{n.flag}</span>
-                        <span>{n.label}</span>
+                        <span className="text-lg">{NATIONALITIES.find(n => n.label === identity.nationalite)?.flag}</span>
+                        <span>{identity.nationalite}</span>
                       </span>
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+                    ) : (
+                      <span className="text-muted-foreground">Sélectionnez votre nationalité</span>
+                    )}
+                    <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
+                  </Button>
+                </PopoverTrigger>
+                <PopoverContent className="w-[var(--radix-popover-trigger-width)] p-0" align="start">
+                  <Command>
+                    <CommandInput placeholder="Rechercher un pays…" />
+                    <CommandList>
+                      <CommandEmpty>Aucun résultat.</CommandEmpty>
+                      <CommandGroup>
+                        {NATIONALITIES.map((n) => (
+                          <CommandItem
+                            key={n.code}
+                            value={`${n.flag} ${n.label}`}
+                            onSelect={() => {
+                              onUpdate({ nationalite: n.label });
+                              setNatOpen(false);
+                            }}
+                          >
+                            <Check className={cn("mr-2 h-4 w-4", identity.nationalite === n.label ? "opacity-100" : "opacity-0")} />
+                            <span className="text-lg mr-2">{n.flag}</span>
+                            {n.label}
+                          </CommandItem>
+                        ))}
+                      </CommandGroup>
+                    </CommandList>
+                  </Command>
+                </PopoverContent>
+              </Popover>
             </div>
           </div>
         )}
