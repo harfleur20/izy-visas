@@ -35,7 +35,7 @@ export default function TunnelSplash({ onNext, onLogin }: TunnelSplashProps) {
           showWelcome ? "opacity-100 translate-y-0" : "opacity-0 translate-y-6"
         }`}
       >
-        IZY<em className="not-italic bg-gold-2 text-background px-2.5 py-1 rounded-[6px] text-[1.4rem] sm:text-[2rem]">VISA</em>
+        IZY<em className="not-italic bg-[hsl(var(--gold-2))] text-[hsl(var(--background))] px-2.5 py-1 rounded-[6px] text-[1.4rem] sm:text-[2rem]">VISA</em>
       </div>
 
       {/* Welcome text */}
