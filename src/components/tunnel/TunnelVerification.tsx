@@ -2,12 +2,14 @@ import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { ArrowLeft, ArrowRight, CheckCircle2, AlertTriangle } from "lucide-react";
-import { TunnelOcrData } from "@/hooks/useTunnelState";
+import { ArrowLeft, ArrowRight, CheckCircle2, AlertTriangle, UserCheck, UserX } from "lucide-react";
+import { TunnelOcrData, TunnelIdentityData } from "@/hooks/useTunnelState";
 
 interface TunnelVerificationProps {
   ocrData: TunnelOcrData;
+  identity: TunnelIdentityData;
   onUpdate: (data: TunnelOcrData) => void;
+  onUpdateIdentity: (data: Partial<TunnelIdentityData>) => void;
   onNext: () => void;
   onBack: () => void;
 }
@@ -37,8 +39,145 @@ const MOTIF_LABELS: Record<string, string> = {
   L: "Appréciation globale défavorable",
 };
 
-export default function TunnelVerification({ ocrData, onUpdate, onNext, onBack }: TunnelVerificationProps) {
+function normalize(str: string): string {
+  return str
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/['-]/g, " ")
+    .replace(/\s+/g, " ")
+    .trim()
+    .toLowerCase();
+}
+
+function fuzzyMatch(a: string, b: string): boolean {
+  if (!a || !b) return false;
+  const na = normalize(a);
+  const nb = normalize(b);
+  if (na === nb) return true;
+  if (na.includes(nb) || nb.includes(na)) return true;
+  // Check individual parts (for compound names)
+  const partsA = na.split(" ");
+  const partsB = nb.split(" ");
+  return partsA.some(p => partsB.includes(p));
+}
+
+type CoherenceLevel = "ok" | "warning" | "error" | "no_check";
+
+interface CoherenceResult {
+  level: CoherenceLevel;
+  message: string;
+  suggestion?: string;
+}
+
+function checkIdentityCoherence(
+  identity: TunnelIdentityData,
+  ocrNom: string,
+  ocrPrenom: string
+): CoherenceResult {
+  const hasOcrNom = !!ocrNom.trim();
+  const hasOcrPrenom = !!ocrPrenom.trim();
+  const hasIdentityNom = !!identity.lastName.trim();
+  const hasIdentityPrenom = !!identity.firstName.trim();
+
+  // Case 8: OCR couldn't extract name
+  if (!hasOcrNom && !hasOcrPrenom) {
+    return {
+      level: "no_check",
+      message: "Le nom du demandeur n'a pas pu être extrait du document. Vérifiez que vos informations d'identité sont correctes.",
+    };
+  }
+
+  // Case 5: Both only have nom, no prenom, and they match
+  if (hasOcrNom && !hasOcrPrenom && hasIdentityNom && !hasIdentityPrenom) {
+    if (fuzzyMatch(identity.lastName, ocrNom)) {
+      return { level: "ok", message: "Identité confirmée." };
+    }
+  }
+
+  // Case 1: Both nom and prenom match
+  const nomMatch = !hasOcrNom || fuzzyMatch(identity.lastName, ocrNom);
+  const prenomMatch = !hasOcrPrenom || !hasIdentityPrenom || fuzzyMatch(identity.firstName, ocrPrenom);
+
+  if (nomMatch && prenomMatch) {
+    return { level: "ok", message: "Identité confirmée." };
+  }
+
+  // Case 3: Inverted (prenom in nom field or vice versa)
+  const invertedNom = hasOcrPrenom && fuzzyMatch(identity.lastName, ocrPrenom);
+  const invertedPrenom = hasOcrNom && hasIdentityPrenom && fuzzyMatch(identity.firstName, ocrNom);
+  if (invertedNom && invertedPrenom) {
+    return {
+      level: "warning",
+      message: `Il semble que le nom et le prénom soient inversés. La décision indique : ${ocrPrenom} ${ocrNom}.`,
+      suggestion: "Vérifiez et corrigez si nécessaire.",
+    };
+  }
+
+  // Case 9: firstName field contains the nom from OCR (prenom in wrong field)
+  if (hasOcrNom && hasIdentityPrenom && !hasIdentityNom && fuzzyMatch(identity.firstName, ocrNom)) {
+    return {
+      level: "warning",
+      message: `Votre prénom "${identity.firstName}" correspond au nom sur la décision. Avez-vous inversé nom et prénom ?`,
+      suggestion: "Vérifiez et corrigez si nécessaire.",
+    };
+  }
+
+  // Case 2: Identity has only nom, OCR has both — partial match
+  if (hasOcrNom && hasOcrPrenom && hasIdentityNom && !hasIdentityPrenom && nomMatch) {
+    return {
+      level: "ok",
+      message: `Nom confirmé. Le prénom sur la décision est : ${ocrPrenom}.`,
+    };
+  }
+
+  // Case 6: Orthographic differences (accents, hyphens)
+  if (hasOcrNom && hasIdentityNom) {
+    const simNom = normalize(identity.lastName) !== normalize(ocrNom) && 
+      (normalize(identity.lastName).replace(/\s/g, "") === normalize(ocrNom).replace(/\s/g, ""));
+    if (simNom) {
+      return {
+        level: "warning",
+        message: `Légère différence d'orthographe détectée : "${ocrNom}" (décision) vs "${identity.lastName}" (identité).`,
+        suggestion: "Utilisez l'orthographe exacte de votre passeport.",
+      };
+    }
+  }
+
+  // Case 7: Compound name partially entered
+  if (hasOcrPrenom && hasIdentityPrenom) {
+    const ocrParts = normalize(ocrPrenom).split(" ");
+    const idParts = normalize(identity.firstName).split(" ");
+    if (ocrParts.length > 1 && idParts.length < ocrParts.length && idParts.some(p => ocrParts.includes(p))) {
+      return {
+        level: "warning",
+        message: `La décision indique "${ocrPrenom}" comme prénom. Vous avez saisi "${identity.firstName}".`,
+        suggestion: "Entrez votre prénom complet tel qu'il figure sur votre passeport.",
+      };
+    }
+  }
+
+  // Case 4: Total mismatch
+  if (hasOcrNom && hasIdentityNom && !nomMatch) {
+    return {
+      level: "error",
+      message: `Le nom sur la décision (${ocrNom}${hasOcrPrenom ? " " + ocrPrenom : ""}) ne correspond pas à votre identité (${identity.lastName}${hasIdentityPrenom ? " " + identity.firstName : ""}).`,
+      suggestion: "Vérifiez que vous avez importé votre propre décision de refus.",
+    };
+  }
+
+  // Fallback warning
+  return {
+    level: "warning",
+    message: `Vérifiez la correspondance : décision (${ocrNom || "?"} ${ocrPrenom || "?"}) vs identité saisie (${identity.lastName} ${identity.firstName || ""}).`,
+    suggestion: "Corrigez si nécessaire.",
+  };
+}
+
+export default function TunnelVerification({ ocrData, identity, onUpdate, onUpdateIdentity, onNext, onBack }: TunnelVerificationProps) {
   const [editData, setEditData] = useState<TunnelOcrData>({ ...ocrData });
+  const [coherenceAcknowledged, setCoherenceAcknowledged] = useState(false);
+
+  const coherence = checkIdentityCoherence(identity, editData.demandeurNom, editData.demandeurPrenom);
 
   const update = (partial: Partial<TunnelOcrData>) => {
     const updated = { ...editData, ...partial };
@@ -59,7 +198,8 @@ export default function TunnelVerification({ ocrData, onUpdate, onNext, onBack }
 
   const hasMotifs = editData.motifsRefus.length > 0;
   const hasDate = editData.dateNotificationRefus.trim().length > 0;
-  const canContinue = hasMotifs && hasDate;
+  const coherenceBlocking = coherence.level === "error" && !coherenceAcknowledged;
+  const canContinue = hasMotifs && hasDate && !coherenceBlocking;
 
   return (
     <div className="fixed inset-0 bg-background flex flex-col overflow-y-auto">
@@ -81,6 +221,73 @@ export default function TunnelVerification({ ocrData, onUpdate, onNext, onBack }
           <p className="text-sm text-muted-foreground mb-6">
             Corrigez si nécessaire les données extraites de votre décision.
           </p>
+
+          {/* Identity coherence alert */}
+          {coherence.level !== "ok" && (
+            <div className={`rounded-xl p-4 mb-6 border ${
+              coherence.level === "error" 
+                ? "bg-destructive/10 border-destructive/30" 
+                : coherence.level === "warning"
+                ? "bg-amber-500/10 border-amber-500/30"
+                : "bg-muted/50 border-border"
+            }`}>
+              <div className="flex items-start gap-3">
+                {coherence.level === "error" ? (
+                  <UserX className="w-5 h-5 text-destructive shrink-0 mt-0.5" />
+                ) : coherence.level === "warning" ? (
+                  <AlertTriangle className="w-5 h-5 text-amber-400 shrink-0 mt-0.5" />
+                ) : (
+                  <UserCheck className="w-5 h-5 text-muted-foreground shrink-0 mt-0.5" />
+                )}
+                <div className="space-y-2 flex-1">
+                  <p className={`text-sm font-medium ${
+                    coherence.level === "error" ? "text-destructive" 
+                    : coherence.level === "warning" ? "text-amber-400" 
+                    : "text-muted-foreground"
+                  }`}>
+                    {coherence.level === "error" ? "Incohérence d'identité" : "Vérification d'identité"}
+                  </p>
+                  <p className="text-sm text-foreground/80">{coherence.message}</p>
+                  {coherence.suggestion && (
+                    <p className="text-xs text-muted-foreground">{coherence.suggestion}</p>
+                  )}
+                  
+                  {/* Quick fix buttons for name issues */}
+                  {coherence.level === "error" && (
+                    <div className="flex flex-col gap-2 mt-3">
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => {
+                          onUpdateIdentity({
+                            lastName: editData.demandeurNom,
+                            firstName: editData.demandeurPrenom,
+                          });
+                        }}
+                        className="text-xs"
+                      >
+                        <UserCheck className="w-3.5 h-3.5 mr-1.5" />
+                        Utiliser le nom de la décision : {editData.demandeurNom} {editData.demandeurPrenom}
+                      </Button>
+                      <button
+                        onClick={() => setCoherenceAcknowledged(true)}
+                        className="text-xs text-muted-foreground underline hover:text-foreground transition-colors text-left"
+                      >
+                        J'ai vérifié, je confirme mon identité telle que saisie
+                      </button>
+                    </div>
+                  )}
+                </div>
+              </div>
+            </div>
+          )}
+
+          {coherence.level === "ok" && (
+            <div className="rounded-xl p-3 mb-6 border border-emerald-500/30 bg-emerald-500/10 flex items-center gap-2">
+              <UserCheck className="w-4 h-4 text-emerald-400" />
+              <p className="text-sm text-emerald-400">{coherence.message}</p>
+            </div>
+          )}
 
           {/* Type de visa */}
           <div className="space-y-2 mb-5">

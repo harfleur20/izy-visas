@@ -52,7 +52,9 @@ export default function ValueFirstTunnel() {
       return tunnel.state.ocrData ? (
         <TunnelVerification
           ocrData={tunnel.state.ocrData}
+          identity={tunnel.state.identity}
           onUpdate={(data) => tunnel.setOcrData(data)}
+          onUpdateIdentity={tunnel.setIdentity}
           onNext={() => tunnel.setStep("verdict")}
           onBack={() => tunnel.setStep("upload_refus")}
         />
