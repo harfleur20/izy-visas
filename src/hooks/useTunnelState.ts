@@ -18,6 +18,8 @@ export interface TunnelIdentityData {
   lieuNaissance: string;
   nationalite: string;
   passportNumber: string;
+  phone: string;
+  email: string;
 }
 
 export interface TunnelOcrData {
@@ -66,6 +68,8 @@ const INITIAL_IDENTITY: TunnelIdentityData = {
   lieuNaissance: "",
   nationalite: "",
   passportNumber: "",
+  phone: "",
+  email: "",
 };
 
 const INITIAL_STATE: TunnelState = {
