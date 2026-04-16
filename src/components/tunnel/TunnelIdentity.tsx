@@ -111,6 +111,8 @@ export default function TunnelIdentity({ identity, onUpdate, onNext, onBack }: T
                 type="date"
                 value={identity.dateNaissance}
                 onChange={(e) => onUpdate({ dateNaissance: e.target.value })}
+                max={new Date().toISOString().split("T")[0]}
+                min="1900-01-01"
                 className="h-12 text-base"
                 autoFocus
               />
