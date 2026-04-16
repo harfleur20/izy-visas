@@ -135,6 +135,10 @@ export function useTunnelState() {
     setState((prev) => ({ ...prev, optionChoisie: option }));
   }, []);
 
+  const setPaymentMethod = useCallback((method: "stripe" | "taramoney") => {
+    setState((prev) => ({ ...prev, paymentMethod: method }));
+  }, []);
+
   const setEmail = useCallback((email: string | null) => {
     setState((prev) => ({ ...prev, email }));
   }, []);
