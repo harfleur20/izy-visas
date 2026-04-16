@@ -94,7 +94,7 @@ serve(async (req) => {
     const authContext = await requireAuthenticatedContext(req, supabaseAdmin, supabaseUser);
     if (!authContext.user.email) throw new Error("User not authenticated or email not available");
 
-    const { dossier_ref, option } = await req.json();
+    const { dossier_ref, option, from_tunnel } = await req.json();
     if (!dossier_ref) throw new Error("dossier_ref is required");
     assertSendOption(option);
 
@@ -107,7 +107,7 @@ serve(async (req) => {
 
     if (dossierError || !dossier) throw new Error("Dossier introuvable: " + dossier_ref);
     assertDossierAccess(authContext, dossier);
-    await assertPaymentPrerequisites(supabaseAdmin, dossier, option);
+    await assertPaymentPrerequisites(supabaseAdmin, dossier, option, { fromTunnel: from_tunnel === true });
 
     const stripe = new Stripe(Deno.env.get("STRIPE_SECRET_KEY") || "", {
       apiVersion: "2025-08-27.basil",

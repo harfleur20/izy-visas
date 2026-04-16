@@ -54,6 +54,7 @@ export interface TunnelState {
   lettreContenu: string | null;
   lettreNeutreUrl: string | null;
   optionChoisie: string | null;
+  paymentMethod: "stripe" | "taramoney";
   email: string | null;
   stripeSessionId: string | null;
 }
