@@ -98,9 +98,6 @@ export default function TunnelLetter({
           <button onClick={onBack} className="flex items-center gap-1.5 text-sm text-muted-foreground hover:text-foreground transition-colors">
             <ArrowLeft className="w-4 h-4" /> Retour
           </button>
-          <div className="font-syne font-extrabold text-lg tracking-tight">
-            IZY<em className="not-italic bg-[hsl(var(--gold-2))] text-[hsl(var(--background))] px-1.5 py-0.5 rounded-[4px] text-sm">VISA</em>
-          </div>
           <span className="text-xs text-muted-foreground font-dm">Étape 6 sur 7</span>
         </div>
 
