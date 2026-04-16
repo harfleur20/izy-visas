@@ -100,12 +100,12 @@ export default function TunnelLetter({
         </div>
 
         <h2 className="font-fraunces text-[clamp(1.3rem,3.5vw,1.8rem)] text-cream mb-2 leading-tight">
-          {letterContent ? "Votre lettre de recours" : "Générer votre lettre"}
+          {letterContent ? "Votre lettre de contestation" : "Générez votre lettre de contestation"}
         </h2>
         <p className="text-sm text-muted-foreground mb-6 leading-relaxed">
           {letterContent
             ? "Voici un aperçu de votre lettre. Le contenu complet sera accessible après paiement."
-            : "Nous allons générer une lettre de recours juridiquement argumentée à partir de vos données."
+            : "Nous allons générer une lettre de contestation juridiquement argumentée à partir de vos données."
           }
         </p>
 

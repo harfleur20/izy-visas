@@ -83,11 +83,11 @@ export default function TunnelVerdict({ ocrData, onNext, onBack }: TunnelVerdict
         <ShieldCheck className="w-16 h-16 text-emerald-400 mx-auto mb-4" />
 
         <h2 className="font-fraunces text-[clamp(1.3rem,3.5vw,2rem)] text-cream mb-3 leading-tight">
-          Votre refus est contestable
+          Ce motif peut être annulé
         </h2>
 
         <p className="text-base text-muted-foreground mb-6 leading-relaxed">
-          Rien n'est perdu. Vous pouvez encore obtenir votre visa.
+          Rien n'est perdu, vous pouvez encore obtenir votre visa.
         </p>
 
         {/* Motifs summary */}

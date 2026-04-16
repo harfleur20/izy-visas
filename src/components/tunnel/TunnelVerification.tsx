@@ -76,10 +76,10 @@ export default function TunnelVerification({ ocrData, onUpdate, onNext, onBack }
         <div className="w-full max-w-[480px] animate-in fade-in slide-in-from-bottom-4 duration-500">
           <div className="flex items-center gap-2 mb-2">
             <CheckCircle2 className="w-6 h-6 text-emerald-400" />
-            <h2 className="font-fraunces text-xl text-cream">Document analysé</h2>
+            <h2 className="font-fraunces text-xl text-cream">Vérifiez que ces informations sont exactes</h2>
           </div>
           <p className="text-sm text-muted-foreground mb-6">
-            Vérifiez que ces informations sont exactes et corrigez si nécessaire.
+            Corrigez si nécessaire les données extraites de votre décision.
           </p>
 
           {/* Type de visa */}

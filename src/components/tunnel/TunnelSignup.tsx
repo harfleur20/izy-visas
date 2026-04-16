@@ -213,7 +213,7 @@ export default function TunnelSignup({
               </em>
             </div>
             <p className="text-muted-foreground text-sm font-dm">
-              Créez votre compte pour finaliser
+              Êtes-vous satisfait ? Si oui, créez votre compte
             </p>
           </div>
 
