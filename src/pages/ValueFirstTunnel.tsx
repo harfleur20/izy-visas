@@ -1,5 +1,7 @@
+import { useState } from "react";
 import { useTunnelState } from "@/hooks/useTunnelState";
 import TunnelSplash from "@/components/tunnel/TunnelSplash";
+import TunnelLogin from "@/components/tunnel/TunnelLogin";
 import TunnelIdentity from "@/components/tunnel/TunnelIdentity";
 import TunnelUploadRefus from "@/components/tunnel/TunnelUploadRefus";
 import TunnelVerification from "@/components/tunnel/TunnelVerification";
@@ -12,10 +14,15 @@ import TunnelSignup from "@/components/tunnel/TunnelSignup";
 export default function ValueFirstTunnel() {
   const tunnel = useTunnelState();
   const { step } = tunnel.state;
+  const [showLogin, setShowLogin] = useState(false);
+
+  if (showLogin) {
+    return <TunnelLogin onBack={() => setShowLogin(false)} />;
+  }
 
   switch (step) {
     case "splash":
-      return <TunnelSplash onNext={() => tunnel.setStep("identity")} />;
+      return <TunnelSplash onNext={() => tunnel.setStep("identity")} onLogin={() => setShowLogin(true)} />;
 
     case "identity":
       return (
