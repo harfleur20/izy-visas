@@ -254,7 +254,7 @@ export default function TunnelVerification({ ocrData, identity, onUpdate, onUpda
                   )}
                   
                   {/* Quick fix buttons for name issues */}
-                  {coherence.level === "error" && (
+                  {(coherence.level === "error" || coherence.level === "warning") && editData.demandeurNom && (
                     <div className="flex flex-col gap-2 mt-3">
                       <Button
                         variant="outline"
@@ -262,7 +262,7 @@ export default function TunnelVerification({ ocrData, identity, onUpdate, onUpda
                         onClick={() => {
                           onUpdateIdentity({
                             lastName: editData.demandeurNom,
-                            firstName: editData.demandeurPrenom,
+                            ...(editData.demandeurPrenom ? { firstName: editData.demandeurPrenom } : {}),
                           });
                         }}
                         className="text-xs"
@@ -270,12 +270,14 @@ export default function TunnelVerification({ ocrData, identity, onUpdate, onUpda
                         <UserCheck className="w-3.5 h-3.5 mr-1.5" />
                         Utiliser le nom de la décision : {editData.demandeurNom} {editData.demandeurPrenom}
                       </Button>
-                      <button
-                        onClick={() => setCoherenceAcknowledged(true)}
-                        className="text-xs text-muted-foreground underline hover:text-foreground transition-colors text-left"
-                      >
-                        J'ai vérifié, je confirme mon identité telle que saisie
-                      </button>
+                      {coherence.level === "error" && (
+                        <button
+                          onClick={() => setCoherenceAcknowledged(true)}
+                          className="text-xs text-muted-foreground underline hover:text-foreground transition-colors text-left"
+                        >
+                          J'ai vérifié, je confirme mon identité telle que saisie
+                        </button>
+                      )}
                     </div>
                   )}
                 </div>
