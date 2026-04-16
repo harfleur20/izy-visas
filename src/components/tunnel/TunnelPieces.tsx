@@ -3,13 +3,9 @@ import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
-import { Progress } from "@/components/ui/progress";
 import {
-  Accordion, AccordionContent, AccordionItem, AccordionTrigger,
-} from "@/components/ui/accordion";
-import {
-  ArrowRight, ArrowLeft, Upload, Camera, FolderOpen, CheckCircle2,
-  AlertTriangle, FileText, Info, Globe, Stamp, X,
+  ArrowRight, ArrowLeft, Camera, FolderOpen, CheckCircle2,
+  AlertTriangle, Info, Globe, X,
 } from "lucide-react";
 import type { TunnelPieceFile, TunnelOcrData } from "@/hooks/useTunnelState";
 
