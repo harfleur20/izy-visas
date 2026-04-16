@@ -1,9 +1,17 @@
-import { useState } from "react";
+import { useState, useMemo } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { ArrowRight, ArrowLeft } from "lucide-react";
+import { ArrowRight, ArrowLeft, Search } from "lucide-react";
 import { TunnelIdentityData } from "@/hooks/useTunnelState";
+import { NATIONALITIES } from "@/lib/nationalities";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 
 interface TunnelIdentityProps {
   identity: TunnelIdentityData;
@@ -110,14 +118,25 @@ export default function TunnelIdentity({ identity, onUpdate, onNext, onBack }: T
               />
             </div>
             <div className="space-y-2">
-              <Label htmlFor="nationalite" className="text-sm text-muted-foreground">Nationalité</Label>
-              <Input
-                id="nationalite"
+              <Label className="text-sm text-muted-foreground">Nationalité</Label>
+              <Select
                 value={identity.nationalite}
-                onChange={(e) => onUpdate({ nationalite: e.target.value })}
-                placeholder="Ex : Camerounaise"
-                className="h-12 text-base"
-              />
+                onValueChange={(value) => onUpdate({ nationalite: value })}
+              >
+                <SelectTrigger className="h-12 text-base">
+                  <SelectValue placeholder="Sélectionnez votre nationalité" />
+                </SelectTrigger>
+                <SelectContent className="max-h-[280px]">
+                  {NATIONALITIES.map((n) => (
+                    <SelectItem key={n.code} value={n.label}>
+                      <span className="flex items-center gap-2">
+                        <span className="text-lg">{n.flag}</span>
+                        <span>{n.label}</span>
+                      </span>
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
             </div>
           </div>
         )}
