@@ -48,9 +48,6 @@ function getPrice(option: SendOption, tarifs: Tarifs) {
 }
 
 interface TunnelPaymentProps {
-  identity: { firstName: string; lastName: string };
-  ocrData: { visaType: string };
-  letterContent: string | null;
   paymentMethod: PaymentMethod;
   onOptionSelected: (option: string) => void;
   onPaymentMethodSelected: (method: PaymentMethod) => void;
@@ -59,9 +56,6 @@ interface TunnelPaymentProps {
 }
 
 export default function TunnelPayment({
-  identity,
-  ocrData,
-  letterContent,
   paymentMethod,
   onOptionSelected,
   onPaymentMethodSelected,
