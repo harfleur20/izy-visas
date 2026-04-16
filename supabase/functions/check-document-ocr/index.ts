@@ -358,7 +358,7 @@ function classifyDocumentType(result: MistralOcrResult, allText: string) {
     result.type_document_detecte = "decision_refus";
   } else if (/passeport|passport/i.test(allText)) {
     result.type_document_detecte = "passeport";
-  } else if (/relevé\s*(de\s*)?compte|bank\s*statement|solde\s*(comptable|créditeur)|opérations\s*bancaires/i.test(allText)) {
+  } else if (/relevé\s*(de\s*)?compte|bank\s*statement|solde\s*(comptable|créditeur|disponible)|opérations?\s*bancaire|account\s*statement|extrait\s*(de\s*)?compte|mouvement[s]?\s*(de\s*)?compte|historique\s*(des?\s*)?transaction|récapitulatif\s*(de\s*)?compte|situation\s*(de\s*)?compte|état\s*(de\s*)?compte|relevé\s*bancaire|relevé\s*d['']?identité\s*bancaire|RIB|IBAN\s*[A-Z]{2}\d|BIC\s*[A-Z]{4}|débit.*crédit|crédit.*débit|date\s*(de\s*)?valeur|solde\s*(en\s*)?fin|solde\s*(au|en)\s*\d|nouveau\s*solde|ancien\s*solde|total\s*des?\s*(débit|crédit)|numéro\s*(de\s*)?compte|n°\s*compte|account\s*(number|no)|balance\s*(forward|brought)|closing\s*balance|opening\s*balance|statement\s*(of\s*)?account|transaction\s*history|account\s*summary/i.test(allText)) {
     result.type_document_detecte = "releve_bancaire";
   } else if (/contrat\s*(de\s*)?travail|employment\s*contract|embauche/i.test(allText)) {
     result.type_document_detecte = "contrat_travail";
