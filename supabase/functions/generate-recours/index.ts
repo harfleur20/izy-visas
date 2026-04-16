@@ -131,6 +131,8 @@ serve(async (req) => {
       decisionRef = ocr.numeroDecision || "";
       consulat = [ocr.consulatNom, ocr.consulatVille, ocr.consulatPays].filter(Boolean).join(", ");
       passportNumber = identity.passportNumber || "";
+      clientPhone = identity.phone || "";
+      email = identity.email || "";
       destinataireRecours = ocr.destinataireRecours || "crrv_nantes";
       piecesJointes = (tunnelPieces || []).map((p: { nomPiece: string; pages?: number }) => ({
         name: p.nomPiece,
