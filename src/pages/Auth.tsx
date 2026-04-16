@@ -13,6 +13,13 @@ const Auth = () => {
   const [searchParams] = useSearchParams();
   const { session, role, hasMfaEnabled } = useAuth();
   const [mode, setMode] = useState<"login" | "signup" | "forgot">("login");
+
+  // Block direct access — only allow with ?email= (activation flows)
+  useEffect(() => {
+    if (!searchParams.get("email")) {
+      navigate("/", { replace: true });
+    }
+  }, [searchParams, navigate]);
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [firstName, setFirstName] = useState("");
