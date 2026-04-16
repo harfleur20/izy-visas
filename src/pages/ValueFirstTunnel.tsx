@@ -6,6 +6,8 @@ import TunnelVerification from "@/components/tunnel/TunnelVerification";
 import TunnelVerdict from "@/components/tunnel/TunnelVerdict";
 import TunnelPieces from "@/components/tunnel/TunnelPieces";
 import TunnelLetter from "@/components/tunnel/TunnelLetter";
+import TunnelPayment from "@/components/tunnel/TunnelPayment";
+import TunnelSignup from "@/components/tunnel/TunnelSignup";
 
 export default function ValueFirstTunnel() {
   const tunnel = useTunnelState();
@@ -83,22 +85,29 @@ export default function ValueFirstTunnel() {
         />
       ) : null;
 
-    // Placeholder screens — will be implemented in next phases
     case "payment":
+      return tunnel.state.ocrData ? (
+        <TunnelPayment
+          identity={tunnel.state.identity}
+          ocrData={tunnel.state.ocrData}
+          letterContent={tunnel.state.lettreContenu}
+          onOptionSelected={(option) => tunnel.setOption(option)}
+          onNext={() => tunnel.setStep("signup")}
+          onBack={() => tunnel.setStep("letter")}
+        />
+      ) : null;
+
     case "signup":
-      return (
-        <div className="fixed inset-0 bg-background flex items-center justify-center px-6">
-          <div className="text-center space-y-4">
-            <p className="text-muted-foreground font-dm">Étape "{step}" — en construction</p>
-            <button
-              onClick={() => tunnel.setStep("letter")}
-              className="text-sm text-primary hover:underline"
-            >
-              ← Retour
-            </button>
-          </div>
-        </div>
-      );
+      return tunnel.state.ocrData ? (
+        <TunnelSignup
+          identity={tunnel.state.identity}
+          ocrData={tunnel.state.ocrData}
+          pieces={tunnel.state.pieces}
+          letterContent={tunnel.state.lettreContenu}
+          optionChoisie={tunnel.state.optionChoisie}
+          onBack={() => tunnel.setStep("payment")}
+        />
+      ) : null;
 
     default:
       return null;
