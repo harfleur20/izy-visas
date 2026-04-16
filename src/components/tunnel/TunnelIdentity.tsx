@@ -1,18 +1,24 @@
-import { useState, useMemo } from "react";
+import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { ArrowRight, ArrowLeft, Search } from "lucide-react";
+import { ArrowRight, ArrowLeft, Check, ChevronsUpDown } from "lucide-react";
 import { TunnelIdentityData } from "@/hooks/useTunnelState";
 import { NATIONALITIES } from "@/lib/nationalities";
 import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
-
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from "@/components/ui/popover";
+import {
+  Command,
+  CommandEmpty,
+  CommandGroup,
+  CommandInput,
+  CommandItem,
+  CommandList,
+} from "@/components/ui/command";
+import { cn } from "@/lib/utils";
 interface TunnelIdentityProps {
   identity: TunnelIdentityData;
   onUpdate: (data: Partial<TunnelIdentityData>) => void;
