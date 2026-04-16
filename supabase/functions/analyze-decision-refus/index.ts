@@ -153,7 +153,9 @@ serve(async (req) => {
     // supabaseAdmin already declared above
 
     const ext = fileName.split(".").pop()?.toLowerCase() || "pdf";
-    const storagePath = `${dossierId}/decision_refus/decision_${Date.now()}.${ext}`;
+    const storagePath = tunnelMode
+      ? `tunnel_temp/${Date.now()}_${Math.random().toString(36).slice(2, 8)}/decision.${ext}`
+      : `${dossierId}/decision_refus/decision_${Date.now()}.${ext}`;
 
     const { error: uploadErr } = await supabaseAdmin.storage
       .from("dossiers")
