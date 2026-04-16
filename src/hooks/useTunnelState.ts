@@ -35,6 +35,8 @@ export interface TunnelOcrData {
   destinataireRecours: string;
   langueDocument: string;
   scoreOcr: number;
+  demandeurNom: string;
+  demandeurPrenom: string;
 }
 
 export interface TunnelPieceFile {

@@ -409,13 +409,7 @@ serve(async (req) => {
       nom_mismatch: nomMismatch,
     };
 
-    if (nomMismatch) {
-      return jsonResponse({
-        status: "name_mismatch",
-        message: "Le nom sur la décision ne correspond pas au titulaire du dossier.",
-        data: extractedData,
-      });
-    }
+    // Name mismatch is now a warning, not a block — handled client-side
 
     if (confidence < 70) {
       return jsonResponse({
