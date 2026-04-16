@@ -71,6 +71,7 @@ export default function ValueFirstTunnel() {
       return tunnel.state.ocrData ? (
         <TunnelPieces
           ocrData={tunnel.state.ocrData}
+          identity={tunnel.state.identity}
           pieces={tunnel.state.pieces}
           onAddPiece={tunnel.addPiece}
           onRemovePiece={tunnel.removePiece}
