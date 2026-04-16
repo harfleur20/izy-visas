@@ -58,7 +58,7 @@ export default function TunnelSplash({ onNext, onLogin }: TunnelSplashProps) {
 
       {/* CTA */}
       <div
-        className={`transition-all duration-500 ${
+        className={`flex flex-col items-center transition-all duration-500 ${
           showButton ? "opacity-100 translate-y-0" : "opacity-0 translate-y-4"
         }`}
       >
@@ -73,9 +73,7 @@ export default function TunnelSplash({ onNext, onLogin }: TunnelSplashProps) {
 
         <button
           onClick={onLogin}
-          className={`mt-4 text-sm text-muted-foreground hover:text-foreground font-syne transition-all duration-500 ${
-            showButton ? "opacity-100 translate-y-0" : "opacity-0 translate-y-4"
-          }`}
+          className="mt-4 text-sm text-muted-foreground hover:text-foreground font-syne transition-colors"
         >
           Déjà un compte ? <span className="text-primary-hover font-bold">Se connecter</span>
         </button>
