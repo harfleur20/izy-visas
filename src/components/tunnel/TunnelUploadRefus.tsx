@@ -115,7 +115,17 @@ export default function TunnelUploadRefus({ firstName, lastName, onComplete, onB
         return;
       }
 
-      // Success, partial, or name_mismatch — all have data
+      // Handle name mismatch with explicit warning
+      if (data.status === "name_mismatch") {
+        const docName = data.data?.demandeur;
+        setErrorMessage(
+          `⚠️ Le nom sur la décision (${docName?.nom || "?"} ${docName?.prenom || "?"}) ne correspond pas à votre identité (${lastName} ${firstName}).\n\nVérifiez que vous avez importé votre propre décision de refus et non celle d'une autre personne.`
+        );
+        setPhase("error");
+        return;
+      }
+
+      // Success or partial — data present
       const extracted = data.data;
       if (!extracted) {
         setErrorMessage("Données extraites manquantes. Réessayez.");
@@ -138,6 +148,7 @@ export default function TunnelUploadRefus({ firstName, lastName, onComplete, onB
         scoreOcr: extracted.confiance_extraction || 0,
       };
 
+      onComplete(ocrData, file);
       onComplete(ocrData, file);
     } catch (err) {
       clearInterval(progressInterval);
