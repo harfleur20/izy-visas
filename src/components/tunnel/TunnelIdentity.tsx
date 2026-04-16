@@ -72,7 +72,7 @@ export default function TunnelIdentity({ identity, onUpdate, onNext, onBack }: T
                 id="firstName"
                 value={identity.firstName}
                 onChange={(e) => onUpdate({ firstName: e.target.value })}
-                placeholder="Ex : Jean"
+                placeholder="Ex : Amadou"
                 className="h-12 text-base"
                 autoFocus
               />
@@ -83,7 +83,7 @@ export default function TunnelIdentity({ identity, onUpdate, onNext, onBack }: T
                 id="lastName"
                 value={identity.lastName}
                 onChange={(e) => onUpdate({ lastName: e.target.value.toUpperCase() })}
-                placeholder="Ex : DUPONT"
+                placeholder="Ex : NDIAYE"
                 className="h-12 text-base"
               />
             </div>
