@@ -26,7 +26,7 @@ const ProtectedRoute = ({ children, allowedRoles, requireMfa }: ProtectedRoutePr
   }
 
   if (!session) {
-    return <Navigate to="/auth" replace />;
+    return <Navigate to="/" replace />;
   }
 
   // MFA required for admin roles
