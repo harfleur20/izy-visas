@@ -80,7 +80,7 @@ export default function TunnelLogin({ onBack }: TunnelLoginProps) {
         {/* Logo */}
         <div className="text-center mb-8">
           <div className="font-syne font-extrabold text-[2rem] tracking-tight mb-2">
-            IZY<em className="not-italic bg-gold-2 text-background px-2 py-0.5 rounded-[5px]">VISA</em>
+            IZY<em className="not-italic bg-[hsl(var(--gold-2))] text-[hsl(var(--background))] px-2 py-0.5 rounded-[5px]">VISA</em>
           </div>
           <p className="text-muted-foreground text-sm">
             {mode === "forgot" ? "Réinitialisation du mot de passe" : "Connectez-vous à votre espace"}
