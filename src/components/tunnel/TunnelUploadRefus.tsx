@@ -115,15 +115,8 @@ export default function TunnelUploadRefus({ firstName, lastName, onComplete, onB
         return;
       }
 
-      // Handle name mismatch with explicit warning
-      if (data.status === "name_mismatch") {
-        const docName = data.data?.demandeur;
-        setErrorMessage(
-          `⚠️ Le nom sur la décision (${docName?.nom || "?"} ${docName?.prenom || "?"}) ne correspond pas à votre identité (${lastName} ${firstName}).\n\nVérifiez que vous avez importé votre propre décision de refus et non celle d'une autre personne.`
-        );
-        setPhase("error");
-        return;
-      }
+      // Name mismatch is now handled as a warning in the verification step
+      // No longer blocking here
 
       // Success or partial — data present
       const extracted = data.data;
@@ -146,6 +139,8 @@ export default function TunnelUploadRefus({ firstName, lastName, onComplete, onB
         destinataireRecours: extracted.destinataire_recours || "crrv_nantes",
         langueDocument: extracted.langue_document || "fr",
         scoreOcr: extracted.confiance_extraction || 0,
+        demandeurNom: extracted.demandeur?.nom || "",
+        demandeurPrenom: extracted.demandeur?.prenom || "",
       };
 
       onComplete(ocrData, file);
