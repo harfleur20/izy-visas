@@ -161,6 +161,7 @@ export function useTunnelState() {
     removePiece,
     setLettre,
     setOption,
+    setPaymentMethod,
     setEmail,
     setStripeSessionId,
     reset,
