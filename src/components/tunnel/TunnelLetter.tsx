@@ -41,6 +41,8 @@ export default function TunnelLetter({
             lieuNaissance: identity.lieuNaissance,
             nationalite: identity.nationalite,
             passportNumber: identity.passportNumber,
+            phone: identity.phone,
+            email: identity.email,
           },
           ocr: {
             visaType: ocrData.visaType,
