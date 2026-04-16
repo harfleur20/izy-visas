@@ -4,9 +4,10 @@ import { ArrowRight } from "lucide-react";
 
 interface TunnelSplashProps {
   onNext: () => void;
+  onLogin: () => void;
 }
 
-export default function TunnelSplash({ onNext }: TunnelSplashProps) {
+export default function TunnelSplash({ onNext, onLogin }: TunnelSplashProps) {
   const [showWelcome, setShowWelcome] = useState(false);
   const [showTagline, setShowTagline] = useState(false);
   const [showButton, setShowButton] = useState(false);
@@ -69,6 +70,15 @@ export default function TunnelSplash({ onNext }: TunnelSplashProps) {
           Commencer
           <ArrowRight className="w-5 h-5" />
         </Button>
+
+        <button
+          onClick={onLogin}
+          className={`mt-4 text-sm text-muted-foreground hover:text-foreground font-syne transition-all duration-500 ${
+            showButton ? "opacity-100 translate-y-0" : "opacity-0 translate-y-4"
+          }`}
+        >
+          Déjà un compte ? <span className="text-primary-hover font-bold">Se connecter</span>
+        </button>
       </div>
 
       {/* Footer */}
