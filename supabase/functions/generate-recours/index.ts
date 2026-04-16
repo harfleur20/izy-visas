@@ -303,7 +303,15 @@ serve(async (req) => {
     const formuleAppel = isCRRV ? "Monsieur le Président," : "Monsieur le Sous-directeur,";
     const formulePolitesse = isCRRV ? "Monsieur le Président" : "Monsieur le Sous-directeur";
 
-    const expediteurBlock = `${clientName.toUpperCase()} ${clientPrenom}\nc/o CAPDEMARCHES\n105 rue des Moines\n75017 Paris — FRANCE\nTél. : ${clientPhone || "[TÉLÉPHONE]"}\nEmail : ${email || "[EMAIL]"}`;
+    const expediteurLines = [
+      `${clientName.toUpperCase()}${clientPrenom ? " " + clientPrenom : ""}`,
+      "c/o CAPDEMARCHES",
+      "105 rue des Moines",
+      "75017 Paris — FRANCE",
+    ];
+    if (clientPhone) expediteurLines.push(`Tél. : ${clientPhone}`);
+    if (email) expediteurLines.push(`Email : ${email}`);
+    const expediteurBlock = expediteurLines.join("\n");
 
     const today = new Date();
     const dateEnLettres = dateEnToutesLettres(today);
@@ -338,7 +346,7 @@ BLOC 2 — EN-TÊTE DESTINATAIRE (en haut à droite) :
 ${destinataireBlock}
 
 BLOC 3 — LIEU ET DATE :
-${clientVille || "[VILLE]"}, le ${dateEnLettres}
+${clientVille || "Paris"}, le ${dateEnLettres}
 
 BLOC 4 — OBJET ET RÉFÉRENCES :
 Objet : Recours contre la décision de refus de visa ${visaTypeExact} notifiée le ${decisionDate} par ${consulat}
