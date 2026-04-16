@@ -346,7 +346,7 @@ BLOC 2 — EN-TÊTE DESTINATAIRE (en haut à droite) :
 ${destinataireBlock}
 
 BLOC 3 — LIEU ET DATE :
-${clientVille || "[VILLE]"}, le ${dateEnLettres}
+${clientVille || "Paris"}, le ${dateEnLettres}
 
 BLOC 4 — OBJET ET RÉFÉRENCES :
 Objet : Recours contre la décision de refus de visa ${visaTypeExact} notifiée le ${decisionDate} par ${consulat}
