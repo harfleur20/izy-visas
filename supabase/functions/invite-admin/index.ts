@@ -114,22 +114,48 @@ serve(async (req) => {
       throw new HttpError(400, "Role invalide");
     }
 
+    if (!date_debut) {
+      throw new HttpError(400, "La date de debut est obligatoire");
+    }
+
     if (date_debut && date_fin && date_fin < date_debut) {
       throw new HttpError(400, "La date de fin doit etre posterieure a la date de debut");
     }
 
     const { data: existingInvitation } = await supabaseAdmin
       .from("admin_invitations")
-      .select("id")
+      .select("id, used_at, revoked, expires_at")
       .eq("email", email)
-      .eq("revoked", false)
-      .is("used_at", null)
-      .gt("expires_at", new Date().toISOString())
+      .order("created_at", { ascending: false })
       .limit(1)
       .maybeSingle();
 
     if (existingInvitation) {
-      throw new HttpError(409, "Une invitation active existe deja pour cet email");
+      const isActive = !existingInvitation.revoked
+        && !existingInvitation.used_at
+        && new Date(existingInvitation.expires_at).getTime() > Date.now();
+      if (isActive) {
+        throw new HttpError(409, "Une invitation active existe deja pour cet email");
+      }
+      if (existingInvitation.used_at) {
+        throw new HttpError(409, "Cet email a deja ete utilise pour activer un compte administrateur");
+      }
+    }
+
+    // Check if an admin user already exists with this email
+    const { data: usersList } = await supabaseAdmin.auth.admin.listUsers({ page: 1, perPage: 200 });
+    const existingUser = usersList?.users?.find((u) => (u.email || "").toLowerCase() === email);
+    if (existingUser) {
+      const { data: existingRoles } = await supabaseAdmin
+        .from("user_roles")
+        .select("role")
+        .eq("user_id", existingUser.id);
+      const hasAdminRole = (existingRoles || []).some((r) =>
+        ["super_admin", "admin_delegue", "admin_juridique"].includes(r.role as string),
+      );
+      if (hasAdminRole) {
+        throw new HttpError(409, "Un compte administrateur existe deja pour cet email");
+      }
     }
 
     const { data: invitation, error: invitationError } = await supabaseAdmin
