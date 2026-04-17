@@ -257,8 +257,8 @@ const SuperAdminSpace = () => {
                 </div>
                 <div className="grid grid-cols-2 gap-3">
                   <div>
-                    <label className={labelClass}>Date de début</label>
-                    <input type="date" className={inputClass} value={form.date_debut} onChange={e => setForm(p => ({ ...p, date_debut: e.target.value }))} />
+                    <label className={labelClass}>Date de début <span className="text-red-500">*</span></label>
+                    <input type="date" required className={inputClass} value={form.date_debut} onChange={e => setForm(p => ({ ...p, date_debut: e.target.value }))} />
                   </div>
                   <div>
                     <label className={labelClass}>Date de fin</label>
