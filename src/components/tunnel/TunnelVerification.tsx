@@ -24,20 +24,6 @@ const VISA_LABELS: Record<string, string> = {
   autre: "Autre",
 };
 
-const MOTIF_LABELS: Record<string, string> = {
-  A: "Document de voyage non valide",
-  B: "But du séjour non justifié",
-  C: "Ressources insuffisantes",
-  D: "Assurance absente ou insuffisante",
-  E: "Hébergement non justifié",
-  F: "Doute sur la volonté de retour",
-  G: "Signalement SIS",
-  H: "Menace pour l'ordre public",
-  I: "Séjour irrégulier antérieur",
-  J: "Intention matrimoniale non établie",
-  K: "Dossier incomplet",
-  L: "Appréciation globale défavorable",
-};
 
 function normalize(str: string): string {
   return str
@@ -192,12 +178,6 @@ export default function TunnelVerification({ ocrData, identity, onUpdate, onUpda
     setEditData(updated);
   };
 
-  const toggleMotif = (code: string) => {
-    const motifs = editData.motifsRefus.includes(code)
-      ? editData.motifsRefus.filter((m) => m !== code)
-      : [...editData.motifsRefus, code];
-    update({ motifsRefus: motifs });
-  };
 
   const handleConfirm = () => {
     onUpdate(editData);
@@ -363,34 +343,12 @@ export default function TunnelVerification({ ocrData, identity, onUpdate, onUpda
             />
           </div>
 
-          {/* Motifs de refus */}
-          <div className="space-y-2 mb-8">
-            <Label className="text-xs text-muted-foreground">Motifs de refus cochés</Label>
-            <div className="flex flex-wrap gap-2">
-              {Object.entries(MOTIF_LABELS).map(([code, label]) => {
-                const selected = editData.motifsRefus.includes(code);
-                return (
-                  <button
-                    key={code}
-                    onClick={() => toggleMotif(code)}
-                    className={`text-xs font-syne font-semibold px-3 py-2 rounded-lg border transition-all ${
-                      selected
-                        ? "bg-primary/20 border-primary/40 text-primary"
-                        : "border-border text-muted-foreground hover:border-foreground/30"
-                    }`}
-                  >
-                    {code} — {label}
-                  </button>
-                );
-              })}
-            </div>
-            {!hasMotifs && (
-              <p className="text-xs text-amber-400 flex items-center gap-1">
-                <AlertTriangle className="w-3 h-3" />
-                Sélectionnez au moins un motif de refus.
-              </p>
-            )}
-          </div>
+          {!hasMotifs && (
+            <p className="text-xs text-amber-400 flex items-center gap-1 mb-6">
+              <AlertTriangle className="w-3 h-3" />
+              Aucun motif de refus n'a été détecté sur la décision.
+            </p>
+          )}
 
           <Button
             onClick={handleConfirm}
