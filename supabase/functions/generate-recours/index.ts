@@ -217,14 +217,15 @@ serve(async (req) => {
         const text = rawText + " " + JSON.stringify(details);
         if (!text.trim()) continue;
 
-        // 1) PASSEPORT
+        // 1) PASSEPORT — tolère retours à la ligne et label bilingue
         if (!ocrCrossCheck.passport) {
           const fromDetails = pickFromDetails(details, [
             "passport_number", "numero_passeport", "no_passeport", "passport_no", "passportNumber",
           ]);
           if (fromDetails) ocrCrossCheck.passport = fromDetails.toUpperCase();
           else {
-            const passMatch = rawText.match(/\b(?:passe?port|n[°ºo]\s*pass)[^\w]{0,15}([A-Z0-9]{6,12})\b/i)
+            const passMatch = rawText.match(/passe?port\s*(?:n[°ºo.]+|number|no\.?)[\s\S]{0,40}?([A-Z0-9]{6,12})\b/i)
+              || rawText.match(/\b(\d{2}[A-Z]{2}\d{4,6})\b/) // ex: 23PP29723
               || rawText.match(/\b([A-Z]{1,2}\d{6,9})\b/);
             if (passMatch && passMatch[1]) ocrCrossCheck.passport = passMatch[1].toUpperCase();
           }
@@ -237,8 +238,8 @@ serve(async (req) => {
           ]);
           if (fromDetails) ocrCrossCheck.date_naissance = fromDetails;
           else {
-            const m = rawText.match(/(?:n[ée]\(?e?\)?\s*le|date\s*de\s*naissance|born\s*on)[^\d]{0,10}(\d{1,2}[/.\-\s]\d{1,2}[/.\-\s]\d{2,4})/i);
-            if (m && m[1]) ocrCrossCheck.date_naissance = m[1];
+            const m = rawText.match(/(?:date\s*de\s*naissance|date\s*of\s*birth|n[ée]\(?e?\)?\s*le|born\s*on)[\s\S]{0,40}?(\d{1,2}[/.\-\s]\d{1,2}[/.\-\s]\d{2,4})/i);
+            if (m && m[1]) ocrCrossCheck.date_naissance = m[1].trim();
           }
         }
 
@@ -249,7 +250,8 @@ serve(async (req) => {
           ]);
           if (fromDetails) ocrCrossCheck.lieu_naissance = fromDetails;
           else {
-            const m = rawText.match(/(?:lieu\s*de\s*naissance|n[ée]\(?e?\)?\s*[àa])\s*[:\-]?\s*([A-ZÀ-Ÿ][A-Za-zÀ-ÿ\s\-']{2,40})/i);
+            const m = rawText.match(/(?:lieu\s*de\s*naissance|place\s*of\s*birth)[\s\S]{0,40}?\n([A-ZÀ-Ÿ][A-Za-zÀ-ÿ\s\-']{2,40})/i)
+              || rawText.match(/(?:lieu\s*de\s*naissance|n[ée]\(?e?\)?\s*[àa])\s*[:\-]?\s*([A-ZÀ-Ÿ][A-Za-zÀ-ÿ\s\-']{2,40})/i);
             if (m && m[1]) ocrCrossCheck.lieu_naissance = m[1].trim();
           }
         }
@@ -259,7 +261,8 @@ serve(async (req) => {
           const fromDetails = pickFromDetails(details, ["nationalite", "nationality", "nationalité"]);
           if (fromDetails) ocrCrossCheck.nationalite = fromDetails;
           else {
-            const m = rawText.match(/nationalit[ée]\s*[:\-]?\s*([A-ZÀ-Ÿ][A-Za-zÀ-ÿ\-']{3,30})/i);
+            const m = rawText.match(/nationalit[ée]\s*(?:\/\s*nationality)?[\s\S]{0,20}?\n([A-ZÀ-Ÿ][A-Za-zÀ-ÿ\-']{3,30})/i)
+              || rawText.match(/nationalit[ée]\s*[:\-]?\s*([A-ZÀ-Ÿ][A-Za-zÀ-ÿ\-']{3,30})/i);
             if (m && m[1]) ocrCrossCheck.nationalite = m[1].trim();
           }
         }
