@@ -184,9 +184,27 @@ serve(async (req) => {
       }));
 
       // Cross-check OCR : extract structured fields from attached pieces to fill gaps
-      // (passport number, dates, addresses) when the refusal decision OCR didn't catch them
-      // deno-lint-ignore no-explicit-any
+      // when the refusal decision OCR / profile didn't catch them.
+      // Sources scannées : ocr_text_extract (texte brut) + ocr_details (JSON structuré Mistral)
       const ocrCrossCheck: Record<string, string> = {};
+
+      const pickFromDetails = (details: unknown, keys: string[]): string => {
+        if (!details || typeof details !== "object") return "";
+        const obj = details as Record<string, unknown>;
+        for (const k of keys) {
+          const v = obj[k];
+          if (typeof v === "string" && v.trim()) return v.trim();
+          if (typeof v === "number") return String(v);
+        }
+        for (const val of Object.values(obj)) {
+          if (val && typeof val === "object") {
+            const found = pickFromDetails(val, keys);
+            if (found) return found;
+          }
+        }
+        return "";
+      };
+
       for (const p of (pieces || []) as Array<{
         nom_piece: string;
         type_document_detecte?: string | null;
@@ -194,14 +212,92 @@ serve(async (req) => {
         // deno-lint-ignore no-explicit-any
         ocr_details?: any;
       }>) {
-        const text = (p.ocr_text_extract || "") + " " + JSON.stringify(p.ocr_details || {});
+        const rawText = p.ocr_text_extract || "";
+        const details = p.ocr_details || {};
+        const text = rawText + " " + JSON.stringify(details);
         if (!text.trim()) continue;
 
-        // Detect passport number patterns (international: 6-9 alphanumeric)
+        // 1) PASSEPORT
         if (!ocrCrossCheck.passport) {
-          const passMatch = text.match(/\b(?:passe?port|passport|n[°ºo]\s*pass)[^\w]{0,15}([A-Z0-9]{6,12})\b/i)
-            || text.match(/\b([A-Z]{1,2}\d{6,9})\b/);
-          if (passMatch && passMatch[1]) ocrCrossCheck.passport = passMatch[1].toUpperCase();
+          const fromDetails = pickFromDetails(details, [
+            "passport_number", "numero_passeport", "no_passeport", "passport_no", "passportNumber",
+          ]);
+          if (fromDetails) ocrCrossCheck.passport = fromDetails.toUpperCase();
+          else {
+            const passMatch = rawText.match(/\b(?:passe?port|n[°ºo]\s*pass)[^\w]{0,15}([A-Z0-9]{6,12})\b/i)
+              || rawText.match(/\b([A-Z]{1,2}\d{6,9})\b/);
+            if (passMatch && passMatch[1]) ocrCrossCheck.passport = passMatch[1].toUpperCase();
+          }
+        }
+
+        // 2) DATE DE NAISSANCE
+        if (!ocrCrossCheck.date_naissance) {
+          const fromDetails = pickFromDetails(details, [
+            "date_naissance", "date_of_birth", "birth_date", "dateNaissance", "dob",
+          ]);
+          if (fromDetails) ocrCrossCheck.date_naissance = fromDetails;
+          else {
+            const m = rawText.match(/(?:n[ée]\(?e?\)?\s*le|date\s*de\s*naissance|born\s*on)[^\d]{0,10}(\d{1,2}[/.\-\s]\d{1,2}[/.\-\s]\d{2,4})/i);
+            if (m && m[1]) ocrCrossCheck.date_naissance = m[1];
+          }
+        }
+
+        // 3) LIEU DE NAISSANCE
+        if (!ocrCrossCheck.lieu_naissance) {
+          const fromDetails = pickFromDetails(details, [
+            "lieu_naissance", "place_of_birth", "birth_place", "lieuNaissance",
+          ]);
+          if (fromDetails) ocrCrossCheck.lieu_naissance = fromDetails;
+          else {
+            const m = rawText.match(/(?:lieu\s*de\s*naissance|n[ée]\(?e?\)?\s*[àa])\s*[:\-]?\s*([A-ZÀ-Ÿ][A-Za-zÀ-ÿ\s\-']{2,40})/i);
+            if (m && m[1]) ocrCrossCheck.lieu_naissance = m[1].trim();
+          }
+        }
+
+        // 4) NATIONALITÉ
+        if (!ocrCrossCheck.nationalite) {
+          const fromDetails = pickFromDetails(details, ["nationalite", "nationality", "nationalité"]);
+          if (fromDetails) ocrCrossCheck.nationalite = fromDetails;
+          else {
+            const m = rawText.match(/nationalit[ée]\s*[:\-]?\s*([A-ZÀ-Ÿ][A-Za-zÀ-ÿ\-']{3,30})/i);
+            if (m && m[1]) ocrCrossCheck.nationalite = m[1].trim();
+          }
+        }
+
+        // 5) ADRESSE / VILLE
+        if (!ocrCrossCheck.adresse) {
+          const fromDetails = pickFromDetails(details, ["adresse", "address", "adresse_origine", "domicile"]);
+          if (fromDetails) ocrCrossCheck.adresse = fromDetails;
+        }
+        if (!ocrCrossCheck.ville) {
+          const fromDetails = pickFromDetails(details, ["ville", "city", "commune"]);
+          if (fromDetails) ocrCrossCheck.ville = fromDetails;
+        }
+
+        // 6) EMAIL
+        if (!ocrCrossCheck.email) {
+          const m = rawText.match(/\b([A-Za-z0-9._%+\-]+@[A-Za-z0-9.\-]+\.[A-Za-z]{2,})\b/);
+          if (m && m[1]) ocrCrossCheck.email = m[1];
+        }
+
+        // 7) TÉLÉPHONE
+        if (!ocrCrossCheck.phone) {
+          const fromDetails = pickFromDetails(details, ["phone", "telephone", "tel", "mobile"]);
+          if (fromDetails) ocrCrossCheck.phone = fromDetails;
+          else {
+            const m = rawText.match(/(\+?\d{1,3}[\s\-]?\d{6,12})/);
+            if (m && m[1]) ocrCrossCheck.phone = m[1].replace(/\s+/g, "");
+          }
+        }
+
+        // 8) NOM / PRÉNOM
+        if (!ocrCrossCheck.nom) {
+          const fromDetails = pickFromDetails(details, ["nom", "last_name", "surname", "family_name"]);
+          if (fromDetails) ocrCrossCheck.nom = fromDetails.toUpperCase();
+        }
+        if (!ocrCrossCheck.prenom) {
+          const fromDetails = pickFromDetails(details, ["prenom", "first_name", "given_name", "given_names"]);
+          if (fromDetails) ocrCrossCheck.prenom = fromDetails;
         }
       }
 
@@ -222,10 +318,29 @@ serve(async (req) => {
       clientVille = dossier.client_ville || profile?.ville || "";
       email = dossier.client_email || "";
 
-      // OCR cross-check fallback : si passeport absent, le récupérer depuis l'OCR des pièces jointes
-      if ((!passportNumber || !passportNumber.trim()) && ocrCrossCheck.passport) {
-        passportNumber = ocrCrossCheck.passport;
-        console.log(`[generate-recours] Passeport récupéré via OCR pièces jointes: ${passportNumber}`);
+      // ═══ Fallback chain : combler chaque champ manquant via OCR pièces jointes ═══
+      const filled: string[] = [];
+      if (!clientName.trim() && ocrCrossCheck.nom) { clientName = ocrCrossCheck.nom; filled.push("nom"); }
+      if (!clientPrenom.trim() && ocrCrossCheck.prenom) { clientPrenom = ocrCrossCheck.prenom; filled.push("prenom"); }
+      if (!passportNumber.trim() && ocrCrossCheck.passport) { passportNumber = ocrCrossCheck.passport; filled.push("passeport"); }
+      if (!clientVille.trim() && ocrCrossCheck.ville) { clientVille = ocrCrossCheck.ville; filled.push("ville"); }
+      if (!clientPhone.trim() && ocrCrossCheck.phone) { clientPhone = ocrCrossCheck.phone; filled.push("telephone"); }
+      if (!email.trim() && ocrCrossCheck.email) { email = ocrCrossCheck.email; filled.push("email"); }
+      if (!dossier.client_date_naissance && ocrCrossCheck.date_naissance) {
+        dossier.client_date_naissance = ocrCrossCheck.date_naissance; filled.push("date_naissance");
+      }
+      if (!dossier.client_lieu_naissance && ocrCrossCheck.lieu_naissance) {
+        dossier.client_lieu_naissance = ocrCrossCheck.lieu_naissance; filled.push("lieu_naissance");
+      }
+      if (!dossier.client_nationalite && ocrCrossCheck.nationalite) {
+        dossier.client_nationalite = ocrCrossCheck.nationalite; filled.push("nationalite");
+      }
+      if (!dossier.client_adresse_origine && ocrCrossCheck.adresse) {
+        dossier.client_adresse_origine = ocrCrossCheck.adresse; filled.push("adresse");
+      }
+
+      if (filled.length > 0) {
+        console.log(`[generate-recours] Champs récupérés via OCR pièces jointes: ${filled.join(", ")}`);
       }
     }
 
