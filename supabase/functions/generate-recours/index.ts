@@ -174,7 +174,7 @@ serve(async (req) => {
 
       const { data: pieces } = await supabase
         .from("pieces_justificatives")
-        .select("nom_piece, type_piece, statut_ocr, nombre_pages")
+        .select("nom_piece, type_piece, statut_ocr, nombre_pages, ocr_text_extract, ocr_details, type_document_detecte")
         .eq("dossier_id", dossier_id)
         .order("created_at", { ascending: true });
 
@@ -182,6 +182,28 @@ serve(async (req) => {
         name: p.nom_piece,
         pages: p.nombre_pages || 1,
       }));
+
+      // Cross-check OCR : extract structured fields from attached pieces to fill gaps
+      // (passport number, dates, addresses) when the refusal decision OCR didn't catch them
+      // deno-lint-ignore no-explicit-any
+      const ocrCrossCheck: Record<string, string> = {};
+      for (const p of (pieces || []) as Array<{
+        nom_piece: string;
+        type_document_detecte?: string | null;
+        ocr_text_extract?: string | null;
+        // deno-lint-ignore no-explicit-any
+        ocr_details?: any;
+      }>) {
+        const text = (p.ocr_text_extract || "") + " " + JSON.stringify(p.ocr_details || {});
+        if (!text.trim()) continue;
+
+        // Detect passport number patterns (international: 6-9 alphanumeric)
+        if (!ocrCrossCheck.passport) {
+          const passMatch = text.match(/\b(?:passe?port|passport|n[°ºo]\s*pass)[^\w]{0,15}([A-Z0-9]{6,12})\b/i)
+            || text.match(/\b([A-Z]{1,2}\d{6,9})\b/);
+          if (passMatch && passMatch[1]) ocrCrossCheck.passport = passMatch[1].toUpperCase();
+        }
+      }
 
       clientName = dossier.client_last_name || "";
       clientPrenom = dossier.client_first_name || "";
@@ -199,9 +221,15 @@ serve(async (req) => {
       destinataireRecours = dossier.destinataire_recours || "crrv_nantes";
       clientVille = dossier.client_ville || profile?.ville || "";
       email = dossier.client_email || "";
+
+      // OCR cross-check fallback : si passeport absent, le récupérer depuis l'OCR des pièces jointes
+      if ((!passportNumber || !passportNumber.trim()) && ocrCrossCheck.passport) {
+        passportNumber = ocrCrossCheck.passport;
+        console.log(`[generate-recours] Passeport récupéré via OCR pièces jointes: ${passportNumber}`);
+      }
     }
 
-    // Passport: optionnel — fallback si non extrait par l'OCR et non saisi
+    // Passport: optionnel — fallback final si non extrait nulle part
     if (!passportNumber || !passportNumber.trim()) {
       passportNumber = "Non communiqué";
     }
