@@ -127,6 +127,6 @@ export default function ValueFirstTunnel() {
       ) : null;
 
     default:
-      return null;
+      return <TunnelSplash onNext={() => tunnel.setStep("recevabilite")} onLogin={() => setShowLogin(true)} />;
   }
 }
