@@ -106,7 +106,7 @@ export default function TunnelLetter({
         </h2>
         <p className="text-sm text-muted-foreground mb-6 leading-relaxed">
           {letterContent
-            ? "Voici un aperçu de votre lettre. Le contenu complet sera accessible après paiement."
+            ? "Voici votre lettre de contestation, prête à être finalisée."
             : "Nous allons générer une lettre de contestation juridiquement argumentée à partir de vos données."
           }
         </p>
@@ -140,28 +140,11 @@ export default function TunnelLetter({
           </div>
         )}
 
-        {/* Letter preview (locked) */}
+        {/* Letter preview (full, unlocked) */}
         {letterContent && (
           <>
-            <div className="relative mb-6">
-              <div
-                className="bg-panel border border-border rounded-xl p-5 text-[0.79rem] text-muted-foreground leading-relaxed whitespace-pre-wrap select-none max-h-[220px] overflow-hidden"
-                style={{ userSelect: "none", WebkitUserSelect: "none" }}
-              >
-                {letterContent}
-              </div>
-
-              {/* Gradient overlay */}
-              <div
-                className="absolute inset-0 top-[120px] rounded-b-xl flex flex-col items-center justify-end pb-5 cursor-pointer"
-                style={{ background: "linear-gradient(to bottom, transparent 0%, hsl(var(--background)) 70%)" }}
-                onClick={onNext}
-              >
-                <div className="bg-primary/15 border border-primary/30 rounded-lg px-5 py-3 text-center backdrop-blur-sm">
-                  <p className="font-syne font-bold text-[0.82rem] text-primary mb-0.5">🔒 Contenu protégé</p>
-                  <p className="text-[0.7rem] text-muted-foreground">Finalisez pour accéder à l'intégralité de la lettre</p>
-                </div>
-              </div>
+            <div className="bg-panel border border-border rounded-xl p-5 text-[0.82rem] text-foreground leading-relaxed whitespace-pre-wrap mb-6">
+              {letterContent}
             </div>
 
             {/* Summary card */}
