@@ -17,8 +17,14 @@ export default function TunnelRecevabilite({ dateRefus, onUpdate, onNext, onBack
   const today = new Date().toISOString().split("T")[0];
 
   const { joursEcoules, joursRestants, status } = useMemo(() => {
-    if (!dateRefus) return { joursEcoules: 0, joursRestants: 30, status: "empty" as const };
+    // Ne rien évaluer tant que la date n'est pas complète (YYYY-MM-DD) et plausible
+    if (!dateRefus || !/^\d{4}-\d{2}-\d{2}$/.test(dateRefus)) {
+      return { joursEcoules: 0, joursRestants: 30, status: "empty" as const };
+    }
     const d = new Date(dateRefus);
+    if (isNaN(d.getTime()) || d.getFullYear() < 2020) {
+      return { joursEcoules: 0, joursRestants: 30, status: "empty" as const };
+    }
     const now = new Date();
     d.setHours(0, 0, 0, 0);
     now.setHours(0, 0, 0, 0);
