@@ -205,12 +205,6 @@ serve(async (req) => {
         }
       }
 
-      // Apply cross-check fallbacks (only fill empty fields)
-      if (!passportNumber || !passportNumber.trim()) {
-        // We need to set passportNumber AFTER the dossier read below — store for later
-        (dossier as Record<string, unknown>).__ocr_passport_fallback = ocrCrossCheck.passport || "";
-      }
-
       clientName = dossier.client_last_name || "";
       clientPrenom = dossier.client_first_name || "";
       clientPhone = dossier.client_phone || profile?.phone || "";
@@ -227,9 +221,15 @@ serve(async (req) => {
       destinataireRecours = dossier.destinataire_recours || "crrv_nantes";
       clientVille = dossier.client_ville || profile?.ville || "";
       email = dossier.client_email || "";
+
+      // OCR cross-check fallback : si passeport absent, le récupérer depuis l'OCR des pièces jointes
+      if ((!passportNumber || !passportNumber.trim()) && ocrCrossCheck.passport) {
+        passportNumber = ocrCrossCheck.passport;
+        console.log(`[generate-recours] Passeport récupéré via OCR pièces jointes: ${passportNumber}`);
+      }
     }
 
-    // Passport: optionnel — fallback si non extrait par l'OCR et non saisi
+    // Passport: optionnel — fallback final si non extrait nulle part
     if (!passportNumber || !passportNumber.trim()) {
       passportNumber = "Non communiqué";
     }
