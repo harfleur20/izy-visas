@@ -2,7 +2,7 @@ import { useState } from "react";
 import { useTunnelState } from "@/hooks/useTunnelState";
 import TunnelSplash from "@/components/tunnel/TunnelSplash";
 import TunnelLogin from "@/components/tunnel/TunnelLogin";
-import TunnelIdentity from "@/components/tunnel/TunnelIdentity";
+import TunnelRecevabilite from "@/components/tunnel/TunnelRecevabilite";
 import TunnelUploadRefus from "@/components/tunnel/TunnelUploadRefus";
 import TunnelVerification from "@/components/tunnel/TunnelVerification";
 import TunnelVerdict from "@/components/tunnel/TunnelVerdict";
@@ -22,13 +22,13 @@ export default function ValueFirstTunnel() {
 
   switch (step) {
     case "splash":
-      return <TunnelSplash onNext={() => tunnel.setStep("identity")} onLogin={() => setShowLogin(true)} />;
+      return <TunnelSplash onNext={() => tunnel.setStep("recevabilite")} onLogin={() => setShowLogin(true)} />;
 
-    case "identity":
+    case "recevabilite":
       return (
-        <TunnelIdentity
-          identity={tunnel.state.identity}
-          onUpdate={tunnel.setIdentity}
+        <TunnelRecevabilite
+          dateRefus={tunnel.state.dateRefus}
+          onUpdate={tunnel.setDateRefus}
           onNext={() => tunnel.setStep("upload_refus")}
           onBack={() => tunnel.setStep("splash")}
         />
@@ -42,9 +42,16 @@ export default function ValueFirstTunnel() {
           onComplete={(ocrData, file) => {
             tunnel.setOcrData(ocrData);
             tunnel.setDecisionFile(file);
+            // Pré-remplit l'identité avec les noms extraits par l'OCR
+            if (ocrData.demandeurPrenom || ocrData.demandeurNom) {
+              tunnel.setIdentity({
+                firstName: ocrData.demandeurPrenom || "",
+                lastName: (ocrData.demandeurNom || "").toUpperCase(),
+              });
+            }
             tunnel.setStep("verification");
           }}
-          onBack={() => tunnel.setStep("identity")}
+          onBack={() => tunnel.setStep("recevabilite")}
         />
       );
 

@@ -2,7 +2,7 @@ import { useState, useCallback } from "react";
 
 export type TunnelStep =
   | "splash"
-  | "identity"
+  | "recevabilite"
   | "upload_refus"
   | "verification"
   | "verdict"
@@ -50,6 +50,7 @@ export interface TunnelPieceFile {
 
 export interface TunnelState {
   step: TunnelStep;
+  dateRefus: string;
   identity: TunnelIdentityData;
   decisionFile: File | null;
   decisionUrl: string | null;
@@ -76,6 +77,7 @@ const INITIAL_IDENTITY: TunnelIdentityData = {
 
 const INITIAL_STATE: TunnelState = {
   step: "splash",
+  dateRefus: "",
   identity: INITIAL_IDENTITY,
   decisionFile: null,
   decisionUrl: null,
@@ -94,6 +96,10 @@ export function useTunnelState() {
 
   const setStep = useCallback((step: TunnelStep) => {
     setState((prev) => ({ ...prev, step }));
+  }, []);
+
+  const setDateRefus = useCallback((dateRefus: string) => {
+    setState((prev) => ({ ...prev, dateRefus }));
   }, []);
 
   const setIdentity = useCallback((identity: Partial<TunnelIdentityData>) => {
@@ -160,6 +166,7 @@ export function useTunnelState() {
   return {
     state,
     setStep,
+    setDateRefus,
     setIdentity,
     setDecisionFile,
     setOcrData,
