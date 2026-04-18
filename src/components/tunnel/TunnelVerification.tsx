@@ -363,34 +363,12 @@ export default function TunnelVerification({ ocrData, identity, onUpdate, onUpda
             />
           </div>
 
-          {/* Motifs de refus */}
-          <div className="space-y-2 mb-8">
-            <Label className="text-xs text-muted-foreground">Motifs de refus cochés</Label>
-            <div className="flex flex-wrap gap-2">
-              {Object.entries(MOTIF_LABELS).map(([code, label]) => {
-                const selected = editData.motifsRefus.includes(code);
-                return (
-                  <button
-                    key={code}
-                    onClick={() => toggleMotif(code)}
-                    className={`text-xs font-syne font-semibold px-3 py-2 rounded-lg border transition-all ${
-                      selected
-                        ? "bg-primary/20 border-primary/40 text-primary"
-                        : "border-border text-muted-foreground hover:border-foreground/30"
-                    }`}
-                  >
-                    {code} — {label}
-                  </button>
-                );
-              })}
-            </div>
-            {!hasMotifs && (
-              <p className="text-xs text-amber-400 flex items-center gap-1">
-                <AlertTriangle className="w-3 h-3" />
-                Sélectionnez au moins un motif de refus.
-              </p>
-            )}
-          </div>
+          {!hasMotifs && (
+            <p className="text-xs text-amber-400 flex items-center gap-1 mb-6">
+              <AlertTriangle className="w-3 h-3" />
+              Aucun motif de refus n'a été détecté sur la décision.
+            </p>
+          )}
 
           <Button
             onClick={handleConfirm}
