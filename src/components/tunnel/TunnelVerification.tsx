@@ -178,10 +178,6 @@ export default function TunnelVerification({ ocrData, identity, onUpdate, onUpda
     setEditData(updated);
   };
 
-  const toggleMotif = (_code: string) => {
-    /* no-op: motifs are auto-detected by OCR and no longer editable here */
-  };
-  void toggleMotif;
 
   const handleConfirm = () => {
     onUpdate(editData);
