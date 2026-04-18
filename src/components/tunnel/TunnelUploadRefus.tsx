@@ -141,6 +141,10 @@ export default function TunnelUploadRefus({ firstName, lastName, onComplete, onB
         scoreOcr: extracted.confiance_extraction || 0,
         demandeurNom: extracted.demandeur?.nom || "",
         demandeurPrenom: extracted.demandeur?.prenom || "",
+        demandeurPasseport: extracted.demandeur?.numero_passeport || "",
+        demandeurDateNaissance: extracted.demandeur?.date_naissance || "",
+        demandeurLieuNaissance: extracted.demandeur?.lieu_naissance || "",
+        demandeurNationalite: extracted.demandeur?.nationalite || "",
       };
 
       onComplete(ocrData, file);
