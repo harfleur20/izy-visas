@@ -224,7 +224,8 @@ serve(async (req) => {
           ]);
           if (fromDetails) ocrCrossCheck.passport = fromDetails.toUpperCase();
           else {
-            const passMatch = rawText.match(/passe?port\s*(?:n[°ºo.]+|number|no\.?)[\s\S]{0,40}?([A-Z0-9]{6,12})\b/i)
+            // Exige ≥1 chiffre dans le numéro pour éviter de capturer le mot "Passport" lui-même
+            const passMatch = rawText.match(/passe?port\s*(?:n[°ºo.]+|number|no\.?)[\s\S]{1,40}?([A-Z0-9]*\d[A-Z0-9]{3,11})\b/i)
               || rawText.match(/\b(\d{2}[A-Z]{2}\d{4,6})\b/) // ex: 23PP29723
               || rawText.match(/\b([A-Z]{1,2}\d{6,9})\b/);
             if (passMatch && passMatch[1]) ocrCrossCheck.passport = passMatch[1].toUpperCase();
