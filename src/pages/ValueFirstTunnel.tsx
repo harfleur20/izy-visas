@@ -127,8 +127,6 @@ export default function ValueFirstTunnel() {
       ) : null;
 
     default:
-      // Reset propre si l'état pointe sur une étape obsolète (ex. après refactor HMR)
-      tunnel.setStep("splash");
-      return null;
+      return <TunnelSplash onNext={() => tunnel.setStep("recevabilite")} onLogin={() => setShowLogin(true)} />;
   }
 }
