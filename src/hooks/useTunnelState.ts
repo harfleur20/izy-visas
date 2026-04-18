@@ -37,6 +37,10 @@ export interface TunnelOcrData {
   scoreOcr: number;
   demandeurNom: string;
   demandeurPrenom: string;
+  demandeurPasseport?: string;
+  demandeurDateNaissance?: string;
+  demandeurLieuNaissance?: string;
+  demandeurNationalite?: string;
 }
 
 export interface TunnelPieceFile {

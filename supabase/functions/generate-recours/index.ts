@@ -201,10 +201,15 @@ serve(async (req) => {
       email = dossier.client_email || "";
     }
 
+    // Passport: optionnel — fallback si non extrait par l'OCR et non saisi
+    if (!passportNumber || !passportNumber.trim()) {
+      passportNumber = "Non communiqué";
+    }
+
     const requiredFields: Record<string, unknown> = {
       "NOM DU CLIENT": clientName, "TYPE DE VISA": visaType,
       "MOTIF DE REFUS": motifRefus, "DATE DE NOTIFICATION": decisionDate,
-      "CONSULAT": consulat, "NUMÉRO PASSEPORT": passportNumber,
+      "CONSULAT": consulat,
       "PIÈCES JOINTES": piecesJointes.length,
     };
 

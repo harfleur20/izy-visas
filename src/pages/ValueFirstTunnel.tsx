@@ -42,13 +42,15 @@ export default function ValueFirstTunnel() {
           onComplete={(ocrData, file) => {
             tunnel.setOcrData(ocrData);
             tunnel.setDecisionFile(file);
-            // Pré-remplit l'identité avec les noms extraits par l'OCR
-            if (ocrData.demandeurPrenom || ocrData.demandeurNom) {
-              tunnel.setIdentity({
-                firstName: ocrData.demandeurPrenom || "",
-                lastName: (ocrData.demandeurNom || "").toUpperCase(),
-              });
-            }
+            // Pré-remplit l'identité avec les données extraites par l'OCR
+            tunnel.setIdentity({
+              firstName: ocrData.demandeurPrenom || "",
+              lastName: (ocrData.demandeurNom || "").toUpperCase(),
+              passportNumber: ocrData.demandeurPasseport || "",
+              dateNaissance: ocrData.demandeurDateNaissance || "",
+              lieuNaissance: ocrData.demandeurLieuNaissance || "",
+              nationalite: ocrData.demandeurNationalite || "",
+            });
             tunnel.setStep("verification");
           }}
           onBack={() => tunnel.setStep("recevabilite")}
