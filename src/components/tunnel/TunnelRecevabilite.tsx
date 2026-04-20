@@ -53,11 +53,7 @@ export default function TunnelRecevabilite({ dateRefus, onUpdate, onNext, onBack
         <h2 className="font-fraunces text-[clamp(1.3rem,3vw,1.9rem)] text-cream text-center mb-3 leading-tight">
           À quelle date avez-vous reçu la lettre de refus de visa ?
         </h2>
-        <p className="text-sm text-muted-foreground text-center mb-8">
-          Vous disposez de <strong className="text-foreground">30 jours calendaires</strong> à compter de la notification pour exercer un recours.
-        </p>
-
-        <div className="space-y-3">
+        <div className="space-y-3 mt-8">
           <Label htmlFor="dateRefus" className="text-sm text-muted-foreground">Date de réception</Label>
           <Input
             id="dateRefus"
