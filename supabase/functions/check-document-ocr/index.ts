@@ -359,6 +359,8 @@ function classifyDocumentType(result: MistralOcrResult, allText: string) {
     result.type_document_detecte = "attestation_campus_france";
   } else if (/notification\s*de\s*refus|refus[éeè]?\s*(de\s*)?visa|visa\s*refus|d[ée]cision\s*de\s*refus/i.test(allText)) {
     result.type_document_detecte = "decision_refus";
+  } else if (/lettre\s*de\s*motivation|projet\s*(d['']?[ée]tudes?|professionnel|d['']?int[ée]gration)|motivation\s*letter|statement\s*of\s*purpose|personal\s*statement|madame[,\s]+monsieur[\s\S]{0,400}(motivation|projet|formation|[ée]tudes|candidature|int[ée]grer|poursuivre)/i.test(allText)) {
+    result.type_document_detecte = "lettre_motivation";
   } else if (/passeport|passport/i.test(allText)) {
     result.type_document_detecte = "passeport";
   } else if (/relevé\s*(de\s*)?compte|bank\s*statement|solde\s*(comptable|créditeur|disponible)|opérations?\s*bancaire|account\s*statement|extrait\s*(de\s*)?compte|mouvement[s]?\s*(de\s*)?compte|historique\s*(des?\s*)?transaction|récapitulatif\s*(de\s*)?compte|situation\s*(de\s*)?compte|état\s*(de\s*)?compte|relevé\s*bancaire|relevé\s*d['']?identité\s*bancaire|RIB|IBAN\s*[A-Z]{2}\d|BIC\s*[A-Z]{4}|débit.*crédit|crédit.*débit|date\s*(de\s*)?valeur|solde\s*(en\s*)?fin|solde\s*(au|en)\s*\d|nouveau\s*solde|ancien\s*solde|total\s*des?\s*(débit|crédit)|numéro\s*(de\s*)?compte|n°\s*compte|account\s*(number|no)|balance\s*(forward|brought)|closing\s*balance|opening\s*balance|statement\s*(of\s*)?account|transaction\s*history|account\s*summary/i.test(allText)) {
