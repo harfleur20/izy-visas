@@ -725,7 +725,8 @@ serve(async (req) => {
       }
 
       try {
-        const ocrResult = await runOcrAnalysis(bytes, fileType, fileName, signedUrl);
+        const expectedTypeForPrompt = isDecisionRefus ? "decision_refus" : guessExpectedType(nomPiece);
+        const ocrResult = await runOcrAnalysis(bytes, fileType, fileName, signedUrl, expectedTypeForPrompt);
 
         const ownerIdentity: OwnerIdentity = {
           firstName: ownerFirstName,
