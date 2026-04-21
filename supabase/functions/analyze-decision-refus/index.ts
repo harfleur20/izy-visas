@@ -320,10 +320,12 @@ serve(async (req) => {
 
     let analysisResult: any;
     let ocrRawText = "";
+    let firstPageImageB64: string | null = null;
+    let firstPageMimeType = "image/jpeg";
 
     try {
       if (fileType === "application/pdf" && signedUrl) {
-        // PDF: use Mistral OCR REST API
+        // PDF: use Mistral OCR REST API (include_image_base64 to enable Pixtral fallback)
         const ocrRes = await fetch("https://api.mistral.ai/v1/ocr", {
           method: "POST",
           headers: {
@@ -333,7 +335,7 @@ serve(async (req) => {
           body: JSON.stringify({
             model: "mistral-ocr-latest",
             document: { type: "document_url", document_url: signedUrl },
-            include_image_base64: false,
+            include_image_base64: true,
           }),
         });
 
@@ -349,6 +351,19 @@ serve(async (req) => {
           .map((p: any) => p.markdown || p.text || "")
           .join("\n");
         ocrRawText = allText;
+
+        // Capture page 1 image for potential Pixtral fallback
+        const firstPage = ocrResponse.pages?.[0];
+        const firstImg = firstPage?.images?.[0];
+        if (firstImg?.image_base64) {
+          const raw = firstImg.image_base64 as string;
+          if (raw.startsWith("data:")) {
+            const m = raw.match(/^data:([^;]+);base64,(.+)$/);
+            if (m) { firstPageMimeType = m[1]; firstPageImageB64 = m[2]; }
+          } else {
+            firstPageImageB64 = raw;
+          }
+        }
 
         if (allText.trim().length < 20) {
           return jsonResponse({
