@@ -31,20 +31,6 @@ const MOTIF_ARTICLES: Record<string, string[]> = {
   I: ["L211-2"], J: ["L211-2-1"], K: ["L211-1"], L: ["R211-13"],
 };
 
-const MOTIF_GUIDANCE: Record<string, string> = {
-  A: `Motif A (document non valide) :\n- Erreur manifeste d'appréciation sur la validité du document\n- Art. L211-1 CESEDA (si vérifié dans le contexte)`,
-  B: `Motif B (but du séjour non justifié) :\n- Erreur manifeste d'appréciation\n- Défaut de motivation suffisante\n- Art. L211-2 et R211-13 CESEDA`,
-  C: `Motif C (ressources insuffisantes) :\n- Erreur manifeste d'appréciation sur l'évaluation des ressources\n- Art. L211-1 CESEDA`,
-  D: `Motif D (assurance absente) :\n- Les pièces jointes démontrent la souscription d'une assurance conforme\n- Art. L211-1 CESEDA`,
-  E: `Motif E (hébergement non justifié) :\n- Les pièces jointes établissent les conditions d'hébergement\n- Art. L211-1 CESEDA`,
-  F: `Motif F (doute sur la volonté de retour) :\n- Erreur manifeste d'appréciation\n- Art. L211-2 CESEDA\n- Jurisprudence TA Nantes si disponible dans le contexte`,
-  G: `Motif G (signalement SIS) :\n- Demande de vérification du bien-fondé du signalement\n- Art. R211-13 CESEDA`,
-  H: `Motif H (menace ordre public) :\n- Erreur manifeste d'appréciation\n- Absence de fondement factuel établi\n- Art. L211-2 CESEDA`,
-  I: `Motif I (séjour irrégulier antérieur) :\n- Contestation des faits si applicable\n- Proportionnalité de la mesure\n- Art. 8 CEDH si vie familiale concernée`,
-  J: `Motif J (intention matrimoniale — conjoint de Français) :\n- Régime ultra-protecteur\n- Seuls 3 motifs légaux de refus possibles\n- Art. L211-2-1 CESEDA`,
-  K: `Motif K (dossier incomplet) :\n- Les pièces jointes complètent le dossier\n- Absence d'invitation à régulariser avant refus`,
-  L: `Motif L (appréciation globale défavorable) :\n- Défaut de motivation suffisante\n- Art. R211-13 CESEDA`,
-};
 
 const BLOC_NAMES = [
   "EN-TÊTE EXPÉDITEUR", "EN-TÊTE DESTINATAIRE", "LIEU ET DATE",

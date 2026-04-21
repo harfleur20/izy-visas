@@ -667,7 +667,7 @@ serve(async (req) => {
     // Enrich motifs with labels
     const motifsEnrichis = resolvedMotifCodes.map((code: string) => ({
       code,
-      label: MOTIF_LABELS[code] || `Motif ${code}`,
+      label: getMotifLabel(code),
     }));
 
     // Map visa type
