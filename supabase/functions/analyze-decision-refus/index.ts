@@ -88,7 +88,20 @@ Si c'est une décision de refus :
   "destinataire_recours": "crrv_nantes" ou "sous_directeur_visas",
   "langue_document": "fr" ou "ar" ou "en" ou "autre",
   "confiance_extraction": 0 à 100
-}`;
+}
+
+INSTRUCTIONS IMPORTANTES :
+- Pour le type_visa, mappe les libellés courants :
+  • "ascendant d'un ressortissant de nationalité française" / "ascendant de Français" → "visiteur_parent_enfant_francais"
+  • "parent d'enfant français" → "visiteur_parent_enfant_francais"
+  • "conjoint de Français" / "conjoint de ressortissant français" → "long_sejour_conjoint_francais"
+  • "étudiant" / "études" → "long_sejour_etudiant"
+  • "salarié" / "travailleur" → "long_sejour_salarie"
+  • "passeport talent" → "passeport_talent"
+  • "court séjour" / "Schengen" / "tourisme" / "visite familiale" (court séjour) → "court_sejour_schengen"
+- Pour le consulat : si le document indique "AMBASSADE DE FRANCE À [VILLE]" ou "CONSULAT GÉNÉRAL DE FRANCE À [VILLE]" dans l'en-tête, EXTRAIS toujours le nom complet, la ville et le pays correspondant.
+- Pour les motifs : lis attentivement les cases cochées (☒, ⊠, ✓, X) et associe chaque texte coché au code A-L correspondant selon ce mapping :
+  A=document de voyage non valide, B=but du séjour non justifié, C=ressources insuffisantes, D=assurance, E=hébergement, F=volonté de retour, G=SIS, H=ordre public, I=séjour irrégulier, J=intention matrimoniale, K=dossier incomplet, L=appréciation globale.`;
 
 serve(async (req) => {
   if (req.method === "OPTIONS") {
