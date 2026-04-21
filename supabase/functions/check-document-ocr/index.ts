@@ -97,7 +97,12 @@ type OwnerIdentity = {
   passportNumber: string;
 };
 
-const VISION_PROMPT = `Tu es un expert en contrôle qualité de documents juridiques pour demande de visa.
+function buildVisionPrompt(expectedType: string, expectedLabel: string): string {
+  const hint = expectedType && expectedType !== "autre"
+    ? `\n\nINDICE IMPORTANT : Le client a déclaré téléverser un(e) "${expectedLabel}" (type technique : "${expectedType}"). Vérifie si ce document correspond effectivement à ce type avant de le classer autrement.`
+    : "";
+
+  return `Tu es un expert en contrôle qualité de documents juridiques pour demande de visa.
 
 Analyse ce document et réponds UNIQUEMENT en JSON valide sans aucun texte avant ou après.
 
@@ -108,7 +113,7 @@ Analyse ce document et réponds UNIQUEMENT en JSON valide sans aucun texte avant
   "type_document_detecte": une valeur parmi [decision_refus, passeport, releve_bancaire, contrat_travail, attestation_campus_france, acte_mariage, acte_naissance, justificatif_hebergement, billet_avion, assurance_voyage, attestation_emploi, certificat_scolarite, justificatif_domicile, reservation_hotel, lettre_motivation, lettre_invitation, attestation_hebergement, formulaire_visa, autre, inconnu],
   "langue_detectee": une valeur parmi [fr, ar, en, autre, mixte],
   "date_detectee": date au format JJ/MM/AAAA ou null si aucune date trouvée,
-  "texte_extrait": premiers 500 caractères du texte visible,
+  "texte_extrait": premiers 500 caractères du texte visible (transcris fidèlement, y compris les lignes MRZ commençant par P< ou les codes type AA123456),
   "pages_detectees": nombre de pages,
   "document_tronque": true ou false,
   "texte_manuscrit_present": true ou false,
@@ -116,6 +121,14 @@ Analyse ce document et réponds UNIQUEMENT en JSON valide sans aucun texte avant
   "angle_excessif": true ou false,
   "problemes_detectes": liste des problèmes détectés sous forme de tableau de strings
 }
+
+REPÈRES DE CLASSIFICATION (à utiliser pour distinguer les types proches) :
+- "passeport" : page d'identité d'un passeport. Signaux forts : mots "Passeport"/"Passport", "Bearer's signature"/"Signature du titulaire", code pays 3 lettres (CMR, FRA, MAR, DZA, TUN, SEN, CIV…), numéro alphanumérique (ex AA511315), photo d'identité + signature manuscrite, ligne MRZ commençant par "P<" suivie d'un code pays, dates de délivrance/expiration, mention d'une autorité d'émission (Délégué à la Sûreté Nationale, Ministère de l'Intérieur, Direction Générale des Passeports…).
+- "formulaire_visa" : formulaire vierge ou rempli de demande de visa Schengen/long séjour rempli par le demandeur, AVEC des cases à cocher, des champs nombreux numérotés (1 à 30+), titre explicite "Demande de visa Schengen" ou "Application for Schengen Visa". JAMAIS un passeport, même si "visa" apparaît dans d'anciens tampons.
+- "decision_refus" : courrier officiel d'une ambassade/consulat français notifiant un refus, avec en-tête "République Française", "Notification de refus", références CESEDA L. ou R.
+- "lettre_motivation" : texte rédigé à la première personne, paragraphes longs, formule "Madame, Monsieur".
+
+⚠️ Un passeport peut contenir d'anciens visas tamponnés : cela ne fait PAS de lui un "formulaire_visa". La présence d'une MRZ ou de "Bearer's signature" suffit à le classer "passeport".
 
 Critères pour lisible = false :
 - Texte principal illisible ou trop flou
@@ -125,7 +138,10 @@ Critères pour lisible = false :
 - Angle de prise de vue supérieur à 20 degrés
 - Reflet majeur couvrant le texte essentiel
 - Page blanche ou quasi-vide
-- Résolution insuffisante pour lire le texte`;
+- Résolution insuffisante pour lire le texte${hint}`;
+}
+
+const VISION_PROMPT = buildVisionPrompt("", "");
 
 function getRejectionMessage(result: MistralOcrResult): string {
   const motif = (result.motif_rejet || "").toLowerCase();
