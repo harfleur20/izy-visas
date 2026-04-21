@@ -373,13 +373,14 @@ async function runOcrAnalysis(
       if (pageImages.length > 0) {
         console.log(`[OCR] Falling back to Pixtral vision on ${pageImages.length} page(s)`);
         try {
+          const expectedLabel = TYPE_LABELS[expectedType] || "";
           const visionRes = await client.chat.complete({
             model: "pixtral-12b-2409",
             messages: [{
               role: "user",
               content: [
                 ...pageImages.map((url) => ({ type: "image_url" as const, imageUrl: { url } })),
-                { type: "text" as const, text: VISION_PROMPT },
+                { type: "text" as const, text: buildVisionPrompt(expectedType, expectedLabel) },
               ],
             }],
           });
@@ -388,6 +389,8 @@ async function runOcrAnalysis(
           if (jsonMatch) {
             const visionResult = JSON.parse(jsonMatch[0]) as MistralOcrResult;
             visionResult.pages_detectees = pageCount;
+            // Apply deterministic overrides on Pixtral output (especially passport MRZ)
+            applyClassificationOverrides(visionResult, visionResult.texte_extrait || "");
             console.log(`[OCR] Pixtral fallback success: score=${visionResult.score_qualite}, type=${visionResult.type_document_detecte}, pages_analyzed=${pageImages.length}`);
             return visionResult;
           }
