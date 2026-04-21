@@ -46,6 +46,36 @@ const CITY_TO_COUNTRY: Record<string, string> = {
   tunis: "Tunisie",
 };
 
+// Codes postes consulaires français présents dans les n° de dossier (FRA + chiffre + code lettres)
+// Format observé : FRA1DL2023... où "DL" = Douala, "YA" = Yaoundé, etc.
+// Source : numérotation France-Visas par poste émetteur
+const POSTE_CODE_TO_CITY: Record<string, { city: string; type: "consulat_general" | "ambassade" }> = {
+  DL: { city: "Douala", type: "consulat_general" },
+  YA: { city: "Yaoundé", type: "ambassade" },
+  CA: { city: "Casablanca", type: "consulat_general" },
+  RA: { city: "Rabat", type: "ambassade" },
+  DK: { city: "Dakar", type: "ambassade" },
+  AB: { city: "Abidjan", type: "ambassade" },
+  AL: { city: "Alger", type: "ambassade" },
+  TU: { city: "Tunis", type: "ambassade" },
+  TN: { city: "Tunis", type: "ambassade" },
+};
+
+function extractConsulatFromNumeroDossier(text: string) {
+  // Cherche un motif type "FRA1DL2023..." ou "FRA 1 DL 2023..."
+  const match = text.match(/FRA\s*\d?\s*([A-Z]{2})\s*\d{4}/i);
+  if (!match) return { nom: null, ville: null, pays: null };
+  const code = match[1].toUpperCase();
+  const poste = POSTE_CODE_TO_CITY[code];
+  if (!poste) return { nom: null, ville: null, pays: null };
+  const label = poste.type === "consulat_general" ? "Consulat général de France" : "Ambassade de France";
+  return {
+    nom: `${label} à ${poste.city}`,
+    ville: poste.city,
+    pays: inferCountryFromCity(poste.city),
+  };
+}
+
 function normalizeLookup(value: string) {
   return value
     .normalize("NFD")
@@ -173,9 +203,9 @@ Si c'est une décision de refus :
     "type_visa_texte_original": "texte exact du document tel qu'écrit dans l'objet (ex: 'visa de long séjour sollicité en qualité d'ascendant d'un ressortissant de nationalité française')"
   },
   "consulat": {
-    "nom": "nom complet de l'autorité émettrice (ex: 'Ambassade de France à Yaoundé', 'Consulat général de France à Casablanca'). DÉDUIS-LE depuis l'en-tête du document même s'il n'est pas explicitement précédé du mot 'Consulat'. ATTENTION : le cartouche peut être écrit sur PLUSIEURS LIGNES VERTICALES (ex: 'CONSULAT GÉNÉRAL' / 'DE FRANCE' / 'À DOUALA') — recompose-le en une seule chaîne.",
-    "ville": "ville extraite du nom (ex: 'Yaoundé', 'Casablanca', 'Dakar', 'Douala'). OBLIGATOIRE si une ambassade/consulat est mentionné(e), même si elle apparaît seule sur une ligne après 'À' ou 'A'.",
-    "pays": "pays correspondant à la ville (ex: Yaoundé→Cameroun, Douala→Cameroun, Casablanca→Maroc, Dakar→Sénégal, Abidjan→Côte d'Ivoire, Alger→Algérie, Tunis→Tunisie)"
+    "nom": "nom complet de l'autorité émettrice (ex: 'Ambassade de France à Yaoundé', 'Consulat général de France à Casablanca'). DÉDUIS-LE depuis l'en-tête du document même s'il n'est pas explicitement précédé du mot 'Consulat'. ATTENTION : le cartouche peut être écrit sur PLUSIEURS LIGNES VERTICALES (ex: 'CONSULAT GÉNÉRAL' / 'DE FRANCE' / 'À DOUALA') — recompose-le en une seule chaîne. SI L'EN-TÊTE EST ABSENT OU ILLISIBLE : retourne null. NE JAMAIS inventer 'Ambassade' ni écrire 'ville non précisée', 'non visible' ou similaire — laisse null.",
+    "ville": "ville extraite du nom (ex: 'Yaoundé', 'Casablanca', 'Dakar', 'Douala'). OBLIGATOIRE si une ambassade/consulat est mentionné(e), même si elle apparaît seule sur une ligne après 'À' ou 'A'. SINON null.",
+    "pays": "pays correspondant à la ville (ex: Yaoundé→Cameroun, Douala→Cameroun, Casablanca→Maroc, Dakar→Sénégal, Abidjan→Côte d'Ivoire, Alger→Algérie, Tunis→Tunisie). null si ville inconnue."
   },
   "refus": {
     "date_notification": "JJ/MM/AAAA — RÈGLE STRICTE : utilise TOUJOURS la date de SIGNATURE de l'agent en bas du document (souvent précédée de 'Le' près de la signature, ex: 'Le 13/09/2023. Laurène THOUVENIN'). NE PAS utiliser la date d'enregistrement du dossier en haut (champ 'Date :' à côté du N° de dossier). Si la date de signature est absente, utilise la date du dossier en dernier recours.",
@@ -440,13 +470,18 @@ serve(async (req) => {
     const visa = analysisResult.visa || {};
     const consulat = analysisResult.consulat || {};
     const refus = analysisResult.refus || {};
-    const consulatFallback = extractConsulatFromText(ocrRawText);
+    const consulatFromText = extractConsulatFromText(ocrRawText);
+    const consulatFromNumero = extractConsulatFromNumeroDossier(ocrRawText);
+    // Anti-hallucination : si le modèle retourne "ville non précisée", "non visible", etc., on ignore
+    const looksHallucinated = (s: string | null | undefined) => !!s && /non\s+pr[ée]cis|non\s+visible|inconnu|non\s+identifi/i.test(s);
+    const safeConsulatNom = looksHallucinated(consulat.nom) ? null : (consulat.nom || null);
+    const safeConsulatVille = looksHallucinated(consulat.ville) ? null : (consulat.ville || null);
     const finalConsulat = {
-      nom: consulat.nom || consulatFallback.nom || null,
-      ville: consulat.ville || consulatFallback.ville || null,
-      pays: consulat.pays || consulatFallback.pays || inferCountryFromCity(consulat.ville || consulatFallback.ville || null),
+      nom: safeConsulatNom || consulatFromText.nom || consulatFromNumero.nom || null,
+      ville: safeConsulatVille || consulatFromText.ville || consulatFromNumero.ville || null,
+      pays: consulat.pays || consulatFromText.pays || consulatFromNumero.pays || inferCountryFromCity(safeConsulatVille || consulatFromText.ville || consulatFromNumero.ville || null),
     };
-    console.log("[analyze-decision] consulat extracted:", finalConsulat);
+    console.log("[analyze-decision] consulat sources:", { model: consulat, fromText: consulatFromText, fromNumero: consulatFromNumero, final: finalConsulat });
     // Calculate remaining days
     let delaiRestant: number | null = null;
     if (refus.date_notification) {
