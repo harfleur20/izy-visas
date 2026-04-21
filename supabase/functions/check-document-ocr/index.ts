@@ -43,7 +43,7 @@ function guessExpectedType(nomPiece: string): string {
   if (/décision.*refus|refus.*visa/.test(n)) return "decision_refus";
   if (/relevé.*banc|bank.*statement|relevé.*compte/.test(n)) return "releve_bancaire";
   if (/contrat.*travail|employment/.test(n)) return "contrat_travail";
-  if (/campus\s*france/.test(n)) return "attestation_campus_france";
+  if (/campus\s*france|accord\s*pr[ée]alable\s*d['']?inscription|attestation\s*[ée]tudes?\s*en\s*france|études?\s*en\s*france/.test(n)) return "attestation_campus_france";
   if (/acte.*mariage|marriage/.test(n)) return "acte_mariage";
   if (/acte.*naissance|birth/.test(n)) return "acte_naissance";
   if (/hébergement|attestation.*accueil/.test(n)) return "justificatif_hebergement";
@@ -362,7 +362,7 @@ function classifyDocumentType(result: MistralOcrResult, allText: string) {
     result.type_document_detecte = "releve_bancaire";
   } else if (/contrat\s*(de\s*)?travail|employment\s*contract|embauche/i.test(allText)) {
     result.type_document_detecte = "contrat_travail";
-  } else if (/campus\s*france/i.test(allText)) {
+  } else if (/campus\s*france|accord\s*pr[ée]alable\s*d['']?inscription|attestation\s*[ée]tudes?\s*en\s*france|études?\s*en\s*france|CM\d{2}-\d{4,6}-C\d{2}|avis\s*p[ée]dagogique/i.test(allText)) {
     result.type_document_detecte = "attestation_campus_france";
   } else if (/acte\s*(de\s*)?mariage|marriage/i.test(allText)) {
     result.type_document_detecte = "acte_mariage";
