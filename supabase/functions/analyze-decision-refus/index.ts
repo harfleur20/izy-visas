@@ -46,6 +46,36 @@ const CITY_TO_COUNTRY: Record<string, string> = {
   tunis: "Tunisie",
 };
 
+// Codes postes consulaires français présents dans les n° de dossier (FRA + chiffre + code lettres)
+// Format observé : FRA1DL2023... où "DL" = Douala, "YA" = Yaoundé, etc.
+// Source : numérotation France-Visas par poste émetteur
+const POSTE_CODE_TO_CITY: Record<string, { city: string; type: "consulat_general" | "ambassade" }> = {
+  DL: { city: "Douala", type: "consulat_general" },
+  YA: { city: "Yaoundé", type: "ambassade" },
+  CA: { city: "Casablanca", type: "consulat_general" },
+  RA: { city: "Rabat", type: "ambassade" },
+  DK: { city: "Dakar", type: "ambassade" },
+  AB: { city: "Abidjan", type: "ambassade" },
+  AL: { city: "Alger", type: "ambassade" },
+  TU: { city: "Tunis", type: "ambassade" },
+  TN: { city: "Tunis", type: "ambassade" },
+};
+
+function extractConsulatFromNumeroDossier(text: string) {
+  // Cherche un motif type "FRA1DL2023..." ou "FRA 1 DL 2023..."
+  const match = text.match(/FRA\s*\d?\s*([A-Z]{2})\s*\d{4}/i);
+  if (!match) return { nom: null, ville: null, pays: null };
+  const code = match[1].toUpperCase();
+  const poste = POSTE_CODE_TO_CITY[code];
+  if (!poste) return { nom: null, ville: null, pays: null };
+  const label = poste.type === "consulat_general" ? "Consulat général de France" : "Ambassade de France";
+  return {
+    nom: `${label} à ${poste.city}`,
+    ville: poste.city,
+    pays: inferCountryFromCity(poste.city),
+  };
+}
+
 function normalizeLookup(value: string) {
   return value
     .normalize("NFD")
