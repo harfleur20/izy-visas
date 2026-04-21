@@ -120,14 +120,26 @@ export default function TunnelVerdict({ ocrData, onNext, onBack }: TunnelVerdict
           </p>
         )}
 
-        <Button
-          onClick={onNext}
-          size="lg"
-          className="w-full h-14 text-base font-syne font-bold rounded-2xl gap-2"
-        >
-          Continuer ma contestation
-          <ArrowRight className="w-5 h-5" />
-        </Button>
+        {dateIncoherente ? (
+          <Button
+            onClick={onBack}
+            size="lg"
+            variant="outline"
+            className="w-full h-14 text-base font-syne font-bold rounded-2xl gap-2"
+          >
+            <ArrowLeft className="w-5 h-5" />
+            Corriger la date de notification
+          </Button>
+        ) : (
+          <Button
+            onClick={onNext}
+            size="lg"
+            className="w-full h-14 text-base font-syne font-bold rounded-2xl gap-2"
+          >
+            Continuer ma contestation
+            <ArrowRight className="w-5 h-5" />
+          </Button>
+        )}
       </div>
     </div>
   );
