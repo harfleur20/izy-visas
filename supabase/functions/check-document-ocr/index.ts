@@ -279,7 +279,7 @@ async function runOcrAnalysis(
       body: JSON.stringify({
         model: "mistral-ocr-latest",
         document: { type: "document_url", document_url: signedUrl },
-        include_image_base64: false,
+        include_image_base64: true,
       }),
     });
 
@@ -294,16 +294,55 @@ async function runOcrAnalysis(
       .map((p: any) => p.markdown || p.text || "")
       .join("\n");
     const pageCount = ocrResponse.pages?.length || 1;
-    const hasText = allText.trim().length > 50;
+    let hasText = allText.trim().length > 50;
+    let finalText = allText;
+
+    // ── Pixtral Vision Fallback for scanned PDFs ──────────────────────
+    // If OCR text extraction failed or yielded too little (scanned/image-based PDF),
+    // fall back to Pixtral vision on the first page image returned by Mistral OCR.
+    if (!hasText) {
+      const firstPage = ocrResponse.pages?.[0];
+      const firstImage = firstPage?.images?.[0];
+      const imageB64 = firstImage?.image_base64 || firstImage?.base64 || null;
+
+      if (imageB64) {
+        console.log("[OCR] Text extraction insufficient — falling back to Pixtral vision on page 1");
+        try {
+          const dataUrl = imageB64.startsWith("data:") ? imageB64 : `data:image/jpeg;base64,${imageB64}`;
+          const visionRes = await client.chat.complete({
+            model: "pixtral-12b-2409",
+            messages: [{
+              role: "user",
+              content: [
+                { type: "image_url", imageUrl: { url: dataUrl } },
+                { type: "text", text: VISION_PROMPT },
+              ],
+            }],
+          });
+          const responseText = (visionRes.choices?.[0]?.message?.content || "") as string;
+          const jsonMatch = responseText.match(/\{[\s\S]*\}/);
+          if (jsonMatch) {
+            const visionResult = JSON.parse(jsonMatch[0]) as MistralOcrResult;
+            visionResult.pages_detectees = pageCount;
+            console.log(`[OCR] Pixtral fallback success: score=${visionResult.score_qualite}, type=${visionResult.type_document_detecte}`);
+            return visionResult;
+          }
+        } catch (visionErr) {
+          console.error("[OCR] Pixtral fallback failed:", visionErr);
+        }
+      } else {
+        console.log("[OCR] No page image available for Pixtral fallback");
+      }
+    }
 
     const result: MistralOcrResult = {
       lisible: hasText,
       score_qualite: hasText ? 85 : 15,
       motif_rejet: hasText ? null : "Document vide ou texte non extractible",
       type_document_detecte: "autre",
-      langue_detectee: /[أ-ي]/.test(allText) ? "ar" : /[a-zA-Z]/.test(allText) ? (/[àâéèêëïôùûüç]/.test(allText) ? "fr" : "en") : "autre",
+      langue_detectee: /[أ-ي]/.test(finalText) ? "ar" : /[a-zA-Z]/.test(finalText) ? (/[àâéèêëïôùûüç]/.test(finalText) ? "fr" : "en") : "autre",
       date_detectee: null,
-      texte_extrait: allText.substring(0, 500),
+      texte_extrait: finalText.substring(0, 500),
       pages_detectees: pageCount,
       document_tronque: false,
       texte_manuscrit_present: false,
@@ -313,8 +352,8 @@ async function runOcrAnalysis(
     };
 
     if (hasText) {
-      classifyDocumentType(result, allText);
-      const dateMatch = allText.match(/(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{4})/);
+      classifyDocumentType(result, finalText);
+      const dateMatch = finalText.match(/(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{4})/);
       if (dateMatch) {
         result.date_detectee = `${dateMatch[1]}/${dateMatch[2]}/${dateMatch[3]}`;
       }
