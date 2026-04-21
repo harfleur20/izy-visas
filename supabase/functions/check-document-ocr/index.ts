@@ -439,13 +439,14 @@ async function runOcrAnalysis(
     const base64Content = btoa(binary);
     const mimeType = fileType === "image/png" ? "image/png" : "image/jpeg";
 
+    const expectedLabel = TYPE_LABELS[expectedType] || "";
     const visionResponse = await client.chat.complete({
       model: "pixtral-12b-2409",
       messages: [{
         role: "user",
         content: [
           { type: "image_url", imageUrl: { url: `data:${mimeType};base64,${base64Content}` } },
-          { type: "text", text: VISION_PROMPT },
+          { type: "text", text: buildVisionPrompt(expectedType, expectedLabel) },
         ],
       }],
     });
@@ -457,7 +458,10 @@ async function runOcrAnalysis(
       throw new Error("Analyse impossible");
     }
 
-    return JSON.parse(jsonMatch[0]);
+    const imageResult = JSON.parse(jsonMatch[0]) as MistralOcrResult;
+    // Apply deterministic overrides on Pixtral output for image-direct files too
+    applyClassificationOverrides(imageResult, imageResult.texte_extrait || "");
+    return imageResult;
   }
 }
 
