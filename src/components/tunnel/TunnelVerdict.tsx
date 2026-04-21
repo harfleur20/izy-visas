@@ -19,8 +19,11 @@ function computeDelaiRestant(dateStr: string): number | null {
 }
 
 export default function TunnelVerdict({ ocrData, onNext, onBack }: TunnelVerdictProps) {
-  const delaiRestant = ocrData.dateNotificationRefus ? computeDelaiRestant(ocrData.dateNotificationRefus) : null;
-  const isExpired = delaiRestant !== null && delaiRestant < 0;
+  const rawDelai = ocrData.dateNotificationRefus ? computeDelaiRestant(ocrData.dateNotificationRefus) : null;
+  // Le délai légal est de 30 jours calendaires. Si > 30, la date OCR est probablement erronée (date future ou mal lue).
+  const dateIncoherente = rawDelai !== null && rawDelai > 30;
+  const delaiRestant = rawDelai !== null ? Math.min(rawDelai, 30) : null;
+  const isExpired = rawDelai !== null && rawDelai < 0;
   const isUrgent = delaiRestant !== null && delaiRestant >= 0 && delaiRestant <= 7;
 
   if (isExpired) {
