@@ -539,12 +539,26 @@ serve(async (req) => {
     const looksHallucinated = (s: string | null | undefined) => !!s && /non\s+pr[ée]cis|non\s+visible|inconnu|non\s+identifi/i.test(s);
     const safeConsulatNom = looksHallucinated(consulat.nom) ? null : (consulat.nom || null);
     const safeConsulatVille = looksHallucinated(consulat.ville) ? null : (consulat.ville || null);
-    const finalConsulat = {
-      nom: safeConsulatNom || consulatFromText.nom || consulatFromNumero.nom || null,
-      ville: safeConsulatVille || consulatFromText.ville || consulatFromNumero.ville || null,
-      pays: consulat.pays || consulatFromText.pays || consulatFromNumero.pays || inferCountryFromCity(safeConsulatVille || consulatFromText.ville || consulatFromNumero.ville || null),
-    };
-    console.log("[analyze-decision] consulat sources:", { model: consulat, fromText: consulatFromText, fromNumero: consulatFromNumero, final: finalConsulat });
+
+    // Étapes 1-3 : modèle texte, regex, n° de dossier
+    let mergedNom = safeConsulatNom || consulatFromText.nom || consulatFromNumero.nom || null;
+    let mergedVille = safeConsulatVille || consulatFromText.ville || consulatFromNumero.ville || null;
+    let mergedPays = consulat.pays || consulatFromText.pays || consulatFromNumero.pays || inferCountryFromCity(mergedVille);
+
+    // Étape 4 : Pixtral vision sur l'image de la 1ère page (uniquement si tout a échoué et qu'on a l'image)
+    let consulatFromPixtral = { nom: null as string | null, ville: null as string | null, pays: null as string | null };
+    if (!mergedVille && firstPageImageB64) {
+      console.log("[analyze-decision] Consulat introuvable, escalade Pixtral vision...");
+      consulatFromPixtral = await extractConsulatViaPixtral(firstPageImageB64, firstPageMimeType, mistralApiKey);
+      if (consulatFromPixtral.ville) {
+        mergedNom = mergedNom || consulatFromPixtral.nom;
+        mergedVille = consulatFromPixtral.ville;
+        mergedPays = mergedPays || consulatFromPixtral.pays;
+      }
+    }
+
+    const finalConsulat = { nom: mergedNom, ville: mergedVille, pays: mergedPays };
+    console.log("[analyze-decision] consulat sources:", { model: consulat, fromText: consulatFromText, fromNumero: consulatFromNumero, fromPixtral: consulatFromPixtral, final: finalConsulat });
     // Calculate remaining days
     let delaiRestant: number | null = null;
     if (refus.date_notification) {
