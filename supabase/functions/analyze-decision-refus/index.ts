@@ -178,16 +178,18 @@ function inferMotifCodesFromTexts(texts: unknown): string[] {
   return Array.from(detected);
 }
 
-function resolveMotifCodes(modelCodes: unknown, motifTexts: unknown): string[] {
+function resolveMotifCodes(modelCodes: unknown, motifTexts: unknown, sourceText?: string): string[] {
   const safeModelCodes = sanitizeMotifCodes(modelCodes);
   const inferredCodes = inferMotifCodesFromTexts(motifTexts);
+  const inferredFromSource = sourceText ? inferMotifCodesFromTexts([sourceText]) : [];
+  const crossValidatedCodes = Array.from(new Set([...inferredCodes, ...inferredFromSource]));
 
-  if (inferredCodes.length === 0) return safeModelCodes;
+  if (crossValidatedCodes.length === 0) return safeModelCodes;
 
-  const allowedByText = new Set(inferredCodes);
+  const allowedByText = new Set(crossValidatedCodes);
   const trustedModelCodes = safeModelCodes.filter((code) => allowedByText.has(code));
 
-  return Array.from(new Set([...inferredCodes, ...trustedModelCodes]));
+  return Array.from(new Set([...crossValidatedCodes, ...trustedModelCodes]));
 }
 
 async function extractConsulatViaPixtral(
@@ -661,8 +663,17 @@ serve(async (req) => {
       }
     }
 
+    const resolvedMotifCodes = resolveMotifCodes(refus.motifs_coches, refus.motifs_texte_original, ocrRawText);
+    console.log("[analyze-decision] motif sources:", {
+      modelCodes: refus.motifs_coches || [],
+      textCodes: inferMotifCodesFromTexts(refus.motifs_texte_original),
+      sourceCodes: inferMotifCodesFromTexts([ocrRawText]),
+      final: resolvedMotifCodes,
+      motifTexts: refus.motifs_texte_original || [],
+    });
+
     // Enrich motifs with labels
-    const motifsEnrichis = (refus.motifs_coches || []).map((code: string) => ({
+    const motifsEnrichis = resolvedMotifCodes.map((code: string) => ({
       code,
       label: MOTIF_LABELS[code] || `Motif ${code}`,
     }));
@@ -718,7 +729,7 @@ serve(async (req) => {
       },
       refus: {
         date_notification: refus.date_notification || null,
-        motifs_coches: refus.motifs_coches || [],
+        motifs_coches: resolvedMotifCodes,
         motifs_texte_original: refus.motifs_texte_original || [],
         motifs_enrichis: motifsEnrichis,
         numero_decision: refus.numero_decision || null,
