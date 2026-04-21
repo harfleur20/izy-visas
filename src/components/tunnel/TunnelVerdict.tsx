@@ -1,27 +1,13 @@
 import { Button } from "@/components/ui/button";
 import { ArrowRight, ArrowLeft, ShieldCheck, AlertOctagon } from "lucide-react";
 import { TunnelOcrData } from "@/hooks/useTunnelState";
+import { getMotifLabel } from "@/lib/motifs";
 
 interface TunnelVerdictProps {
   ocrData: TunnelOcrData;
   onNext: () => void;
   onBack: () => void;
 }
-
-const MOTIF_LABELS: Record<string, string> = {
-  A: "Document de voyage non valide",
-  B: "But du séjour non justifié",
-  C: "Ressources insuffisantes",
-  D: "Assurance absente ou insuffisante",
-  E: "Hébergement non justifié",
-  F: "Doute sur la volonté de retour",
-  G: "Signalement SIS",
-  H: "Menace pour l'ordre public",
-  I: "Séjour irrégulier antérieur",
-  J: "Intention matrimoniale non établie",
-  K: "Dossier incomplet",
-  L: "Appréciation globale défavorable",
-};
 
 function computeDelaiRestant(dateStr: string): number | null {
   const parts = dateStr.match(/(\d{1,2})\/(\d{1,2})\/(\d{4})/);
@@ -99,7 +85,7 @@ export default function TunnelVerdict({ ocrData, onNext, onBack }: TunnelVerdict
             {ocrData.motifsRefus.map((code) => (
               <div key={code} className="flex items-start gap-2">
                 <span className="text-xs font-mono font-bold text-primary bg-primary/10 px-1.5 py-0.5 rounded mt-0.5">{code}</span>
-                <span className="text-sm text-foreground">{MOTIF_LABELS[code] || `Motif ${code}`}</span>
+                <span className="text-sm text-foreground">{getMotifLabel(code)}</span>
               </div>
             ))}
           </div>
