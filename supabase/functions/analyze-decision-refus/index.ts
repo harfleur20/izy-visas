@@ -72,12 +72,12 @@ Si c'est une décision de refus :
   },
   "visa": {
     "type_visa": une valeur parmi ["court_sejour_schengen", "long_sejour_etudiant", "long_sejour_conjoint_francais", "long_sejour_salarie", "passeport_talent", "visiteur_parent_enfant_francais", "autre"],
-    "type_visa_texte_original": "texte exact du document"
+    "type_visa_texte_original": "texte exact du document tel qu'écrit dans l'objet (ex: 'visa de long séjour sollicité en qualité d'ascendant d'un ressortissant de nationalité française')"
   },
   "consulat": {
-    "nom": "nom ou null",
-    "ville": "ville ou null",
-    "pays": "pays ou null"
+    "nom": "nom complet de l'autorité émettrice (ex: 'Ambassade de France à Yaoundé', 'Consulat général de France à Casablanca'). DÉDUIS-LE depuis l'en-tête du document même s'il n'est pas explicitement précédé du mot 'Consulat'.",
+    "ville": "ville extraite du nom (ex: 'Yaoundé', 'Casablanca', 'Dakar'). OBLIGATOIRE si une ambassade/consulat est mentionné(e).",
+    "pays": "pays correspondant à la ville (ex: Yaoundé→Cameroun, Casablanca→Maroc, Dakar→Sénégal)"
   },
   "refus": {
     "date_notification": "JJ/MM/AAAA ou null",
@@ -88,7 +88,20 @@ Si c'est une décision de refus :
   "destinataire_recours": "crrv_nantes" ou "sous_directeur_visas",
   "langue_document": "fr" ou "ar" ou "en" ou "autre",
   "confiance_extraction": 0 à 100
-}`;
+}
+
+INSTRUCTIONS IMPORTANTES :
+- Pour le type_visa, mappe les libellés courants :
+  • "ascendant d'un ressortissant de nationalité française" / "ascendant de Français" → "visiteur_parent_enfant_francais"
+  • "parent d'enfant français" → "visiteur_parent_enfant_francais"
+  • "conjoint de Français" / "conjoint de ressortissant français" → "long_sejour_conjoint_francais"
+  • "étudiant" / "études" → "long_sejour_etudiant"
+  • "salarié" / "travailleur" → "long_sejour_salarie"
+  • "passeport talent" → "passeport_talent"
+  • "court séjour" / "Schengen" / "tourisme" / "visite familiale" (court séjour) → "court_sejour_schengen"
+- Pour le consulat : si le document indique "AMBASSADE DE FRANCE À [VILLE]" ou "CONSULAT GÉNÉRAL DE FRANCE À [VILLE]" dans l'en-tête, EXTRAIS toujours le nom complet, la ville et le pays correspondant.
+- Pour les motifs : lis attentivement les cases cochées (☒, ⊠, ✓, X) et associe chaque texte coché au code A-L correspondant selon ce mapping :
+  A=document de voyage non valide, B=but du séjour non justifié, C=ressources insuffisantes, D=assurance, E=hébergement, F=volonté de retour, G=SIS, H=ordre public, I=séjour irrégulier, J=intention matrimoniale, K=dossier incomplet, L=appréciation globale.`;
 
 serve(async (req) => {
   if (req.method === "OPTIONS") {
