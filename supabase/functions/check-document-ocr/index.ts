@@ -277,18 +277,50 @@ async function loadOwnerIdentity(
 function applyClassificationOverrides(result: MistralOcrResult, allText: string) {
   const text = allText || "";
 
-  // MRZ (Machine Readable Zone) detection — passport-only signature
-  // Standard ICAO 9303 passport MRZ: line starts with "P<" + 3-letter country code
-  const mrzPassport = /\bP[<KN][A-Z]{3}[A-Z<0-9]{20,}/.test(text)
-    || /[A-Z0-9<]{30,}\s*[A-Z0-9<]{30,}/m.test(text);
+  // ── 1. Campus France attestation (priority — unique markers) ──────────
+  // These markers are unambiguous and should NEVER be overridden to passport.
+  const campusFranceMarkers = [
+    /etudes\s+en\s+france/i,
+    /accord\s+pr[ée]alable\s+d['']inscription/i,
+    /attestation\s+«?\s*etudes\s+en\s+france/i,
+    /confirmation\s+of\s+acceptance\s*\/?\s*pre-?enrollment/i,
+    /institut\s+fran[çc]ais\s+du\s+(cameroun|s[ée]n[ée]gal|maroc|alg[ée]rie|tunisie|c[ôo]te\s+d['']ivoire)/i,
+    /num[ée]ro\s+d['']identifiant\s*:?\s*[A-Z]{2}\d{2}-\d{4,}/i, // CM23-04561 pattern
+    /[ée]tablissement\s+d['']accueil/i,
+    /dossier\s+suivi\s+par\s*:?\s*antenne/i,
+  ];
+  const isCampusFrance = campusFranceMarkers.filter((re) => re.test(text)).length >= 2;
 
-  // Strong passport indicators (explicit terms found on ID page)
-  const passportKeywords =
-    /(passe?port\s*n[°o]?\b|bearer'?s?\s*signature|signature\s*du\s*titulaire|date\s*d[''\s]?expiration\s*\/\s*date\s*of\s*expiry|date\s*of\s*issue|place\s*of\s*birth\s*\/\s*lieu\s*de\s*naissance|d[ée]l[ée]gu[ée]\s*g[ée]n[ée]ral\s*[àa]\s*la\s*sûret[ée]\s*nationale|country\s*code|république\s*du\s*[a-zàâéèêëïôùûüç]+\s*\/\s*republic\s*of)/i.test(text);
+  if (isCampusFrance) {
+    if (result.type_document_detecte !== "attestation_campus_france") {
+      console.log(`[OCR] Override classification → attestation_campus_france (CF markers detected), was=${result.type_document_detecte}`);
+      result.type_document_detecte = "attestation_campus_france";
+    }
+    return; // Stop here — don't run other overrides
+  }
 
-  if (mrzPassport || passportKeywords) {
+  // ── 2. Passport detection (strict — require MRZ or 2+ specific markers) ─
+  // MRZ (Machine Readable Zone) — only present on passports (ICAO 9303)
+  const mrzPassport = /\bP[<KN][A-Z]{3}[A-Z<0-9]{20,}/.test(text);
+
+  // Specific passport-only indicators (NOT shared with other admin docs)
+  const passportSpecificMarkers = [
+    /passe?port\s*n[°o]?\b/i,
+    /bearer'?s?\s*signature/i,
+    /signature\s+du\s+titulaire/i,
+    /date\s*d[''\s]?expiration\s*\/\s*date\s*of\s*expiry/i,
+    /place\s*of\s*birth\s*\/\s*lieu\s*de\s*naissance/i,
+    /d[ée]l[ée]gu[ée]\s*g[ée]n[ée]ral\s*[àa]\s*la\s*s[ûu]ret[ée]\s*nationale/i,
+    /type\s*\/\s*type\s*[\s\S]{0,20}code\s+du\s+pays\s*\/\s*country\s+code/i,
+    /nationality\s*\/\s*nationalit[ée]/i,
+    /authority\s*\/\s*autorit[ée]/i,
+  ];
+  const passportMarkerCount = passportSpecificMarkers.filter((re) => re.test(text)).length;
+
+  // Require MRZ OR at least 2 specific markers to avoid false positives
+  if (mrzPassport || passportMarkerCount >= 2) {
     if (result.type_document_detecte !== "passeport") {
-      console.log(`[OCR] Override classification → passeport (MRZ=${mrzPassport}, keywords=${passportKeywords}), was=${result.type_document_detecte}`);
+      console.log(`[OCR] Override classification → passeport (MRZ=${mrzPassport}, markers=${passportMarkerCount}), was=${result.type_document_detecte}`);
       result.type_document_detecte = "passeport";
     }
   }
