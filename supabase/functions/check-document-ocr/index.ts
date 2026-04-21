@@ -354,7 +354,10 @@ async function runOcrAnalysis(
 
 function classifyDocumentType(result: MistralOcrResult, allText: string) {
   // Order matters: most specific first, broadest last
-  if (/refus[éeè]?\s*(de\s*)?visa|visa\s*refus/i.test(allText)) {
+  // Campus France BEFORE decision_refus to avoid false positives on "refus" keyword
+  if (/campus\s*france|accord\s*pr[ée]alable\s*d['']?inscription|attestation\s*[ée]tudes?\s*en\s*france|études?\s*en\s*france|CM\d{2}-\d{4,6}-C\d{2}|avis\s*p[ée]dagogique|confirmation\s*of\s*acceptance|pre-?enrollment/i.test(allText)) {
+    result.type_document_detecte = "attestation_campus_france";
+  } else if (/notification\s*de\s*refus|refus[éeè]?\s*(de\s*)?visa|visa\s*refus|d[ée]cision\s*de\s*refus/i.test(allText)) {
     result.type_document_detecte = "decision_refus";
   } else if (/passeport|passport/i.test(allText)) {
     result.type_document_detecte = "passeport";
