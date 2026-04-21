@@ -97,7 +97,12 @@ type OwnerIdentity = {
   passportNumber: string;
 };
 
-const VISION_PROMPT = `Tu es un expert en contrôle qualité de documents juridiques pour demande de visa.
+function buildVisionPrompt(expectedType: string, expectedLabel: string): string {
+  const hint = expectedType && expectedType !== "autre"
+    ? `\n\nINDICE IMPORTANT : Le client a déclaré téléverser un(e) "${expectedLabel}" (type technique : "${expectedType}"). Vérifie si ce document correspond effectivement à ce type avant de le classer autrement.`
+    : "";
+
+  return `Tu es un expert en contrôle qualité de documents juridiques pour demande de visa.
 
 Analyse ce document et réponds UNIQUEMENT en JSON valide sans aucun texte avant ou après.
 
@@ -108,7 +113,7 @@ Analyse ce document et réponds UNIQUEMENT en JSON valide sans aucun texte avant
   "type_document_detecte": une valeur parmi [decision_refus, passeport, releve_bancaire, contrat_travail, attestation_campus_france, acte_mariage, acte_naissance, justificatif_hebergement, billet_avion, assurance_voyage, attestation_emploi, certificat_scolarite, justificatif_domicile, reservation_hotel, lettre_motivation, lettre_invitation, attestation_hebergement, formulaire_visa, autre, inconnu],
   "langue_detectee": une valeur parmi [fr, ar, en, autre, mixte],
   "date_detectee": date au format JJ/MM/AAAA ou null si aucune date trouvée,
-  "texte_extrait": premiers 500 caractères du texte visible,
+  "texte_extrait": premiers 500 caractères du texte visible (transcris fidèlement, y compris les lignes MRZ commençant par P< ou les codes type AA123456),
   "pages_detectees": nombre de pages,
   "document_tronque": true ou false,
   "texte_manuscrit_present": true ou false,
@@ -116,6 +121,14 @@ Analyse ce document et réponds UNIQUEMENT en JSON valide sans aucun texte avant
   "angle_excessif": true ou false,
   "problemes_detectes": liste des problèmes détectés sous forme de tableau de strings
 }
+
+REPÈRES DE CLASSIFICATION (à utiliser pour distinguer les types proches) :
+- "passeport" : page d'identité d'un passeport. Signaux forts : mots "Passeport"/"Passport", "Bearer's signature"/"Signature du titulaire", code pays 3 lettres (CMR, FRA, MAR, DZA, TUN, SEN, CIV…), numéro alphanumérique (ex AA511315), photo d'identité + signature manuscrite, ligne MRZ commençant par "P<" suivie d'un code pays, dates de délivrance/expiration, mention d'une autorité d'émission (Délégué à la Sûreté Nationale, Ministère de l'Intérieur, Direction Générale des Passeports…).
+- "formulaire_visa" : formulaire vierge ou rempli de demande de visa Schengen/long séjour rempli par le demandeur, AVEC des cases à cocher, des champs nombreux numérotés (1 à 30+), titre explicite "Demande de visa Schengen" ou "Application for Schengen Visa". JAMAIS un passeport, même si "visa" apparaît dans d'anciens tampons.
+- "decision_refus" : courrier officiel d'une ambassade/consulat français notifiant un refus, avec en-tête "République Française", "Notification de refus", références CESEDA L. ou R.
+- "lettre_motivation" : texte rédigé à la première personne, paragraphes longs, formule "Madame, Monsieur".
+
+⚠️ Un passeport peut contenir d'anciens visas tamponnés : cela ne fait PAS de lui un "formulaire_visa". La présence d'une MRZ ou de "Bearer's signature" suffit à le classer "passeport".
 
 Critères pour lisible = false :
 - Texte principal illisible ou trop flou
@@ -125,7 +138,10 @@ Critères pour lisible = false :
 - Angle de prise de vue supérieur à 20 degrés
 - Reflet majeur couvrant le texte essentiel
 - Page blanche ou quasi-vide
-- Résolution insuffisante pour lire le texte`;
+- Résolution insuffisante pour lire le texte${hint}`;
+}
+
+const VISION_PROMPT = buildVisionPrompt("", "");
 
 function getRejectionMessage(result: MistralOcrResult): string {
   const motif = (result.motif_rejet || "").toLowerCase();
@@ -255,12 +271,36 @@ async function loadOwnerIdentity(
   };
 }
 
+// ── Strong heuristics on extracted text to override misclassification ──
+// Some documents (passports especially) are systematically misclassified by
+// vision models. We apply deterministic post-checks based on the OCR text.
+function applyClassificationOverrides(result: MistralOcrResult, allText: string) {
+  const text = allText || "";
+
+  // MRZ (Machine Readable Zone) detection — passport-only signature
+  // Standard ICAO 9303 passport MRZ: line starts with "P<" + 3-letter country code
+  const mrzPassport = /\bP[<KN][A-Z]{3}[A-Z<0-9]{20,}/.test(text)
+    || /[A-Z0-9<]{30,}\s*[A-Z0-9<]{30,}/m.test(text);
+
+  // Strong passport indicators (explicit terms found on ID page)
+  const passportKeywords =
+    /(passe?port\s*n[°o]?\b|bearer'?s?\s*signature|signature\s*du\s*titulaire|date\s*d[''\s]?expiration\s*\/\s*date\s*of\s*expiry|date\s*of\s*issue|place\s*of\s*birth\s*\/\s*lieu\s*de\s*naissance|d[ée]l[ée]gu[ée]\s*g[ée]n[ée]ral\s*[àa]\s*la\s*sûret[ée]\s*nationale|country\s*code|république\s*du\s*[a-zàâéèêëïôùûüç]+\s*\/\s*republic\s*of)/i.test(text);
+
+  if (mrzPassport || passportKeywords) {
+    if (result.type_document_detecte !== "passeport") {
+      console.log(`[OCR] Override classification → passeport (MRZ=${mrzPassport}, keywords=${passportKeywords}), was=${result.type_document_detecte}`);
+      result.type_document_detecte = "passeport";
+    }
+  }
+}
+
 // ── Run OCR analysis (shared between tunnel and normal modes) ──────────
 async function runOcrAnalysis(
   bytes: Uint8Array,
   fileType: string,
   fileName: string,
   signedUrl: string | null,
+  expectedType: string = "",
 ): Promise<MistralOcrResult> {
   const mistralApiKey = Deno.env.get("MISTRAL_API_KEY");
   if (!mistralApiKey) {
@@ -333,13 +373,14 @@ async function runOcrAnalysis(
       if (pageImages.length > 0) {
         console.log(`[OCR] Falling back to Pixtral vision on ${pageImages.length} page(s)`);
         try {
+          const expectedLabel = TYPE_LABELS[expectedType] || "";
           const visionRes = await client.chat.complete({
             model: "pixtral-12b-2409",
             messages: [{
               role: "user",
               content: [
                 ...pageImages.map((url) => ({ type: "image_url" as const, imageUrl: { url } })),
-                { type: "text" as const, text: VISION_PROMPT },
+                { type: "text" as const, text: buildVisionPrompt(expectedType, expectedLabel) },
               ],
             }],
           });
@@ -348,6 +389,8 @@ async function runOcrAnalysis(
           if (jsonMatch) {
             const visionResult = JSON.parse(jsonMatch[0]) as MistralOcrResult;
             visionResult.pages_detectees = pageCount;
+            // Apply deterministic overrides on Pixtral output (especially passport MRZ)
+            applyClassificationOverrides(visionResult, visionResult.texte_extrait || "");
             console.log(`[OCR] Pixtral fallback success: score=${visionResult.score_qualite}, type=${visionResult.type_document_detecte}, pages_analyzed=${pageImages.length}`);
             return visionResult;
           }
@@ -378,6 +421,8 @@ async function runOcrAnalysis(
 
     if (hasText) {
       classifyDocumentType(result, finalText);
+      // Apply deterministic overrides (passport MRZ, etc.) AFTER keyword classification
+      applyClassificationOverrides(result, finalText);
       const dateMatch = finalText.match(/(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{4})/);
       if (dateMatch) {
         result.date_detectee = `${dateMatch[1]}/${dateMatch[2]}/${dateMatch[3]}`;
@@ -394,13 +439,14 @@ async function runOcrAnalysis(
     const base64Content = btoa(binary);
     const mimeType = fileType === "image/png" ? "image/png" : "image/jpeg";
 
+    const expectedLabel = TYPE_LABELS[expectedType] || "";
     const visionResponse = await client.chat.complete({
       model: "pixtral-12b-2409",
       messages: [{
         role: "user",
         content: [
           { type: "image_url", imageUrl: { url: `data:${mimeType};base64,${base64Content}` } },
-          { type: "text", text: VISION_PROMPT },
+          { type: "text", text: buildVisionPrompt(expectedType, expectedLabel) },
         ],
       }],
     });
@@ -412,7 +458,10 @@ async function runOcrAnalysis(
       throw new Error("Analyse impossible");
     }
 
-    return JSON.parse(jsonMatch[0]);
+    const imageResult = JSON.parse(jsonMatch[0]) as MistralOcrResult;
+    // Apply deterministic overrides on Pixtral output for image-direct files too
+    applyClassificationOverrides(imageResult, imageResult.texte_extrait || "");
+    return imageResult;
   }
 }
 
@@ -475,8 +524,9 @@ async function processOcrInBackground(
 
   let ocrResult: MistralOcrResult;
 
+  const expectedTypeForPrompt = isDecisionRefus ? "decision_refus" : guessExpectedType(nomPiece);
   try {
-    ocrResult = await runOcrAnalysis(bytes, fileType, fileName, signedUrl);
+    ocrResult = await runOcrAnalysis(bytes, fileType, fileName, signedUrl, expectedTypeForPrompt);
   } catch (err: any) {
     console.error("[OCR] Mistral API error:", err);
     await supabaseAdmin.from("pieces_justificatives").update({
@@ -675,7 +725,8 @@ serve(async (req) => {
       }
 
       try {
-        const ocrResult = await runOcrAnalysis(bytes, fileType, fileName, signedUrl);
+        const expectedTypeForPrompt = isDecisionRefus ? "decision_refus" : guessExpectedType(nomPiece);
+        const ocrResult = await runOcrAnalysis(bytes, fileType, fileName, signedUrl, expectedTypeForPrompt);
 
         const ownerIdentity: OwnerIdentity = {
           firstName: ownerFirstName,
