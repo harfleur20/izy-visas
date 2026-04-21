@@ -31,10 +31,11 @@ const MOTIF_TEXT_PATTERNS: Record<string, RegExp[]> = {
     /travel document[^\n]{0,120}(invalid|false|forged|counterfeit|expired)/i,
   ],
   B: [
-    /but du sejour[^\n]{0,120}(non justifie|pas justifie)/i,
-    /objet et les conditions du sejour envisage[^\n]{0,160}(pas fiables|non fiables|non justifi)/i,
-    /sejournerez en france a d'autres fins que celles pour lesquelles vous demandez un visa/i,
-    /purpose of the stay[^\n]{0,120}(not justified|not reliable)/i,
+    // Formulations OFFICIELLES strictes du motif B (objet/but du séjour NON JUSTIFIÉ)
+    /objet et (les )?conditions? du sejour[^\n]{0,200}(ne sont pas justifi|pas justifies|non justifies)/i,
+    /but du sejour[^\n]{0,80}(non justifie|pas justifie)/i,
+    /sejournerez en france a d'autres fins que celles pour lesquelles vous demandez/i,
+    /purpose of the stay[^\n]{0,80}(not justified|cannot be justified)/i,
   ],
   C: [
     /ressources[^\n]{0,120}(insuffisantes|insuffisants)/i,
@@ -50,8 +51,9 @@ const MOTIF_TEXT_PATTERNS: Record<string, RegExp[]> = {
     /accommodation[^\n]{0,120}(not justified|not provided|insufficient)/i,
   ],
   F: [
-    /volonte de quitter le territoire[^\n]{0,160}(n'a pu etre etablie|pas ete etablie)/i,
-    /quitter le territoire des etats membres avant l'expiration du visa[^\n]{0,120}(n'a pu etre etablie|pas ete etablie)/i,
+    /volonte de quitter le territoire[^\n]{0,160}(n'a pu etre etablie|pas ete etablie|n a pu etre etablie)/i,
+    /quitter le territoire des etats membres avant l'expiration du visa[^\n]{0,160}(n'a pu etre etablie|pas ete etablie|n a pu etre etablie)/i,
+    /informations? communiquees? pour justifier[^\n]{0,200}(ne sont pas fiables|pas fiables|non fiables)/i,
     /intention to leave[^\n]{0,160}(could not be established|has not been established)/i,
   ],
   G: [/signalement sis/i, /sis alert/i],
@@ -180,16 +182,20 @@ function inferMotifCodesFromTexts(texts: unknown): string[] {
 
 function resolveMotifCodes(modelCodes: unknown, motifTexts: unknown, sourceText?: string): string[] {
   const safeModelCodes = sanitizeMotifCodes(modelCodes);
-  const inferredCodes = inferMotifCodesFromTexts(motifTexts);
+  const inferredFromMotifTexts = inferMotifCodesFromTexts(motifTexts);
   const inferredFromSource = sourceText ? inferMotifCodesFromTexts([sourceText]) : [];
-  const crossValidatedCodes = Array.from(new Set([...inferredCodes, ...inferredFromSource]));
+  const crossValidatedCodes = Array.from(
+    new Set([...inferredFromMotifTexts, ...inferredFromSource]),
+  );
 
-  if (crossValidatedCodes.length === 0) return safeModelCodes;
-
-  const allowedByText = new Set(crossValidatedCodes);
-  const trustedModelCodes = safeModelCodes.filter((code) => allowedByText.has(code));
-
-  return Array.from(new Set([...crossValidatedCodes, ...trustedModelCodes]));
+  // ✅ STRATÉGIE UNION (pas intersection)
+  // - On garde TOUS les codes du modèle (il a vu le document avec les cases à cocher).
+  // - On AJOUTE les codes inférés par regex (filet de sécurité contre les omissions).
+  // - On ne supprime un code du modèle QUE s'il est manifestement absent ET qu'au moins
+  //   un autre code a été validé par regex (preuve qu'on lit bien le bon document).
+  // Cela évite le bug où un seul faux positif regex écrase tous les vrais codes du modèle.
+  const merged = new Set<string>([...safeModelCodes, ...crossValidatedCodes]);
+  return Array.from(merged);
 }
 
 async function extractConsulatViaPixtral(
