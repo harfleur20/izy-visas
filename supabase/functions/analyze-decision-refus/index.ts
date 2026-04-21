@@ -470,13 +470,18 @@ serve(async (req) => {
     const visa = analysisResult.visa || {};
     const consulat = analysisResult.consulat || {};
     const refus = analysisResult.refus || {};
-    const consulatFallback = extractConsulatFromText(ocrRawText);
+    const consulatFromText = extractConsulatFromText(ocrRawText);
+    const consulatFromNumero = extractConsulatFromNumeroDossier(ocrRawText);
+    // Anti-hallucination : si le modèle retourne "ville non précisée", "non visible", etc., on ignore
+    const looksHallucinated = (s: string | null | undefined) => !!s && /non\s+pr[ée]cis|non\s+visible|inconnu|non\s+identifi/i.test(s);
+    const safeConsulatNom = looksHallucinated(consulat.nom) ? null : (consulat.nom || null);
+    const safeConsulatVille = looksHallucinated(consulat.ville) ? null : (consulat.ville || null);
     const finalConsulat = {
-      nom: consulat.nom || consulatFallback.nom || null,
-      ville: consulat.ville || consulatFallback.ville || null,
-      pays: consulat.pays || consulatFallback.pays || inferCountryFromCity(consulat.ville || consulatFallback.ville || null),
+      nom: safeConsulatNom || consulatFromText.nom || consulatFromNumero.nom || null,
+      ville: safeConsulatVille || consulatFromText.ville || consulatFromNumero.ville || null,
+      pays: consulat.pays || consulatFromText.pays || consulatFromNumero.pays || inferCountryFromCity(safeConsulatVille || consulatFromText.ville || consulatFromNumero.ville || null),
     };
-    console.log("[analyze-decision] consulat extracted:", finalConsulat);
+    console.log("[analyze-decision] consulat sources:", { model: consulat, fromText: consulatFromText, fromNumero: consulatFromNumero, final: finalConsulat });
     // Calculate remaining days
     let delaiRestant: number | null = null;
     if (refus.date_notification) {
