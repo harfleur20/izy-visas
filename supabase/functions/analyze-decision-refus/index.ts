@@ -289,6 +289,7 @@ serve(async (req) => {
     }
 
     let analysisResult: any;
+    let ocrRawText = "";
 
     try {
       if (fileType === "application/pdf" && signedUrl) {
@@ -317,6 +318,7 @@ serve(async (req) => {
         const allText = (ocrResponse.pages || [])
           .map((p: any) => p.markdown || p.text || "")
           .join("\n");
+        ocrRawText = allText;
 
         if (allText.trim().length < 20) {
           return jsonResponse({
