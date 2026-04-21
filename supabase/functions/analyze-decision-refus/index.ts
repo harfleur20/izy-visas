@@ -25,6 +25,43 @@ const MOTIF_LABELS: Record<string, string> = {
   L: "Appréciation globale défavorable",
 };
 
+const MOTIF_TEXT_PATTERNS: Record<string, RegExp[]> = {
+  A: [
+    /document de voyage[^\n]{0,120}(non valide|faux|falsifie|contrefait|expire)/i,
+    /travel document[^\n]{0,120}(invalid|false|forged|counterfeit|expired)/i,
+  ],
+  B: [
+    /but du sejour[^\n]{0,120}(non justifie|pas justifie)/i,
+    /objet et les conditions du sejour envisage[^\n]{0,160}(pas fiables|non fiables|non justifi)/i,
+    /sejournerez en france a d'autres fins que celles pour lesquelles vous demandez un visa/i,
+    /purpose of the stay[^\n]{0,120}(not justified|not reliable)/i,
+  ],
+  C: [
+    /ressources[^\n]{0,120}(insuffisantes|insuffisants)/i,
+    /moyens de subsistance[^\n]{0,120}(insuffisants|insuffisantes)/i,
+    /insufficient (financial )?(resources|means of subsistence)/i,
+  ],
+  D: [
+    /assurance[^\n]{0,120}(absente|insuffisante|invalide|non valide)/i,
+    /(travel|medical) insurance[^\n]{0,120}(missing|insufficient|invalid)/i,
+  ],
+  E: [
+    /hebergement[^\n]{0,120}(non justifie|pas justifie|insuffisant)/i,
+    /accommodation[^\n]{0,120}(not justified|not provided|insufficient)/i,
+  ],
+  F: [
+    /volonte de quitter le territoire[^\n]{0,160}(n'a pu etre etablie|pas ete etablie)/i,
+    /quitter le territoire des etats membres avant l'expiration du visa[^\n]{0,120}(n'a pu etre etablie|pas ete etablie)/i,
+    /intention to leave[^\n]{0,160}(could not be established|has not been established)/i,
+  ],
+  G: [/signalement sis/i, /sis alert/i],
+  H: [/ordre public/i, /public order/i],
+  I: [/sejour irregulier anterieur/i, /previous irregular stay/i, /overstay/i],
+  J: [/intention matrimoniale/i, /marriage intention/i],
+  K: [/dossier incomplet/i, /documents? manquants?/i, /incomplete application/i],
+  L: [/appreciation globale defavorable/i, /global assessment[^\n]{0,80}unfavo/i],
+};
+
 const VISA_TYPE_MAP: Record<string, string> = {
   court_sejour_schengen: "court_sejour",
   long_sejour_etudiant: "etudiant",
@@ -99,6 +136,60 @@ function toTitleCase(value: string) {
 function inferCountryFromCity(city: string | null) {
   if (!city) return null;
   return CITY_TO_COUNTRY[normalizeLookup(city)] || null;
+}
+
+function normalizeMotifText(value: string) {
+  return value
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/[^a-zA-Z0-9\s]/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function sanitizeMotifCodes(codes: unknown): string[] {
+  if (!Array.isArray(codes)) return [];
+  return Array.from(new Set(
+    codes
+      .filter((code): code is string => typeof code === "string")
+      .map((code) => code.trim().toUpperCase())
+      .filter((code) => !!MOTIF_LABELS[code])
+  ));
+}
+
+function inferMotifCodesFromTexts(texts: unknown): string[] {
+  if (!Array.isArray(texts)) return [];
+
+  const normalizedTexts = texts
+    .filter((text): text is string => typeof text === "string")
+    .map((text) => normalizeMotifText(text))
+    .filter(Boolean);
+
+  const detected = new Set<string>();
+
+  for (const text of normalizedTexts) {
+    for (const [code, patterns] of Object.entries(MOTIF_TEXT_PATTERNS)) {
+      if (patterns.some((pattern) => pattern.test(text))) {
+        detected.add(code);
+      }
+    }
+  }
+
+  return Array.from(detected);
+}
+
+function resolveMotifCodes(modelCodes: unknown, motifTexts: unknown, sourceText?: string): string[] {
+  const safeModelCodes = sanitizeMotifCodes(modelCodes);
+  const inferredCodes = inferMotifCodesFromTexts(motifTexts);
+  const inferredFromSource = sourceText ? inferMotifCodesFromTexts([sourceText]) : [];
+  const crossValidatedCodes = Array.from(new Set([...inferredCodes, ...inferredFromSource]));
+
+  if (crossValidatedCodes.length === 0) return safeModelCodes;
+
+  const allowedByText = new Set(crossValidatedCodes);
+  const trustedModelCodes = safeModelCodes.filter((code) => allowedByText.has(code));
+
+  return Array.from(new Set([...crossValidatedCodes, ...trustedModelCodes]));
 }
 
 async function extractConsulatViaPixtral(
@@ -572,8 +663,17 @@ serve(async (req) => {
       }
     }
 
+    const resolvedMotifCodes = resolveMotifCodes(refus.motifs_coches, refus.motifs_texte_original, ocrRawText);
+    console.log("[analyze-decision] motif sources:", {
+      modelCodes: refus.motifs_coches || [],
+      textCodes: inferMotifCodesFromTexts(refus.motifs_texte_original),
+      sourceCodes: inferMotifCodesFromTexts([ocrRawText]),
+      final: resolvedMotifCodes,
+      motifTexts: refus.motifs_texte_original || [],
+    });
+
     // Enrich motifs with labels
-    const motifsEnrichis = (refus.motifs_coches || []).map((code: string) => ({
+    const motifsEnrichis = resolvedMotifCodes.map((code: string) => ({
       code,
       label: MOTIF_LABELS[code] || `Motif ${code}`,
     }));
@@ -629,7 +729,7 @@ serve(async (req) => {
       },
       refus: {
         date_notification: refus.date_notification || null,
-        motifs_coches: refus.motifs_coches || [],
+        motifs_coches: resolvedMotifCodes,
         motifs_texte_original: refus.motifs_texte_original || [],
         motifs_enrichis: motifsEnrichis,
         numero_decision: refus.numero_decision || null,
