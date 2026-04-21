@@ -1,5 +1,6 @@
 import { serve } from "https://deno.land/std@0.190.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.49.4";
+import { MOTIF_LABELS, getMotifLabel } from "../_shared/motifs.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -9,21 +10,6 @@ const corsHeaders = {
 
 const MAX_FILE_SIZE_BYTES = 10 * 1024 * 1024;
 const ACCEPTED_FORMATS = ["application/pdf", "image/jpeg", "image/jpg", "image/png"];
-
-const MOTIF_LABELS: Record<string, string> = {
-  A: "Document de voyage non valide",
-  B: "But du séjour non justifié",
-  C: "Ressources insuffisantes",
-  D: "Assurance absente ou insuffisante",
-  E: "Hébergement non justifié",
-  F: "Doute sur la volonté de retour",
-  G: "Signalement SIS",
-  H: "Menace pour l'ordre public",
-  I: "Séjour irrégulier antérieur",
-  J: "Intention matrimoniale non établie",
-  K: "Dossier incomplet",
-  L: "Appréciation globale défavorable",
-};
 
 const MOTIF_TEXT_PATTERNS: Record<string, RegExp[]> = {
   A: [
@@ -681,7 +667,7 @@ serve(async (req) => {
     // Enrich motifs with labels
     const motifsEnrichis = resolvedMotifCodes.map((code: string) => ({
       code,
-      label: MOTIF_LABELS[code] || `Motif ${code}`,
+      label: getMotifLabel(code),
     }));
 
     // Map visa type

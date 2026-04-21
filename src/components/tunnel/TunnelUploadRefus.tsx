@@ -13,21 +13,6 @@ interface TunnelUploadRefusProps {
 
 type Phase = "upload" | "analyzing" | "error";
 
-const MOTIF_LABELS: Record<string, string> = {
-  A: "Document de voyage non valide",
-  B: "But du séjour non justifié",
-  C: "Ressources insuffisantes",
-  D: "Assurance absente ou insuffisante",
-  E: "Hébergement non justifié",
-  F: "Doute sur la volonté de retour",
-  G: "Signalement SIS",
-  H: "Menace pour l'ordre public",
-  I: "Séjour irrégulier antérieur",
-  J: "Intention matrimoniale non établie",
-  K: "Dossier incomplet",
-  L: "Appréciation globale défavorable",
-};
-
 const VISA_TYPE_MAP: Record<string, string> = {
   court_sejour_schengen: "court_sejour",
   long_sejour_etudiant: "etudiant",
