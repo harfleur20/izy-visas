@@ -101,6 +101,54 @@ function inferCountryFromCity(city: string | null) {
   return CITY_TO_COUNTRY[normalizeLookup(city)] || null;
 }
 
+async function extractConsulatViaPixtral(
+  imageBase64: string,
+  mimeType: string,
+  apiKey: string,
+): Promise<{ nom: string | null; ville: string | null; pays: string | null }> {
+  try {
+    const res = await fetch("https://api.mistral.ai/v1/chat/completions", {
+      method: "POST",
+      headers: { "Authorization": `Bearer ${apiKey}`, "Content-Type": "application/json" },
+      body: JSON.stringify({
+        model: "pixtral-large-latest",
+        temperature: 0,
+        response_format: { type: "json_object" },
+        messages: [{
+          role: "user",
+          content: [
+            { type: "image_url", image_url: { url: `data:${mimeType};base64,${imageBase64}` } },
+            {
+              type: "text",
+              text: `Regarde UNIQUEMENT l'en-tête / cartouche en haut de cette décision de refus de visa français. Identifie l'autorité émettrice (Consulat ou Ambassade de France) et la ville. Le texte peut être écrit verticalement, dans un cadre, ou en plusieurs lignes (ex: "CONSULAT GÉNÉRAL" / "DE FRANCE" / "À DOUALA"). Réponds UNIQUEMENT en JSON : {"type": "consulat_general" ou "ambassade" ou null, "ville": "nom de la ville" ou null, "pays": "pays" ou null}. Si l'en-tête est illisible ou absent, retourne tous les champs à null. NE JAMAIS inventer.`,
+            },
+          ],
+        }],
+      }),
+    });
+    if (!res.ok) {
+      console.error("[pixtral-fallback] error:", res.status);
+      return { nom: null, ville: null, pays: null };
+    }
+    const data = await res.json();
+    const txt = (data.choices?.[0]?.message?.content || "") as string;
+    const m = txt.match(/\{[\s\S]*\}/);
+    if (!m) return { nom: null, ville: null, pays: null };
+    const parsed = JSON.parse(m[0]);
+    if (!parsed.ville) return { nom: null, ville: null, pays: null };
+    const city = toTitleCase(String(parsed.ville).trim());
+    const label = parsed.type === "consulat_general" ? "Consulat général de France" : "Ambassade de France";
+    return {
+      nom: `${label} à ${city}`,
+      ville: city,
+      pays: parsed.pays || inferCountryFromCity(city),
+    };
+  } catch (e) {
+    console.error("[pixtral-fallback] exception:", e);
+    return { nom: null, ville: null, pays: null };
+  }
+}
+
 function buildConsulat(authorityLabel: string, rawCity: string) {
   const city = toTitleCase(
     rawCity
@@ -320,10 +368,12 @@ serve(async (req) => {
 
     let analysisResult: any;
     let ocrRawText = "";
+    let firstPageImageB64: string | null = null;
+    let firstPageMimeType = "image/jpeg";
 
     try {
       if (fileType === "application/pdf" && signedUrl) {
-        // PDF: use Mistral OCR REST API
+        // PDF: use Mistral OCR REST API (include_image_base64 to enable Pixtral fallback)
         const ocrRes = await fetch("https://api.mistral.ai/v1/ocr", {
           method: "POST",
           headers: {
@@ -333,7 +383,7 @@ serve(async (req) => {
           body: JSON.stringify({
             model: "mistral-ocr-latest",
             document: { type: "document_url", document_url: signedUrl },
-            include_image_base64: false,
+            include_image_base64: true,
           }),
         });
 
@@ -349,6 +399,19 @@ serve(async (req) => {
           .map((p: any) => p.markdown || p.text || "")
           .join("\n");
         ocrRawText = allText;
+
+        // Capture page 1 image for potential Pixtral fallback
+        const firstPage = ocrResponse.pages?.[0];
+        const firstImg = firstPage?.images?.[0];
+        if (firstImg?.image_base64) {
+          const raw = firstImg.image_base64 as string;
+          if (raw.startsWith("data:")) {
+            const m = raw.match(/^data:([^;]+);base64,(.+)$/);
+            if (m) { firstPageMimeType = m[1]; firstPageImageB64 = m[2]; }
+          } else {
+            firstPageImageB64 = raw;
+          }
+        }
 
         if (allText.trim().length < 20) {
           return jsonResponse({
@@ -476,12 +539,26 @@ serve(async (req) => {
     const looksHallucinated = (s: string | null | undefined) => !!s && /non\s+pr[ée]cis|non\s+visible|inconnu|non\s+identifi/i.test(s);
     const safeConsulatNom = looksHallucinated(consulat.nom) ? null : (consulat.nom || null);
     const safeConsulatVille = looksHallucinated(consulat.ville) ? null : (consulat.ville || null);
-    const finalConsulat = {
-      nom: safeConsulatNom || consulatFromText.nom || consulatFromNumero.nom || null,
-      ville: safeConsulatVille || consulatFromText.ville || consulatFromNumero.ville || null,
-      pays: consulat.pays || consulatFromText.pays || consulatFromNumero.pays || inferCountryFromCity(safeConsulatVille || consulatFromText.ville || consulatFromNumero.ville || null),
-    };
-    console.log("[analyze-decision] consulat sources:", { model: consulat, fromText: consulatFromText, fromNumero: consulatFromNumero, final: finalConsulat });
+
+    // Étapes 1-3 : modèle texte, regex, n° de dossier
+    let mergedNom = safeConsulatNom || consulatFromText.nom || consulatFromNumero.nom || null;
+    let mergedVille = safeConsulatVille || consulatFromText.ville || consulatFromNumero.ville || null;
+    let mergedPays = consulat.pays || consulatFromText.pays || consulatFromNumero.pays || inferCountryFromCity(mergedVille);
+
+    // Étape 4 : Pixtral vision sur l'image de la 1ère page (uniquement si tout a échoué et qu'on a l'image)
+    let consulatFromPixtral = { nom: null as string | null, ville: null as string | null, pays: null as string | null };
+    if (!mergedVille && firstPageImageB64) {
+      console.log("[analyze-decision] Consulat introuvable, escalade Pixtral vision...");
+      consulatFromPixtral = await extractConsulatViaPixtral(firstPageImageB64, firstPageMimeType, mistralApiKey);
+      if (consulatFromPixtral.ville) {
+        mergedNom = mergedNom || consulatFromPixtral.nom;
+        mergedVille = consulatFromPixtral.ville;
+        mergedPays = mergedPays || consulatFromPixtral.pays;
+      }
+    }
+
+    const finalConsulat = { nom: mergedNom, ville: mergedVille, pays: mergedPays };
+    console.log("[analyze-decision] consulat sources:", { model: consulat, fromText: consulatFromText, fromNumero: consulatFromNumero, fromPixtral: consulatFromPixtral, final: finalConsulat });
     // Calculate remaining days
     let delaiRestant: number | null = null;
     if (refus.date_notification) {
