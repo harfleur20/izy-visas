@@ -295,12 +295,15 @@ async function runOcrAnalysis(
       .join("\n");
     const pageCount = ocrResponse.pages?.length || 1;
 
-    // Compute "useful text" = strip image markdown refs + MRZ lines + isolated symbols
-    // This detects scanned PDFs (passports, IDs) where Mistral OCR only returns
-    // image placeholders and the MRZ band, with no actual readable French text.
+    // ── Detect "useful text" ──────────────────────────────────────────
+    // Mistral OCR sometimes returns mostly image placeholders (![img-0.jpeg])
+    // or machine-readable bands (MRZ, barcodes) without extracting the actual
+    // human-readable content. This happens on ANY scanned PDF: passports,
+    // birth certificates, marriage certificates, old photographed payslips,
+    // handwritten letters, low-quality scans, etc.
     const usefulText = allText
-      .replace(/!\[[^\]]*\]\([^)]*\)/g, "") // strip ![img-0.jpeg](img-0.jpeg)
-      .replace(/^[A-Z0-9<]{20,}$/gm, "")    // strip MRZ lines (long uppercase + < blocks)
+      .replace(/!\[[^\]]*\]\([^)]*\)/g, "")  // strip ![img-0.jpeg](img-0.jpeg)
+      .replace(/^[A-Z0-9<]{20,}$/gm, "")     // strip MRZ / barcode lines
       .replace(/[^a-zA-Zàâäéèêëïîôöùûüç\s]/g, " ")
       .replace(/\s+/g, " ")
       .trim();
@@ -312,25 +315,31 @@ async function runOcrAnalysis(
       console.log(`[OCR] Insufficient useful text: total=${allText.length}, useful_words=${wordCount} — triggering Pixtral fallback`);
     }
 
-    // ── Pixtral Vision Fallback for scanned PDFs ──────────────────────
-    // If OCR text extraction failed or yielded too little (scanned/image-based PDF),
-    // fall back to Pixtral vision on the first page image returned by Mistral OCR.
+    // ── Pixtral Vision Fallback (universal, all scanned doc types) ────
+    // For any PDF where Mistral OCR couldn't extract meaningful text
+    // (scanned passports, IDs, certificates, photos of documents,
+    // handwritten content, etc.), send the page images to Pixtral vision
+    // which performs proper OCR on the visual content.
     if (!hasText) {
-      const firstPage = ocrResponse.pages?.[0];
-      const firstImage = firstPage?.images?.[0];
-      const imageB64 = firstImage?.image_base64 || firstImage?.base64 || null;
+      const pageImages: string[] = [];
+      for (const page of (ocrResponse.pages || []).slice(0, 3)) {
+        const img = page?.images?.[0];
+        const b64 = img?.image_base64 || img?.base64;
+        if (b64) {
+          pageImages.push(b64.startsWith("data:") ? b64 : `data:image/jpeg;base64,${b64}`);
+        }
+      }
 
-      if (imageB64) {
-        console.log("[OCR] Text extraction insufficient — falling back to Pixtral vision on page 1");
+      if (pageImages.length > 0) {
+        console.log(`[OCR] Falling back to Pixtral vision on ${pageImages.length} page(s)`);
         try {
-          const dataUrl = imageB64.startsWith("data:") ? imageB64 : `data:image/jpeg;base64,${imageB64}`;
           const visionRes = await client.chat.complete({
             model: "pixtral-12b-2409",
             messages: [{
               role: "user",
               content: [
-                { type: "image_url", imageUrl: { url: dataUrl } },
-                { type: "text", text: VISION_PROMPT },
+                ...pageImages.map((url) => ({ type: "image_url" as const, imageUrl: { url } })),
+                { type: "text" as const, text: VISION_PROMPT },
               ],
             }],
           });
@@ -339,14 +348,15 @@ async function runOcrAnalysis(
           if (jsonMatch) {
             const visionResult = JSON.parse(jsonMatch[0]) as MistralOcrResult;
             visionResult.pages_detectees = pageCount;
-            console.log(`[OCR] Pixtral fallback success: score=${visionResult.score_qualite}, type=${visionResult.type_document_detecte}`);
+            console.log(`[OCR] Pixtral fallback success: score=${visionResult.score_qualite}, type=${visionResult.type_document_detecte}, pages_analyzed=${pageImages.length}`);
             return visionResult;
           }
+          console.warn("[OCR] Pixtral returned non-JSON response, keeping text-based result");
         } catch (visionErr) {
           console.error("[OCR] Pixtral fallback failed:", visionErr);
         }
       } else {
-        console.log("[OCR] No page image available for Pixtral fallback");
+        console.warn("[OCR] No page images returned by Mistral OCR — Pixtral fallback skipped");
       }
     }
 
