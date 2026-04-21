@@ -511,9 +511,9 @@ serve(async (req) => {
         type_visa_texte_original: visa.type_visa_texte_original || null,
       },
       consulat: {
-        nom: consulat.nom || null,
-        ville: consulat.ville || null,
-        pays: consulat.pays || null,
+        nom: finalConsulat.nom,
+        ville: finalConsulat.ville,
+        pays: finalConsulat.pays,
       },
       refus: {
         date_notification: refus.date_notification || null,
