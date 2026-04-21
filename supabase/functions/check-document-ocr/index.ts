@@ -105,7 +105,7 @@ Analyse ce document et réponds UNIQUEMENT en JSON valide sans aucun texte avant
   "lisible": true ou false,
   "score_qualite": nombre entre 0 et 100,
   "motif_rejet": null ou description du problème,
-  "type_document_detecte": une valeur parmi [decision_refus, passeport, releve_bancaire, contrat_travail, attestation_campus_france, acte_mariage, acte_naissance, justificatif_hebergement, billet_avion, assurance_voyage, attestation_emploi, certificat_scolarite, justificatif_domicile, reservation_hotel, autre, inconnu],
+  "type_document_detecte": une valeur parmi [decision_refus, passeport, releve_bancaire, contrat_travail, attestation_campus_france, acte_mariage, acte_naissance, justificatif_hebergement, billet_avion, assurance_voyage, attestation_emploi, certificat_scolarite, justificatif_domicile, reservation_hotel, lettre_motivation, lettre_invitation, attestation_hebergement, formulaire_visa, autre, inconnu],
   "langue_detectee": une valeur parmi [fr, ar, en, autre, mixte],
   "date_detectee": date au format JJ/MM/AAAA ou null si aucune date trouvée,
   "texte_extrait": premiers 500 caractères du texte visible,
