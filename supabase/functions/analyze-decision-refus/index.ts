@@ -72,12 +72,12 @@ Si c'est une décision de refus :
   },
   "visa": {
     "type_visa": une valeur parmi ["court_sejour_schengen", "long_sejour_etudiant", "long_sejour_conjoint_francais", "long_sejour_salarie", "passeport_talent", "visiteur_parent_enfant_francais", "autre"],
-    "type_visa_texte_original": "texte exact du document"
+    "type_visa_texte_original": "texte exact du document tel qu'écrit dans l'objet (ex: 'visa de long séjour sollicité en qualité d'ascendant d'un ressortissant de nationalité française')"
   },
   "consulat": {
-    "nom": "nom ou null",
-    "ville": "ville ou null",
-    "pays": "pays ou null"
+    "nom": "nom complet de l'autorité émettrice (ex: 'Ambassade de France à Yaoundé', 'Consulat général de France à Casablanca'). DÉDUIS-LE depuis l'en-tête du document même s'il n'est pas explicitement précédé du mot 'Consulat'.",
+    "ville": "ville extraite du nom (ex: 'Yaoundé', 'Casablanca', 'Dakar'). OBLIGATOIRE si une ambassade/consulat est mentionné(e).",
+    "pays": "pays correspondant à la ville (ex: Yaoundé→Cameroun, Casablanca→Maroc, Dakar→Sénégal)"
   },
   "refus": {
     "date_notification": "JJ/MM/AAAA ou null",
