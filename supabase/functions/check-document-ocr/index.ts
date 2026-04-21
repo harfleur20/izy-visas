@@ -43,7 +43,7 @@ function guessExpectedType(nomPiece: string): string {
   if (/décision.*refus|refus.*visa/.test(n)) return "decision_refus";
   if (/relevé.*banc|bank.*statement|relevé.*compte/.test(n)) return "releve_bancaire";
   if (/contrat.*travail|employment/.test(n)) return "contrat_travail";
-  if (/campus\s*france/.test(n)) return "attestation_campus_france";
+  if (/campus\s*france|accord\s*pr[ée]alable\s*d['']?inscription|attestation\s*[ée]tudes?\s*en\s*france|études?\s*en\s*france/.test(n)) return "attestation_campus_france";
   if (/acte.*mariage|marriage/.test(n)) return "acte_mariage";
   if (/acte.*naissance|birth/.test(n)) return "acte_naissance";
   if (/hébergement|attestation.*accueil/.test(n)) return "justificatif_hebergement";
