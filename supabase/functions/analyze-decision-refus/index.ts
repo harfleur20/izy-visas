@@ -214,7 +214,9 @@ serve(async (req) => {
           });
         }
 
-        // Analyze extracted text with pixtral via REST
+        console.log("[analyze-decision] OCR text length:", allText.length, "preview:", allText.substring(0, 300));
+
+        // Analyze extracted text with mistral-large via REST (more reliable than pixtral for extraction)
         const analysisRes = await fetch("https://api.mistral.ai/v1/chat/completions", {
           method: "POST",
           headers: {
@@ -222,12 +224,12 @@ serve(async (req) => {
             "Content-Type": "application/json",
           },
           body: JSON.stringify({
-            model: "pixtral-12b-2409",
+            model: "mistral-large-latest",
+            temperature: 0,
+            response_format: { type: "json_object" },
             messages: [{
               role: "user",
-              content: [
-                { type: "text", text: `${DECISION_REFUS_PROMPT}\n\nTexte extrait du document :\n${allText.substring(0, 4000)}` },
-              ],
+              content: `${DECISION_REFUS_PROMPT}\n\nTexte extrait du document :\n${allText.substring(0, 12000)}`,
             }],
           }),
         });
@@ -255,7 +257,9 @@ serve(async (req) => {
             "Content-Type": "application/json",
           },
           body: JSON.stringify({
-            model: "pixtral-12b-2409",
+            model: "pixtral-large-latest",
+            temperature: 0,
+            response_format: { type: "json_object" },
             messages: [{
               role: "user",
               content: [
