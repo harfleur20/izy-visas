@@ -421,6 +421,8 @@ async function runOcrAnalysis(
 
     if (hasText) {
       classifyDocumentType(result, finalText);
+      // Apply deterministic overrides (passport MRZ, etc.) AFTER keyword classification
+      applyClassificationOverrides(result, finalText);
       const dateMatch = finalText.match(/(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{4})/);
       if (dateMatch) {
         result.date_detectee = `${dateMatch[1]}/${dateMatch[2]}/${dateMatch[3]}`;
