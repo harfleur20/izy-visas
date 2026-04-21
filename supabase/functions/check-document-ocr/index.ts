@@ -271,12 +271,36 @@ async function loadOwnerIdentity(
   };
 }
 
+// ── Strong heuristics on extracted text to override misclassification ──
+// Some documents (passports especially) are systematically misclassified by
+// vision models. We apply deterministic post-checks based on the OCR text.
+function applyClassificationOverrides(result: MistralOcrResult, allText: string) {
+  const text = allText || "";
+
+  // MRZ (Machine Readable Zone) detection — passport-only signature
+  // Standard ICAO 9303 passport MRZ: line starts with "P<" + 3-letter country code
+  const mrzPassport = /\bP[<KN][A-Z]{3}[A-Z<0-9]{20,}/.test(text)
+    || /[A-Z0-9<]{30,}\s*[A-Z0-9<]{30,}/m.test(text);
+
+  // Strong passport indicators (explicit terms found on ID page)
+  const passportKeywords =
+    /(passe?port\s*n[°o]?\b|bearer'?s?\s*signature|signature\s*du\s*titulaire|date\s*d[''\s]?expiration\s*\/\s*date\s*of\s*expiry|date\s*of\s*issue|place\s*of\s*birth\s*\/\s*lieu\s*de\s*naissance|d[ée]l[ée]gu[ée]\s*g[ée]n[ée]ral\s*[àa]\s*la\s*sûret[ée]\s*nationale|country\s*code|république\s*du\s*[a-zàâéèêëïôùûüç]+\s*\/\s*republic\s*of)/i.test(text);
+
+  if (mrzPassport || passportKeywords) {
+    if (result.type_document_detecte !== "passeport") {
+      console.log(`[OCR] Override classification → passeport (MRZ=${mrzPassport}, keywords=${passportKeywords}), was=${result.type_document_detecte}`);
+      result.type_document_detecte = "passeport";
+    }
+  }
+}
+
 // ── Run OCR analysis (shared between tunnel and normal modes) ──────────
 async function runOcrAnalysis(
   bytes: Uint8Array,
   fileType: string,
   fileName: string,
   signedUrl: string | null,
+  expectedType: string = "",
 ): Promise<MistralOcrResult> {
   const mistralApiKey = Deno.env.get("MISTRAL_API_KEY");
   if (!mistralApiKey) {
