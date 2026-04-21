@@ -35,6 +35,104 @@ const VISA_TYPE_MAP: Record<string, string> = {
   autre: "autre",
 };
 
+const CITY_TO_COUNTRY: Record<string, string> = {
+  douala: "Cameroun",
+  yaounde: "Cameroun",
+  casablanca: "Maroc",
+  rabat: "Maroc",
+  dakar: "Sénégal",
+  abidjan: "Côte d'Ivoire",
+  alger: "Algérie",
+  tunis: "Tunisie",
+};
+
+function normalizeLookup(value: string) {
+  return value
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/\s+/g, " ")
+    .trim()
+    .toLowerCase();
+}
+
+function toTitleCase(value: string) {
+  return value
+    .toLowerCase()
+    .split(/\s+/)
+    .map((word) => word
+      .split("-")
+      .map((part) => (part ? part.charAt(0).toUpperCase() + part.slice(1) : part))
+      .join("-"))
+    .join(" ");
+}
+
+function inferCountryFromCity(city: string | null) {
+  if (!city) return null;
+  return CITY_TO_COUNTRY[normalizeLookup(city)] || null;
+}
+
+function buildConsulat(authorityLabel: string, rawCity: string) {
+  const city = toTitleCase(
+    rawCity
+      .replace(/^[AaÀà]\s+/, "")
+      .replace(/[.:;,]+$/g, "")
+      .trim()
+  );
+
+  if (!city) {
+    return { nom: null, ville: null, pays: null };
+  }
+
+  return {
+    nom: `${authorityLabel} à ${city}`,
+    ville: city,
+    pays: inferCountryFromCity(city),
+  };
+}
+
+function extractConsulatFromText(text: string) {
+  if (!text.trim()) {
+    return { nom: null, ville: null, pays: null };
+  }
+
+  const lines = text
+    .split(/\n+/)
+    .map((line) => line.replace(/\s+/g, " ").trim())
+    .filter(Boolean);
+
+  for (let i = 0; i < lines.length; i++) {
+    const current = lines[i] || "";
+    const next = lines[i + 1] || "";
+    const next2 = lines[i + 2] || "";
+    const currentNorm = normalizeLookup(current);
+    const nextNorm = normalizeLookup(next);
+
+    const singleLineConsulat = current.match(/consulat\s+g[ée]n[ée]ral\s+de\s+france\s+[àa]\s+(.+)$/i);
+    if (singleLineConsulat?.[1]) {
+      return buildConsulat("Consulat général de France", singleLineConsulat[1]);
+    }
+
+    const singleLineAmbassade = current.match(/ambassade\s+de\s+france\s+[àa]\s+(.+)$/i);
+    if (singleLineAmbassade?.[1]) {
+      return buildConsulat("Ambassade de France", singleLineAmbassade[1]);
+    }
+
+    if (currentNorm === "consulat general" && nextNorm === "de france" && /^[AaÀà]\s+/.test(next2)) {
+      return buildConsulat("Consulat général de France", next2);
+    }
+
+    if (currentNorm === "consulat general de france" && /^[AaÀà]\s+/.test(next)) {
+      return buildConsulat("Consulat général de France", next);
+    }
+
+    if (currentNorm === "ambassade de france" && /^[AaÀà]\s+/.test(next)) {
+      return buildConsulat("Ambassade de France", next);
+    }
+  }
+
+  return { nom: null, ville: null, pays: null };
+}
+
 function getSupabaseAdmin() {
   return createClient(
     Deno.env.get("SUPABASE_URL") ?? "",
