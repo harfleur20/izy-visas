@@ -440,7 +440,13 @@ serve(async (req) => {
     const visa = analysisResult.visa || {};
     const consulat = analysisResult.consulat || {};
     const refus = analysisResult.refus || {};
-
+    const consulatFallback = extractConsulatFromText(ocrRawText);
+    const finalConsulat = {
+      nom: consulat.nom || consulatFallback.nom || null,
+      ville: consulat.ville || consulatFallback.ville || null,
+      pays: consulat.pays || consulatFallback.pays || inferCountryFromCity(consulat.ville || consulatFallback.ville || null),
+    };
+    console.log("[analyze-decision] consulat extracted:", finalConsulat);
     // Calculate remaining days
     let delaiRestant: number | null = null;
     if (refus.date_notification) {
