@@ -294,8 +294,23 @@ async function runOcrAnalysis(
       .map((p: any) => p.markdown || p.text || "")
       .join("\n");
     const pageCount = ocrResponse.pages?.length || 1;
-    let hasText = allText.trim().length > 50;
+
+    // Compute "useful text" = strip image markdown refs + MRZ lines + isolated symbols
+    // This detects scanned PDFs (passports, IDs) where Mistral OCR only returns
+    // image placeholders and the MRZ band, with no actual readable French text.
+    const usefulText = allText
+      .replace(/!\[[^\]]*\]\([^)]*\)/g, "") // strip ![img-0.jpeg](img-0.jpeg)
+      .replace(/^[A-Z0-9<]{20,}$/gm, "")    // strip MRZ lines (long uppercase + < blocks)
+      .replace(/[^a-zA-Zàâäéèêëïîôöùûüç\s]/g, " ")
+      .replace(/\s+/g, " ")
+      .trim();
+    const wordCount = usefulText.split(" ").filter((w) => w.length >= 3).length;
+    let hasText = allText.trim().length > 50 && wordCount >= 8;
     let finalText = allText;
+
+    if (!hasText) {
+      console.log(`[OCR] Insufficient useful text: total=${allText.length}, useful_words=${wordCount} — triggering Pixtral fallback`);
+    }
 
     // ── Pixtral Vision Fallback for scanned PDFs ──────────────────────
     // If OCR text extraction failed or yielded too little (scanned/image-based PDF),
