@@ -203,9 +203,9 @@ Si c'est une décision de refus :
     "type_visa_texte_original": "texte exact du document tel qu'écrit dans l'objet (ex: 'visa de long séjour sollicité en qualité d'ascendant d'un ressortissant de nationalité française')"
   },
   "consulat": {
-    "nom": "nom complet de l'autorité émettrice (ex: 'Ambassade de France à Yaoundé', 'Consulat général de France à Casablanca'). DÉDUIS-LE depuis l'en-tête du document même s'il n'est pas explicitement précédé du mot 'Consulat'. ATTENTION : le cartouche peut être écrit sur PLUSIEURS LIGNES VERTICALES (ex: 'CONSULAT GÉNÉRAL' / 'DE FRANCE' / 'À DOUALA') — recompose-le en une seule chaîne.",
-    "ville": "ville extraite du nom (ex: 'Yaoundé', 'Casablanca', 'Dakar', 'Douala'). OBLIGATOIRE si une ambassade/consulat est mentionné(e), même si elle apparaît seule sur une ligne après 'À' ou 'A'.",
-    "pays": "pays correspondant à la ville (ex: Yaoundé→Cameroun, Douala→Cameroun, Casablanca→Maroc, Dakar→Sénégal, Abidjan→Côte d'Ivoire, Alger→Algérie, Tunis→Tunisie)"
+    "nom": "nom complet de l'autorité émettrice (ex: 'Ambassade de France à Yaoundé', 'Consulat général de France à Casablanca'). DÉDUIS-LE depuis l'en-tête du document même s'il n'est pas explicitement précédé du mot 'Consulat'. ATTENTION : le cartouche peut être écrit sur PLUSIEURS LIGNES VERTICALES (ex: 'CONSULAT GÉNÉRAL' / 'DE FRANCE' / 'À DOUALA') — recompose-le en une seule chaîne. SI L'EN-TÊTE EST ABSENT OU ILLISIBLE : retourne null. NE JAMAIS inventer 'Ambassade' ni écrire 'ville non précisée', 'non visible' ou similaire — laisse null.",
+    "ville": "ville extraite du nom (ex: 'Yaoundé', 'Casablanca', 'Dakar', 'Douala'). OBLIGATOIRE si une ambassade/consulat est mentionné(e), même si elle apparaît seule sur une ligne après 'À' ou 'A'. SINON null.",
+    "pays": "pays correspondant à la ville (ex: Yaoundé→Cameroun, Douala→Cameroun, Casablanca→Maroc, Dakar→Sénégal, Abidjan→Côte d'Ivoire, Alger→Algérie, Tunis→Tunisie). null si ville inconnue."
   },
   "refus": {
     "date_notification": "JJ/MM/AAAA — RÈGLE STRICTE : utilise TOUJOURS la date de SIGNATURE de l'agent en bas du document (souvent précédée de 'Le' près de la signature, ex: 'Le 13/09/2023. Laurène THOUVENIN'). NE PAS utiliser la date d'enregistrement du dossier en haut (champ 'Date :' à côté du N° de dossier). Si la date de signature est absente, utilise la date du dossier en dernier recours.",
