@@ -86,6 +86,25 @@ serve(async (req) => {
 
     const dossierRef = generateDossierRef();
 
+    // Normalize dates: accept "JJ/MM/AAAA", "JJ-MM-AAAA" or ISO "AAAA-MM-JJ"
+    const toIsoDate = (value: unknown): string | null => {
+      if (!value || typeof value !== "string") return null;
+      const v = value.trim();
+      if (!v) return null;
+      // Already ISO
+      if (/^\d{4}-\d{2}-\d{2}/.test(v)) return v.slice(0, 10);
+      // JJ/MM/AAAA or JJ-MM-AAAA
+      const m = v.match(/^(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{4})$/);
+      if (m) {
+        const [, d, mo, y] = m;
+        return `${y}-${mo.padStart(2, "0")}-${d.padStart(2, "0")}`;
+      }
+      return null;
+    };
+
+    const dateNotifIso = toIsoDate(ocrData.dateNotificationRefus);
+    const dateNaissanceIso = toIsoDate(identity.dateNaissance);
+
     // Determine recipient from OCR
     const destinataire = ocrData.destinataireRecours || "Commission de recours contre les décisions de refus de visa";
     let recipientName = destinataire;
@@ -110,14 +129,14 @@ serve(async (req) => {
         client_first_name: identity.firstName,
         client_last_name: identity.lastName,
         client_email: user.email || null,
-        client_date_naissance: identity.dateNaissance || null,
+        client_date_naissance: dateNaissanceIso,
         client_lieu_naissance: identity.lieuNaissance || null,
         client_nationalite: identity.nationalite || null,
         client_passport_number: identity.passportNumber || null,
         consulat_nom: ocrData.consulatNom || null,
         consulat_ville: ocrData.consulatVille || null,
         consulat_pays: ocrData.consulatPays || null,
-        date_notification_refus: ocrData.dateNotificationRefus || null,
+        date_notification_refus: dateNotifIso,
         motifs_refus: ocrData.motifsRefus || [],
         motifs_texte_original: ocrData.motifsTexteOriginal || [],
         numero_decision: ocrData.numeroDecision || null,
