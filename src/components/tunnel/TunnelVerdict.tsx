@@ -19,8 +19,11 @@ function computeDelaiRestant(dateStr: string): number | null {
 }
 
 export default function TunnelVerdict({ ocrData, onNext, onBack }: TunnelVerdictProps) {
-  const delaiRestant = ocrData.dateNotificationRefus ? computeDelaiRestant(ocrData.dateNotificationRefus) : null;
-  const isExpired = delaiRestant !== null && delaiRestant < 0;
+  const rawDelai = ocrData.dateNotificationRefus ? computeDelaiRestant(ocrData.dateNotificationRefus) : null;
+  // Le délai légal est de 30 jours calendaires. Si > 30, la date OCR est probablement erronée (date future ou mal lue).
+  const dateIncoherente = rawDelai !== null && rawDelai > 30;
+  const delaiRestant = rawDelai !== null ? Math.min(rawDelai, 30) : null;
+  const isExpired = rawDelai !== null && rawDelai < 0;
   const isUrgent = delaiRestant !== null && delaiRestant >= 0 && delaiRestant <= 7;
 
   if (isExpired) {
@@ -91,6 +94,16 @@ export default function TunnelVerdict({ ocrData, onNext, onBack }: TunnelVerdict
           </div>
         </div>
 
+        {/* Date incohérente warning */}
+        {dateIncoherente && (
+          <div className="bg-amber-500/10 border border-amber-500/30 rounded-xl p-3 mb-4 flex items-start gap-2 text-left">
+            <span className="text-lg shrink-0">⚠️</span>
+            <p className="text-xs text-amber-300 leading-relaxed">
+              <span className="font-bold">Date à vérifier :</span> la date de notification semble incorrecte. Le délai légal est de 30 jours maximum — pense à corriger la date à l'étape précédente si besoin.
+            </p>
+          </div>
+        )}
+
         {/* Délai warning */}
         {isUrgent && delaiRestant !== null && (
           <div className="bg-amber-500/10 border border-amber-500/30 rounded-xl p-3 mb-6 flex items-center gap-2">
@@ -101,7 +114,7 @@ export default function TunnelVerdict({ ocrData, onNext, onBack }: TunnelVerdict
           </div>
         )}
 
-        {delaiRestant !== null && !isUrgent && (
+        {delaiRestant !== null && !isUrgent && !dateIncoherente && (
           <p className="text-xs text-muted-foreground mb-6">
             📅 Il vous reste <span className="text-emerald-400 font-semibold">{delaiRestant} jours</span> pour contester.
           </p>
