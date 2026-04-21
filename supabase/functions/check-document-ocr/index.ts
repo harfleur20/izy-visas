@@ -524,8 +524,9 @@ async function processOcrInBackground(
 
   let ocrResult: MistralOcrResult;
 
+  const expectedTypeForPrompt = isDecisionRefus ? "decision_refus" : guessExpectedType(nomPiece);
   try {
-    ocrResult = await runOcrAnalysis(bytes, fileType, fileName, signedUrl);
+    ocrResult = await runOcrAnalysis(bytes, fileType, fileName, signedUrl, expectedTypeForPrompt);
   } catch (err: any) {
     console.error("[OCR] Mistral API error:", err);
     await supabaseAdmin.from("pieces_justificatives").update({
