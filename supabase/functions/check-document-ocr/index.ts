@@ -354,7 +354,7 @@ async function runOcrAnalysis(
     throw new Error("Service OCR non configuré");
   }
 
-  const client = new Mistral({ apiKey: mistralApiKey });
+  
 
   if (fileType === "application/pdf" && signedUrl) {
     const ocrRes = await fetch("https://api.mistral.ai/v1/ocr", {
@@ -421,13 +421,13 @@ async function runOcrAnalysis(
         console.log(`[OCR] Falling back to Pixtral vision on ${pageImages.length} page(s)`);
         try {
           const expectedLabel = TYPE_LABELS[expectedType] || "";
-          const visionRes = await client.chat.complete({
+          const visionRes = await mistralChatComplete(mistralApiKey, {
             model: "pixtral-12b-2409",
             messages: [{
               role: "user",
               content: [
-                ...pageImages.map((url) => ({ type: "image_url" as const, imageUrl: { url } })),
-                { type: "text" as const, text: buildVisionPrompt(expectedType, expectedLabel) },
+                ...pageImages.map((url) => ({ type: "image_url", image_url: { url } })),
+                { type: "text", text: buildVisionPrompt(expectedType, expectedLabel) },
               ],
             }],
           });
@@ -487,12 +487,12 @@ async function runOcrAnalysis(
     const mimeType = fileType === "image/png" ? "image/png" : "image/jpeg";
 
     const expectedLabel = TYPE_LABELS[expectedType] || "";
-    const visionResponse = await client.chat.complete({
+    const visionResponse = await mistralChatComplete(mistralApiKey, {
       model: "pixtral-12b-2409",
       messages: [{
         role: "user",
         content: [
-          { type: "image_url", imageUrl: { url: `data:${mimeType};base64,${base64Content}` } },
+          { type: "image_url", image_url: { url: `data:${mimeType};base64,${base64Content}` } },
           { type: "text", text: buildVisionPrompt(expectedType, expectedLabel) },
         ],
       }],
