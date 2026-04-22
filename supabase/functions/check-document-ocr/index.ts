@@ -1,6 +1,21 @@
 import { serve } from "https://deno.land/std@0.190.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.49.4";
-import { Mistral } from "https://esm.sh/@mistralai/mistralai@1.5.0";
+// Mistral SDK removed — calling REST API directly to avoid esm.sh transitive deps (zod) timing out at deploy.
+async function mistralChatComplete(apiKey: string, body: Record<string, unknown>): Promise<{ choices?: Array<{ message?: { content?: string } }> }> {
+  const res = await fetch("https://api.mistral.ai/v1/chat/completions", {
+    method: "POST",
+    headers: {
+      "Authorization": `Bearer ${apiKey}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify(body),
+  });
+  if (!res.ok) {
+    const errText = await res.text().catch(() => "");
+    throw new Error(`Mistral chat API error ${res.status}: ${errText}`);
+  }
+  return await res.json();
+}
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
