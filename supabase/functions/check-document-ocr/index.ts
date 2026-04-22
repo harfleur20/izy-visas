@@ -1,6 +1,21 @@
 import { serve } from "https://deno.land/std@0.190.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.49.4";
-import { Mistral } from "https://esm.sh/@mistralai/mistralai@1.5.0";
+// Mistral SDK removed — calling REST API directly to avoid esm.sh transitive deps (zod) timing out at deploy.
+async function mistralChatComplete(apiKey: string, body: Record<string, unknown>): Promise<{ choices?: Array<{ message?: { content?: string } }> }> {
+  const res = await fetch("https://api.mistral.ai/v1/chat/completions", {
+    method: "POST",
+    headers: {
+      "Authorization": `Bearer ${apiKey}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify(body),
+  });
+  if (!res.ok) {
+    const errText = await res.text().catch(() => "");
+    throw new Error(`Mistral chat API error ${res.status}: ${errText}`);
+  }
+  return await res.json();
+}
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -339,7 +354,7 @@ async function runOcrAnalysis(
     throw new Error("Service OCR non configuré");
   }
 
-  const client = new Mistral({ apiKey: mistralApiKey });
+  
 
   if (fileType === "application/pdf" && signedUrl) {
     const ocrRes = await fetch("https://api.mistral.ai/v1/ocr", {
@@ -406,13 +421,13 @@ async function runOcrAnalysis(
         console.log(`[OCR] Falling back to Pixtral vision on ${pageImages.length} page(s)`);
         try {
           const expectedLabel = TYPE_LABELS[expectedType] || "";
-          const visionRes = await client.chat.complete({
+          const visionRes = await mistralChatComplete(mistralApiKey, {
             model: "pixtral-12b-2409",
             messages: [{
               role: "user",
               content: [
-                ...pageImages.map((url) => ({ type: "image_url" as const, imageUrl: { url } })),
-                { type: "text" as const, text: buildVisionPrompt(expectedType, expectedLabel) },
+                ...pageImages.map((url) => ({ type: "image_url", image_url: { url } })),
+                { type: "text", text: buildVisionPrompt(expectedType, expectedLabel) },
               ],
             }],
           });
@@ -472,12 +487,12 @@ async function runOcrAnalysis(
     const mimeType = fileType === "image/png" ? "image/png" : "image/jpeg";
 
     const expectedLabel = TYPE_LABELS[expectedType] || "";
-    const visionResponse = await client.chat.complete({
+    const visionResponse = await mistralChatComplete(mistralApiKey, {
       model: "pixtral-12b-2409",
       messages: [{
         role: "user",
         content: [
-          { type: "image_url", imageUrl: { url: `data:${mimeType};base64,${base64Content}` } },
+          { type: "image_url", image_url: { url: `data:${mimeType};base64,${base64Content}` } },
           { type: "text", text: buildVisionPrompt(expectedType, expectedLabel) },
         ],
       }],
