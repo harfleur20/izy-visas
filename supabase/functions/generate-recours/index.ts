@@ -302,7 +302,8 @@ serve(async (req) => {
       motifRefus = motifTexteOriginal.join("\n") || motifCodes.join(", ");
       decisionDate = dossier.date_notification_refus || "";
       decisionRef = dossier.numero_decision || "";
-      consulat = [dossier.consulat_nom, dossier.consulat_ville, dossier.consulat_pays].filter(Boolean).join(", ");
+      // Note: consulat_ville volontairement omise — le nom du consulat contient déjà la ville (ex: "Ambassade de France à Yaoundé")
+      consulat = [dossier.consulat_nom, dossier.consulat_pays].filter(Boolean).join(", ");
       passportNumber = dossier.client_passport_number || profile?.passport_number || "";
       dossierRef = dossier.dossier_ref;
       destinataireRecours = dossier.destinataire_recours || "crrv_nantes";
