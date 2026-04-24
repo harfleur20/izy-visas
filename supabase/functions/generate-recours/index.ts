@@ -142,7 +142,12 @@ serve(async (req) => {
       decisionDate = ocr.dateNotificationRefus || "";
       decisionRef = ocr.numeroDecision || "";
       consulat = formatConsulatName(ocr.consulatNom, ocr.consulatVille, ocr.consulatPays);
-      passportNumber = identity.passportNumber || "";
+      const extractedPassportFromPieces = Array.isArray(tunnelPieces)
+        ? tunnelPieces
+          .map((p: { extractedPassportNumber?: string }) => p.extractedPassportNumber)
+          .find((value: string | undefined) => typeof value === "string" && value.trim())
+        : null;
+      passportNumber = identity.passportNumber || extractedPassportFromPieces || "";
       clientPhone = identity.phone || "";
       email = identity.email || "";
       destinataireRecours = ocr.destinataireRecours || "crrv_nantes";

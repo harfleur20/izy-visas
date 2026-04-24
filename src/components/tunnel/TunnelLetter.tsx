@@ -59,6 +59,7 @@ export default function TunnelLetter({
           pieces: pieces.map((p) => ({
             nomPiece: p.nomPiece,
             typePiece: p.typePiece,
+            extractedPassportNumber: p.extractedPassportNumber,
             pages: 1,
           })),
         }),
