@@ -206,6 +206,23 @@ const normalizeStoredOption = (value?: string | null): SendOption | null => {
   return normalized === "A" || normalized === "B" || normalized === "C" ? normalized : null;
 };
 
+const ACTIVE_DOSSIER_SELECT =
+  "id, dossier_ref, client_first_name, client_last_name, client_passport_number, procuration_signee, date_signature_procuration, procuration_expiration, date_notification_refus, lrar_status, option_choisie, option_envoi, url_lettre_definitive, url_lettre_signee_avocat, date_signature_avocat, validation_juridique_status";
+
+const getDeadlineResult = (dateStr: string) => {
+  if (!dateStr) return null;
+  const ref = new Date(dateStr);
+  if (Number.isNaN(ref.getTime())) return null;
+  const dl = new Date(ref);
+  dl.setDate(dl.getDate() + 30);
+  const today = new Date();
+  const diff = Math.ceil((dl.getTime() - today.getTime()) / 86400000);
+  const deadline = dl.toLocaleDateString("fr-FR");
+  if (diff < 0) return { type: "expired", days: Math.abs(diff), deadline };
+  if (diff <= 7) return { type: "urgent", days: diff, deadline };
+  return { type: "ok", days: diff, deadline };
+};
+
 const ACCEPTED_OCR_STATUSES = new Set(["accepte", "accepted"]);
 const REJECTED_OCR_STATUSES = new Set(["rejete", "rejected", "erreur", "failed"]);
 const PENDING_OCR_STATUSES = new Set(["pending", "en_cours", "analyzing", "uploading", "correcting"]);
@@ -330,13 +347,65 @@ const ClientSpace = () => {
   useEffect(() => {
     if (!user) return;
     const loadOrCreateDossier = async () => {
-      const { data } = await supabase
+      const params = new URLSearchParams(window.location.search);
+      const requestedDossierRef = params.get("dossier_ref");
+      const pendingTunnel = params.get("oauth_pending") === "true" ? sessionStorage.getItem("tunnel_data") : null;
+
+      if (pendingTunnel) {
+        try {
+          const tunnelData = JSON.parse(pendingTunnel) as {
+            identity: unknown;
+            ocrData: unknown;
+            pieces?: unknown[];
+            letterContent?: string | null;
+            optionChoisie?: string | null;
+            paymentMethod?: PaymentMethod;
+          };
+          const option = normalizeStoredOption(tunnelData.optionChoisie) || "B";
+          const { data: migrationResult, error: migrationError } = await supabase.functions.invoke("migrate-tunnel-dossier", {
+            body: {
+              identity: tunnelData.identity,
+              ocrData: tunnelData.ocrData,
+              pieces: tunnelData.pieces || [],
+              letterContent: tunnelData.letterContent || null,
+              optionChoisie: option,
+            },
+          });
+
+          if (!migrationError && migrationResult?.dossier_ref) {
+            sessionStorage.removeItem("tunnel_data");
+            const method = tunnelData.paymentMethod || "stripe";
+            const functionName = method === "stripe" ? "create-payment" : "create-taramoney-payment";
+            const { data: paymentData, error: paymentError } = await supabase.functions.invoke(functionName, {
+              body: { dossier_ref: migrationResult.dossier_ref, option, from_tunnel: true },
+            });
+
+            if (!paymentError && method === "stripe" && paymentData?.url) {
+              window.location.href = paymentData.url;
+              return;
+            }
+            if (!paymentError && method === "taramoney" && paymentData?.primaryLink) {
+              sessionStorage.setItem("taramoney_links", JSON.stringify(paymentData.links || {}));
+              window.location.href = `/client?payment=taramoney_pending&dossier_ref=${migrationResult.dossier_ref}`;
+              return;
+            }
+
+            window.location.href = `/client?from_tunnel=true&dossier_ref=${migrationResult.dossier_ref}`;
+            return;
+          }
+        } catch (error) {
+          console.error("OAuth tunnel migration error:", error);
+        }
+      }
+
+      const baseQuery = supabase
         .from("dossiers")
-        .select("id, dossier_ref, client_first_name, client_last_name, client_passport_number, procuration_signee, date_signature_procuration, procuration_expiration, date_notification_refus, lrar_status, option_choisie, option_envoi, url_lettre_definitive, url_lettre_signee_avocat, date_signature_avocat, validation_juridique_status")
-        .eq("user_id", user.id)
-        .order("created_at", { ascending: false })
-        .limit(1)
-        .maybeSingle();
+        .select(ACTIVE_DOSSIER_SELECT)
+        .eq("user_id", user.id);
+
+      const { data } = requestedDossierRef
+        ? await baseQuery.eq("dossier_ref", requestedDossierRef).maybeSingle()
+        : await baseQuery.order("created_at", { ascending: false }).limit(1).maybeSingle();
 
       if (data) {
         setActiveDossier(data as ActiveDossier);
@@ -346,6 +415,7 @@ const ClientSpace = () => {
         setSelectedOption(normalizeStoredOption(data.option_choisie || data.option_envoi));
         if (data.date_notification_refus) {
           setRefDate(data.date_notification_refus);
+          setDlResult(getDeadlineResult(data.date_notification_refus));
         }
       } else {
         const ref = `IZY-${new Date().getFullYear()}-${String(Date.now()).slice(-6)}`;
@@ -363,7 +433,7 @@ const ClientSpace = () => {
             recipient_postal_code: "44036",
             recipient_city: "Nantes Cedex 1",
           })
-          .select("id, dossier_ref, client_first_name, client_last_name, client_passport_number, procuration_signee, date_signature_procuration, procuration_expiration, date_notification_refus, lrar_status, option_choisie, option_envoi, url_lettre_definitive, url_lettre_signee_avocat, date_signature_avocat, validation_juridique_status")
+          .select(ACTIVE_DOSSIER_SELECT)
           .single();
 
         if (!error && newDossier) {
@@ -441,6 +511,27 @@ const ClientSpace = () => {
     }
 
     params.delete("payment");
+    const nextQuery = params.toString();
+    window.history.replaceState({}, "", `${window.location.pathname}${nextQuery ? `?${nextQuery}` : ""}`);
+  }, [activeDossier]);
+
+  useEffect(() => {
+    if (!activeDossier) return;
+    const params = new URLSearchParams(window.location.search);
+    if (params.get("from_tunnel") !== "true") return;
+
+    const option = normalizeStoredOption(activeDossier.option_choisie || activeDossier.option_envoi);
+    if (option) setSelectedOption(option);
+    if (activeDossier.date_notification_refus) {
+      setRefDate(activeDossier.date_notification_refus);
+      setDlResult(getDeadlineResult(activeDossier.date_notification_refus));
+    }
+
+    setCguAccepted(true);
+    setStep(option ? 9 : 8);
+
+    params.delete("from_tunnel");
+    params.delete("oauth_pending");
     const nextQuery = params.toString();
     window.history.replaceState({}, "", `${window.location.pathname}${nextQuery ? `?${nextQuery}` : ""}`);
   }, [activeDossier]);
@@ -669,16 +760,8 @@ const ClientSpace = () => {
   }, [activeDossier]);
 
   const checkDeadline = (dateStr: string) => {
-    if (!dateStr) return;
-    const ref = new Date(dateStr);
-    const dl = new Date(ref);
-    dl.setDate(dl.getDate() + 30);
-    const today = new Date();
-    const diff = Math.ceil((dl.getTime() - today.getTime()) / 86400000);
-    const deadline = dl.toLocaleDateString("fr-FR");
-    if (diff < 0) setDlResult({ type: "expired", days: Math.abs(diff), deadline });
-    else if (diff <= 7) setDlResult({ type: "urgent", days: diff, deadline });
-    else setDlResult({ type: "ok", days: diff, deadline });
+    const result = getDeadlineResult(dateStr);
+    if (result) setDlResult(result);
   };
 
   // ── Step navigation with guardrails ────────────────────────────
@@ -990,14 +1073,15 @@ const ClientSpace = () => {
 
       if (paymentMethod === "stripe") {
         if (!data?.url) throw new Error("Lien de paiement indisponible");
-        window.open(data.url, "_blank");
+        window.location.href = data.url;
         return;
       }
 
       const links = (data?.links || {}) as TaraPaymentLinks;
       setTaraPaymentLinks(links);
       if (data?.primaryLink) {
-        window.open(data.primaryLink, "_blank");
+        window.location.href = data.primaryLink;
+        return;
       }
       toast({
         title: "Lien Mobile Money créé",

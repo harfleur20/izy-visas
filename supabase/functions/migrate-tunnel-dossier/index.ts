@@ -56,32 +56,13 @@ serve(async (req) => {
       });
     }
 
-    const { identity, ocrData, pieces, letterContent, optionChoisie } = await req.json();
+    const { identity, ocrData, pieces, letterContent, optionChoisie, skipPieceRecords } = await req.json();
 
     if (!identity || !ocrData) {
       return new Response(JSON.stringify({ error: "Données tunnel manquantes" }), {
         status: 400,
         headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
-    }
-
-    // Check if user already has a dossier
-    const { data: existingDossier } = await supabaseAdmin
-      .from("dossiers")
-      .select("id, dossier_ref")
-      .eq("user_id", user.id)
-      .limit(1)
-      .maybeSingle();
-
-    if (existingDossier) {
-      return new Response(
-        JSON.stringify({
-          success: true,
-          dossier_ref: existingDossier.dossier_ref,
-          message: "Dossier existant trouvé",
-        }),
-        { headers: { ...corsHeaders, "Content-Type": "application/json" } }
-      );
     }
 
     const dossierRef = generateDossierRef();
@@ -164,21 +145,24 @@ serve(async (req) => {
       );
     }
 
-    // Create piece records (files will need to be re-uploaded in client space)
-    if (pieces && Array.isArray(pieces) && pieces.length > 0) {
-      const pieceRecords = pieces.map((p: { nomPiece: string; typePiece: string }) => ({
+    // Create fallback piece records when the caller cannot upload File objects after migration.
+    if (!skipPieceRecords && pieces && Array.isArray(pieces) && pieces.length > 0) {
+      const pieceRecords = pieces.map((p: { nomPiece: string; typePiece: string; fileSize?: number; scoreQualite?: number; statutOcr?: string }) => ({
         user_id: user.id,
         dossier_id: dossier.id,
         nom_piece: p.nomPiece,
         type_piece: p.typePiece || "obligatoire",
-        statut_ocr: "pending",
+        statut_ocr: p.statutOcr || "accepte",
+        score_qualite: p.scoreQualite ?? null,
+        taille_fichier_ko: p.fileSize ? Math.ceil(p.fileSize / 1024) : null,
+        date_analyse_ocr: new Date().toISOString(),
       }));
 
       await supabaseAdmin.from("pieces_justificatives").insert(pieceRecords);
     }
 
     return new Response(
-      JSON.stringify({ success: true, dossier_ref: dossier.dossier_ref }),
+      JSON.stringify({ success: true, dossier_ref: dossier.dossier_ref, dossier_id: dossier.id }),
       { headers: { ...corsHeaders, "Content-Type": "application/json" } }
     );
   } catch (error) {
