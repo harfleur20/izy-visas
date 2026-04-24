@@ -220,6 +220,24 @@ const normalizeStoredOption = (value?: string | null): SendOption | null => {
 const ACTIVE_DOSSIER_SELECT =
   "id, dossier_ref, client_first_name, client_last_name, client_passport_number, client_date_naissance, client_lieu_naissance, client_nationalite, visa_type, motifs_refus, motifs_texte_original, consulat_nom, consulat_ville, consulat_pays, numero_decision, procuration_signee, date_signature_procuration, procuration_expiration, date_notification_refus, lettre_neutre_contenu, lrar_status, option_choisie, option_envoi, url_lettre_definitive, url_lettre_signee_avocat, date_signature_avocat, validation_juridique_status";
 
+const getDossierHydrationScore = (dossier: ActiveDossier) => {
+  let score = 0;
+  if (dossier.lrar_status === "paiement_confirme") score += 100;
+  if (dossier.lettre_neutre_contenu) score += 40;
+  if (dossier.date_notification_refus) score += 20;
+  if (dossier.option_choisie || dossier.option_envoi) score += 10;
+  if (dossier.numero_decision) score += 8;
+  if (Array.isArray(dossier.motifs_refus) && dossier.motifs_refus.length > 0) score += 8;
+  if (dossier.consulat_nom) score += 6;
+  if (dossier.client_passport_number) score += 6;
+  return score;
+};
+
+const pickBestDossier = (dossiers: ActiveDossier[]) =>
+  dossiers
+    .slice()
+    .sort((a, b) => getDossierHydrationScore(b) - getDossierHydrationScore(a))[0] || null;
+
 const getDeadlineResult = (dateStr: string) => {
   if (!dateStr) return null;
   const ref = new Date(dateStr);
@@ -472,10 +490,16 @@ const ClientSpace = () => {
 
       const { data } = requestedDossierRef
         ? await baseQuery.eq("dossier_ref", requestedDossierRef).maybeSingle()
-        : await baseQuery.order("created_at", { ascending: false }).limit(1).maybeSingle();
+        : await baseQuery.order("updated_at", { ascending: false }).limit(10);
 
-      if (data) {
-        hydrateFromDossier(data as ActiveDossier);
+      const existingDossier = data
+        ? Array.isArray(data)
+          ? pickBestDossier(data as ActiveDossier[])
+          : (data as ActiveDossier)
+        : null;
+
+      if (existingDossier) {
+        hydrateFromDossier(existingDossier);
       } else {
         const ref = `IZY-${new Date().getFullYear()}-${String(Date.now()).slice(-6)}`;
         const { data: newDossier, error } = await supabase
