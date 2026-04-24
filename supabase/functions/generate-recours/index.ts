@@ -59,6 +59,31 @@ function dateEnToutesLettres(date: Date): string {
   return `${dayName} ${dayStr} ${monthName} ${yearStr.trim()}`;
 }
 
+function normalizeText(value?: string | null): string {
+  return (value || "")
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/\s+/g, " ")
+    .trim()
+    .toLowerCase();
+}
+
+function formatConsulatName(nom?: string | null, ville?: string | null, pays?: string | null): string {
+  const parts = [nom || ""];
+  const normalizedNom = normalizeText(nom);
+  const normalizedVille = normalizeText(ville);
+  const normalizedPays = normalizeText(pays);
+
+  if (ville && normalizedVille && !normalizedNom.includes(normalizedVille)) {
+    parts.push(ville);
+  }
+  if (pays && normalizedPays && !normalizedNom.includes(normalizedPays)) {
+    parts.push(pays);
+  }
+
+  return parts.filter((part) => part.trim()).join(", ");
+}
+
 serve(async (req) => {
   if (req.method === "OPTIONS") {
     return new Response("ok", { headers: corsHeaders });
@@ -116,7 +141,7 @@ serve(async (req) => {
       motifRefus = motifTexteOriginal.join("\n") || motifCodes.join(", ");
       decisionDate = ocr.dateNotificationRefus || "";
       decisionRef = ocr.numeroDecision || "";
-      consulat = [ocr.consulatNom, ocr.consulatVille, ocr.consulatPays].filter(Boolean).join(", ");
+      consulat = formatConsulatName(ocr.consulatNom, ocr.consulatVille, ocr.consulatPays);
       passportNumber = identity.passportNumber || "";
       clientPhone = identity.phone || "";
       email = identity.email || "";
@@ -302,8 +327,7 @@ serve(async (req) => {
       motifRefus = motifTexteOriginal.join("\n") || motifCodes.join(", ");
       decisionDate = dossier.date_notification_refus || "";
       decisionRef = dossier.numero_decision || "";
-      // Note: consulat_ville volontairement omise — le nom du consulat contient déjà la ville (ex: "Ambassade de France à Yaoundé")
-      consulat = [dossier.consulat_nom, dossier.consulat_pays].filter(Boolean).join(", ");
+      consulat = formatConsulatName(dossier.consulat_nom, dossier.consulat_ville, dossier.consulat_pays);
       passportNumber = dossier.client_passport_number || profile?.passport_number || "";
       dossierRef = dossier.dossier_ref;
       destinataireRecours = dossier.destinataire_recours || "crrv_nantes";

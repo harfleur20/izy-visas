@@ -294,6 +294,21 @@ function extractConsulatFromText(text: string) {
   return { nom: null, ville: null, pays: null };
 }
 
+function extractPassportNumberFromText(text: string): string | null {
+  if (!text.trim()) return null;
+  const explicitPatterns = [
+    /(?:n[°ºo.]?\s*(?:de\s*)?passeport|num[ée]ro\s*(?:de\s*)?passeport|passport\s*(?:no\.?|number|n[°ºo.]?))\s*[:\-]?\s*([A-Z0-9]*\d[A-Z0-9]{4,14})\b/i,
+    /(?:passeport|passport)[\s\S]{0,40}?\b([A-Z]{1,3}\d[A-Z0-9]{4,12})\b/i,
+  ];
+
+  for (const pattern of explicitPatterns) {
+    const match = text.match(pattern);
+    if (match?.[1]) return match[1].toUpperCase().replace(/\s+/g, "");
+  }
+
+  return null;
+}
+
 function getSupabaseAdmin() {
   return createClient(
     Deno.env.get("SUPABASE_URL") ?? "",
@@ -616,6 +631,7 @@ serve(async (req) => {
     const visa = analysisResult.visa || {};
     const consulat = analysisResult.consulat || {};
     const refus = analysisResult.refus || {};
+    const passportFromText = extractPassportNumberFromText(ocrRawText);
     const consulatFromText = extractConsulatFromText(ocrRawText);
     const consulatFromNumero = extractConsulatFromNumeroDossier(ocrRawText);
     // Anti-hallucination : si le modèle retourne "ville non précisée", "non visible", etc., on ignore
@@ -708,7 +724,7 @@ serve(async (req) => {
         date_naissance: demandeur.date_naissance || null,
         lieu_naissance: demandeur.lieu_naissance || null,
         nationalite: demandeur.nationalite || null,
-        numero_passeport: demandeur.numero_passeport || null,
+        numero_passeport: demandeur.numero_passeport || passportFromText,
       },
       visa: {
         type_visa: visaTypeNormalized,
