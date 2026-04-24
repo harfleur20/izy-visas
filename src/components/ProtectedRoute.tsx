@@ -1,4 +1,4 @@
-import { Navigate } from "react-router-dom";
+import { Navigate, useLocation } from "react-router-dom";
 import { useAuth } from "@/hooks/useAuth";
 import { AppRole, homeRouteForRole, normalizeRole } from "@/lib/roles";
 type AllowedRole = AppRole;
@@ -11,6 +11,7 @@ interface ProtectedRouteProps {
 
 const ProtectedRoute = ({ children, allowedRoles, requireMfa }: ProtectedRouteProps) => {
   const { session, role, loading, hasMfaEnabled } = useAuth();
+  const location = useLocation();
   const normalizedRole = normalizeRole(role);
   const normalizedAllowedRoles = allowedRoles?.map((allowedRole) => normalizeRole(allowedRole)).filter(Boolean) as AllowedRole[] | undefined;
 
@@ -26,7 +27,8 @@ const ProtectedRoute = ({ children, allowedRoles, requireMfa }: ProtectedRoutePr
   }
 
   if (!session) {
-    return <Navigate to="/" replace />;
+    const redirect = `${location.pathname}${location.search}${location.hash}`;
+    return <Navigate to={`/auth?redirect=${encodeURIComponent(redirect)}`} replace />;
   }
 
   // MFA required for admin roles

@@ -13,13 +13,17 @@ const Auth = () => {
   const [searchParams] = useSearchParams();
   const { session, role, hasMfaEnabled } = useAuth();
   const [mode, setMode] = useState<"login" | "signup" | "forgot">("login");
+  const redirectParam = searchParams.get("redirect");
+  const redirectTarget = redirectParam?.startsWith("/") && !redirectParam.startsWith("//")
+    ? redirectParam
+    : null;
 
-  // Block direct access — only allow with ?email= (activation flows)
+  // Block direct access — allow activation flows and protected-route redirects.
   useEffect(() => {
-    if (!searchParams.get("email")) {
+    if (!searchParams.get("email") && !redirectTarget) {
       navigate("/", { replace: true });
     }
-  }, [searchParams, navigate]);
+  }, [searchParams, redirectTarget, navigate]);
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [firstName, setFirstName] = useState("");
@@ -44,11 +48,11 @@ const Auth = () => {
   useEffect(() => {
     if (session && role) {
       navigate(
-        isAdminRole(role) && !hasMfaEnabled ? "/setup-2fa" : homeRouteForRole(role),
+        redirectTarget || (isAdminRole(role) && !hasMfaEnabled ? "/setup-2fa" : homeRouteForRole(role)),
         { replace: true },
       );
     }
-  }, [session, role, hasMfaEnabled, navigate]);
+  }, [session, role, hasMfaEnabled, redirectTarget, navigate]);
 
   const handleEmailAuth = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -94,7 +98,9 @@ const Auth = () => {
     setLoading(true);
     try {
       const result = await lovable.auth.signInWithOAuth("google", {
-        redirect_uri: window.location.origin,
+        redirect_uri: redirectTarget
+          ? `${window.location.origin}/auth?redirect=${encodeURIComponent(redirectTarget)}`
+          : window.location.origin,
       });
       if (result.error) {
         toast({ title: "Erreur Google", description: String(result.error), variant: "destructive" });
