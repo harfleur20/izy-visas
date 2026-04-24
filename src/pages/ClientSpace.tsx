@@ -499,7 +499,32 @@ const ClientSpace = () => {
     const paymentStatus = params.get("payment");
     if (!paymentStatus) return;
 
+    const confirmStripeSession = async (sessionId: string) => {
+      const { data, error } = await supabase.functions.invoke("create-payment", {
+        body: { action: "confirm_session", session_id: sessionId },
+      });
+      if (error || data?.error) {
+        throw new Error(await extractFunctionErrorMessage(error, data));
+      }
+      return data;
+    };
+
+    const handlePaymentReturn = async () => {
     if (paymentStatus === "success") {
+      const sessionId = params.get("session_id");
+      if (sessionId) {
+        try {
+          const confirmed = await confirmStripeSession(sessionId);
+          setPaymentConfirmed(true);
+          if (confirmed?.option) setSelectedOption(normalizeStoredOption(confirmed.option));
+        } catch (error) {
+          console.error("Stripe session confirmation error:", error);
+          toast({
+            title: "Paiement en cours de confirmation",
+            description: "Stripe a validé le retour. Attendez quelques secondes ou rechargez la page.",
+          });
+        }
+      }
       toast({ title: "✅ Paiement confirmé", description: "Vous pouvez maintenant signer votre lettre de recours." });
       setStep(10);
     } else if (paymentStatus === "taramoney_pending") {
@@ -511,8 +536,12 @@ const ClientSpace = () => {
     }
 
     params.delete("payment");
+    params.delete("session_id");
     const nextQuery = params.toString();
     window.history.replaceState({}, "", `${window.location.pathname}${nextQuery ? `?${nextQuery}` : ""}`);
+    };
+
+    handlePaymentReturn();
   }, [activeDossier]);
 
   useEffect(() => {

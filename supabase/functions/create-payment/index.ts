@@ -94,7 +94,64 @@ serve(async (req) => {
     const authContext = await requireAuthenticatedContext(req, supabaseAdmin, supabaseUser);
     if (!authContext.user.email) throw new Error("User not authenticated or email not available");
 
-    const { dossier_ref, option, from_tunnel } = await req.json();
+    const body = await req.json();
+    const { action, session_id, dossier_ref, option, from_tunnel } = body;
+
+    if (action === "confirm_session") {
+      if (!session_id || typeof session_id !== "string") {
+        throw new HttpError(400, "session_id is required");
+      }
+
+      const stripe = new Stripe(Deno.env.get("STRIPE_SECRET_KEY") || "", {
+        apiVersion: "2025-08-27.basil",
+      });
+      const session = await stripe.checkout.sessions.retrieve(session_id);
+
+      if (session.payment_status !== "paid") {
+        throw new HttpError(409, "Paiement Stripe non confirme.");
+      }
+
+      const sessionUserId = session.metadata?.user_id;
+      const sessionDossierRef = session.metadata?.dossier_ref;
+      const sessionOption = session.metadata?.option;
+
+      if (sessionUserId !== authContext.user.id || !sessionDossierRef) {
+        throw new HttpError(403, "Session Stripe non autorisee.");
+      }
+
+      const { error: paymentUpdateError } = await supabaseAdmin
+        .from("payments")
+        .update({
+          status: "paid",
+          stripe_payment_intent_id: session.payment_intent as string,
+          verified_by_webhook: true,
+        })
+        .eq("stripe_session_id", session.id)
+        .eq("user_id", authContext.user.id);
+
+      if (paymentUpdateError) throw paymentUpdateError;
+
+      const { error: dossierUpdateError } = await supabaseAdmin
+        .from("dossiers")
+        .update({
+          lrar_status: "paiement_confirme",
+          ...(sessionOption ? { option_choisie: sessionOption } : {}),
+        })
+        .eq("dossier_ref", sessionDossierRef)
+        .eq("user_id", authContext.user.id);
+
+      if (dossierUpdateError) throw dossierUpdateError;
+
+      return new Response(JSON.stringify({
+        confirmed: true,
+        dossier_ref: sessionDossierRef,
+        option: sessionOption,
+      }), {
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+        status: 200,
+      });
+    }
+
     if (!dossier_ref) throw new Error("dossier_ref is required");
     assertSendOption(option);
 
@@ -168,7 +225,7 @@ serve(async (req) => {
           option,
         },
       },
-      success_url: `${appBaseUrl}/client?payment=success`,
+      success_url: `${appBaseUrl}/client?payment=success&session_id={CHECKOUT_SESSION_ID}`,
       cancel_url: `${appBaseUrl}/client?payment=cancelled`,
     });
 
