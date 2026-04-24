@@ -86,6 +86,7 @@ export default function TunnelSignup({
             fileSize: p.file.size,
             scoreQualite: p.scoreQualite,
             statutOcr: p.statutOcr,
+            extractedPassportNumber: p.extractedPassportNumber,
           })),
           letterContent,
           optionChoisie: option,

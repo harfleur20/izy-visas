@@ -178,12 +178,6 @@ export default function TunnelVerification({ ocrData, identity, onUpdate, onUpda
     setEditData(updated);
   };
 
-  const updatePassport = (value: string) => {
-    const passport = value.toUpperCase().replace(/\s+/g, "");
-    onUpdateIdentity({ passportNumber: passport });
-    update({ demandeurPasseport: passport });
-  };
-
 
   const handleConfirm = () => {
     onUpdate(editData);
@@ -319,23 +313,6 @@ export default function TunnelVerification({ ocrData, identity, onUpdate, onUpda
                 className="h-12"
               />
             </div>
-          </div>
-
-          {/* Passeport */}
-          <div className="space-y-2 mb-5">
-            <Label className="text-xs text-muted-foreground">N° de passeport</Label>
-            <Input
-              value={identity.passportNumber || editData.demandeurPasseport || ""}
-              onChange={(e) => updatePassport(e.target.value)}
-              placeholder="Ex : A00123456"
-              className="h-12"
-            />
-            {!identity.passportNumber && !editData.demandeurPasseport && (
-              <p className="text-xs text-amber-400 flex items-center gap-1">
-                <AlertTriangle className="w-3 h-3" />
-                Ajoutez le numéro pour éviter “Passeport n° Non communiqué” dans la lettre.
-              </p>
-            )}
           </div>
 
           {/* Date de notification */}

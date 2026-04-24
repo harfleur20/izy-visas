@@ -35,6 +35,7 @@ interface TunnelPiecesProps {
   pieces: TunnelPieceFile[];
   onAddPiece: (piece: TunnelPieceFile) => void;
   onRemovePiece: (id: string) => void;
+  onPassportExtracted: (passportNumber: string) => void;
   onNext: () => void;
   onBack: () => void;
 }
@@ -42,7 +43,7 @@ interface TunnelPiecesProps {
 type AnalyzingState = Record<string, { loading: boolean; error: string | null }>;
 
 export default function TunnelPieces({
-  ocrData, identity, pieces, onAddPiece, onRemovePiece, onNext, onBack,
+  ocrData, identity, pieces, onAddPiece, onRemovePiece, onPassportExtracted, onNext, onBack,
 }: TunnelPiecesProps) {
   const [allPieces, setAllPieces] = useState<PieceRequise[]>([]);
   const [loading, setLoading] = useState(true);
@@ -131,8 +132,12 @@ export default function TunnelPieces({
           typePiece: "obligatoire",
           scoreQualite: data.score,
           statutOcr: "accepte",
+          extractedPassportNumber: data.passportNumber || undefined,
         };
         onAddPiece(piece);
+        if (data.passportNumber) {
+          onPassportExtracted(String(data.passportNumber).toUpperCase().replace(/\s+/g, ""));
+        }
         setAnalyzing((prev) => ({ ...prev, [nomPiece]: { loading: false, error: null } }));
       } else {
         const errorMsg = data.rejectionMessage || data.identityWarning || data.typeMismatchWarning || "Document rejeté. Veuillez réessayer.";
@@ -142,7 +147,7 @@ export default function TunnelPieces({
       console.error("OCR analysis error:", err);
       setAnalyzing((prev) => ({ ...prev, [nomPiece]: { loading: false, error: "Erreur lors de l'analyse. Veuillez réessayer." } }));
     }
-  }, [identity, onAddPiece]);
+  }, [identity, onAddPiece, onPassportExtracted]);
 
   const triggerUpload = (nomPiece: string, camera = false) => {
     setUploadingFor(nomPiece);

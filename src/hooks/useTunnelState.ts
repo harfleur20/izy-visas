@@ -50,6 +50,7 @@ export interface TunnelPieceFile {
   typePiece: string;
   scoreQualite?: number;
   statutOcr?: string;
+  extractedPassportNumber?: string;
 }
 
 export interface TunnelState {

@@ -96,6 +96,7 @@ interface MistralOcrResult {
   motif_rejet: string | null;
   type_document_detecte: string;
   langue_detectee: string;
+  passport_number?: string | null;
   date_detectee: string | null;
   texte_extrait: string;
   pages_detectees: number;
@@ -127,6 +128,7 @@ Analyse ce document et réponds UNIQUEMENT en JSON valide sans aucun texte avant
   "motif_rejet": null ou description du problème,
   "type_document_detecte": une valeur parmi [decision_refus, passeport, releve_bancaire, contrat_travail, attestation_campus_france, acte_mariage, acte_naissance, justificatif_hebergement, billet_avion, assurance_voyage, attestation_emploi, certificat_scolarite, justificatif_domicile, reservation_hotel, lettre_motivation, lettre_invitation, attestation_hebergement, formulaire_visa, autre, inconnu],
   "langue_detectee": une valeur parmi [fr, ar, en, autre, mixte],
+  "passport_number": numéro de passeport si le document est une page passeport, sinon null,
   "date_detectee": date au format JJ/MM/AAAA ou null si aucune date trouvée,
   "texte_extrait": premiers 500 caractères du texte visible (transcris fidèlement, y compris les lignes MRZ commençant par P< ou les codes type AA123456),
   "pages_detectees": nombre de pages,
@@ -550,6 +552,38 @@ function classifyDocumentType(result: MistralOcrResult, allText: string) {
   }
 }
 
+function extractPassportNumberFromText(text: string): string | null {
+  if (!text.trim()) return null;
+
+  const explicitPatterns = [
+    /(?:n[°ºo.]?\s*(?:de\s*)?passeport|num[ée]ro\s*(?:de\s*)?passeport|passport\s*(?:no\.?|number|n[°ºo.]?))\s*[:\-]?\s*([A-Z0-9]*\d[A-Z0-9]{4,14})\b/i,
+    /(?:passeport|passport)[\s\S]{0,80}?\b([A-Z]{1,3}\d[A-Z0-9]{4,12})\b/i,
+  ];
+
+  for (const pattern of explicitPatterns) {
+    const match = text.match(pattern);
+    if (match?.[1]) return match[1].toUpperCase().replace(/\s+/g, "");
+  }
+
+  const mrzLines = text
+    .split(/\n+/)
+    .map((line) => line.replace(/\s+/g, "").trim().toUpperCase())
+    .filter((line) => line.length >= 30);
+  const secondMrzLine = mrzLines.find((line) => /^[A-Z0-9<]{30,}$/.test(line) && /\d/.test(line));
+  if (secondMrzLine) {
+    const candidate = secondMrzLine.slice(0, 9).replace(/</g, "");
+    if (/[A-Z]*\d[A-Z0-9]{4,}/.test(candidate)) return candidate;
+  }
+
+  return null;
+}
+
+function getPassportNumberFromOcrResult(result: MistralOcrResult): string | null {
+  const structured = typeof result.passport_number === "string" ? result.passport_number.trim() : "";
+  const extracted = structured || extractPassportNumberFromText(result.texte_extrait || "") || "";
+  return extracted ? extracted.toUpperCase().replace(/\s+/g, "") : null;
+}
+
 // ── Background OCR processing (normal mode with DB) ─────────────────────
 async function processOcrInBackground(
   pieceId: string,
@@ -589,6 +623,9 @@ async function processOcrInBackground(
     evaluateOcrResult(ocrResult, isDecisionRefus, nomPiece, ownerIdentity, autoCorrect);
 
   const businessRejection = typeMismatchWarning || decisionWarning || identityWarning;
+  const extractedPassportNumber = ocrResult.type_document_detecte === "passeport"
+    ? getPassportNumberFromOcrResult(ocrResult)
+    : null;
 
   // Language notice
   let languageNotice: string | null = null;
@@ -624,6 +661,7 @@ async function processOcrInBackground(
         decisionWarning,
         identityWarning,
         languageNotice,
+        passport_number: extractedPassportNumber,
       },
       type_document_detecte: ocrResult.type_document_detecte,
       type_document_attendu: isDecisionRefus ? "decision_refus" : guessExpectedType(nomPiece),
@@ -640,6 +678,24 @@ async function processOcrInBackground(
 
   if (dbError) {
     console.error("[OCR] DB update error:", dbError);
+  }
+
+  if (accepted && extractedPassportNumber && ocrResult.type_document_detecte === "passeport") {
+    const { data: dossier } = await supabaseAdmin
+      .from("dossiers")
+      .select("client_passport_number")
+      .eq("id", dossierId)
+      .maybeSingle();
+
+    if (!dossier?.client_passport_number) {
+      const { error: dossierUpdateError } = await supabaseAdmin
+        .from("dossiers")
+        .update({ client_passport_number: extractedPassportNumber })
+        .eq("id", dossierId);
+      if (dossierUpdateError) {
+        console.error("[OCR] Dossier passport update error:", dossierUpdateError);
+      }
+    }
   }
 
   console.log(`[OCR] ${fileName}: score=${ocrResult.score_qualite}, accepted=${accepted}, type=${ocrResult.type_document_detecte}`);
@@ -782,6 +838,9 @@ serve(async (req) => {
         };
 
         const evaluation = evaluateOcrResult(ocrResult, isDecisionRefus, nomPiece, ownerIdentity, autoCorrect);
+        const extractedPassportNumber = ocrResult.type_document_detecte === "passeport"
+          ? getPassportNumberFromOcrResult(ocrResult)
+          : null;
 
         console.log(`[OCR-TUNNEL] ${fileName}: score=${ocrResult.score_qualite}, accepted=${evaluation.accepted}, type=${ocrResult.type_document_detecte}, text_snippet=${(ocrResult.texte_extrait || "").substring(0, 500)}`);
 
@@ -792,6 +851,7 @@ serve(async (req) => {
           rejectionMessage: evaluation.accepted ? null : (evaluation.typeMismatchWarning || evaluation.identityWarning || evaluation.decisionWarning || evaluation.rejectionMessage || ocrResult.motif_rejet),
           typeMismatchWarning: evaluation.typeMismatchWarning,
           identityWarning: evaluation.identityWarning,
+          passportNumber: extractedPassportNumber,
           problemes: ocrResult.problemes_detectes,
         });
       } catch (err: any) {

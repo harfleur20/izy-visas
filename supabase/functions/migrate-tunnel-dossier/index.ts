@@ -83,6 +83,13 @@ serve(async (req) => {
       return null;
     };
 
+    const extractedPassportFromPieces = Array.isArray(pieces)
+      ? pieces
+        .map((p: { extractedPassportNumber?: string }) => p.extractedPassportNumber)
+        .find((value: string | undefined) => typeof value === "string" && value.trim())
+      : null;
+    const passportNumber = identity.passportNumber || extractedPassportFromPieces || null;
+
     const dateNotifIso = toIsoDate(ocrData.dateNotificationRefus);
     const dateNaissanceIso = toIsoDate(identity.dateNaissance);
 
@@ -113,7 +120,7 @@ serve(async (req) => {
         client_date_naissance: dateNaissanceIso,
         client_lieu_naissance: identity.lieuNaissance || null,
         client_nationalite: identity.nationalite || null,
-        client_passport_number: identity.passportNumber || null,
+        client_passport_number: passportNumber,
         consulat_nom: ocrData.consulatNom || null,
         consulat_ville: ocrData.consulatVille || null,
         consulat_pays: ocrData.consulatPays || null,

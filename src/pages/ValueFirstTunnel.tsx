@@ -86,6 +86,7 @@ export default function ValueFirstTunnel() {
           pieces={tunnel.state.pieces}
           onAddPiece={tunnel.addPiece}
           onRemovePiece={tunnel.removePiece}
+          onPassportExtracted={(passportNumber) => tunnel.setIdentity({ passportNumber })}
           onNext={() => tunnel.setStep("letter")}
           onBack={() => tunnel.setStep("verdict")}
         />
