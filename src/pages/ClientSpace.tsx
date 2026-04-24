@@ -55,7 +55,18 @@ type ActiveDossier = {
   client_first_name?: string | null;
   client_last_name?: string | null;
   client_passport_number?: string | null;
+  client_date_naissance?: string | null;
+  client_lieu_naissance?: string | null;
+  client_nationalite?: string | null;
+  visa_type?: string | null;
+  motifs_refus?: string[] | null;
+  motifs_texte_original?: string[] | null;
+  consulat_nom?: string | null;
+  consulat_ville?: string | null;
+  consulat_pays?: string | null;
+  numero_decision?: string | null;
   date_notification_refus?: string | null;
+  lettre_neutre_contenu?: string | null;
   lrar_status?: string | null;
   option_choisie?: string | null;
   option_envoi?: string | null;
@@ -207,7 +218,7 @@ const normalizeStoredOption = (value?: string | null): SendOption | null => {
 };
 
 const ACTIVE_DOSSIER_SELECT =
-  "id, dossier_ref, client_first_name, client_last_name, client_passport_number, procuration_signee, date_signature_procuration, procuration_expiration, date_notification_refus, lrar_status, option_choisie, option_envoi, url_lettre_definitive, url_lettre_signee_avocat, date_signature_avocat, validation_juridique_status";
+  "id, dossier_ref, client_first_name, client_last_name, client_passport_number, client_date_naissance, client_lieu_naissance, client_nationalite, visa_type, motifs_refus, motifs_texte_original, consulat_nom, consulat_ville, consulat_pays, numero_decision, procuration_signee, date_signature_procuration, procuration_expiration, date_notification_refus, lettre_neutre_contenu, lrar_status, option_choisie, option_envoi, url_lettre_definitive, url_lettre_signee_avocat, date_signature_avocat, validation_juridique_status";
 
 const getDeadlineResult = (dateStr: string) => {
   if (!dateStr) return null;
@@ -321,6 +332,62 @@ const ClientSpace = () => {
     return true;
   }, [activeDossier]);
 
+  const hydrateFromDossier = useCallback((dossier: ActiveDossier) => {
+    setActiveDossier(dossier);
+    setProcurationSignee(dossier.procuration_signee || false);
+    setProcurationDate(dossier.date_signature_procuration || null);
+    setProcurationExpiry(dossier.procuration_expiration || null);
+
+    const option = normalizeStoredOption(dossier.option_choisie || dossier.option_envoi);
+    setSelectedOption(option);
+    setPaymentConfirmed(dossier.lrar_status === "paiement_confirme");
+
+    if (dossier.date_notification_refus) {
+      setRefDate(dossier.date_notification_refus);
+      setDlResult(getDeadlineResult(dossier.date_notification_refus));
+    }
+
+    if (dossier.visa_type) {
+      setSelectedVisaType(dossier.visa_type);
+    }
+
+    const firstMotif = Array.isArray(dossier.motifs_refus) ? dossier.motifs_refus[0] : null;
+    if (firstMotif) {
+      setSelectedMotif(firstMotif);
+    }
+
+    if (dossier.client_first_name || dossier.client_last_name) {
+      setProfileForm((prev) => ({
+        ...prev,
+        first_name: prev.first_name || dossier.client_first_name || "",
+        last_name: prev.last_name || dossier.client_last_name || "",
+      }));
+    }
+  }, []);
+
+  const loadDossierByRef = useCallback(async (dossierRef: string) => {
+    if (!user) return null;
+    const { data, error } = await supabase
+      .from("dossiers")
+      .select(ACTIVE_DOSSIER_SELECT)
+      .eq("user_id", user.id)
+      .eq("dossier_ref", dossierRef)
+      .maybeSingle();
+
+    if (error) {
+      console.error("Dossier reload error:", error);
+      return null;
+    }
+
+    if (data) {
+      const dossier = data as ActiveDossier;
+      hydrateFromDossier(dossier);
+      return dossier;
+    }
+
+    return null;
+  }, [hydrateFromDossier, user]);
+
   // Load profile data
   useEffect(() => {
     if (!user) return;
@@ -408,15 +475,7 @@ const ClientSpace = () => {
         : await baseQuery.order("created_at", { ascending: false }).limit(1).maybeSingle();
 
       if (data) {
-        setActiveDossier(data as ActiveDossier);
-        setProcurationSignee(data.procuration_signee || false);
-        setProcurationDate(data.date_signature_procuration || null);
-        setProcurationExpiry(data.procuration_expiration || null);
-        setSelectedOption(normalizeStoredOption(data.option_choisie || data.option_envoi));
-        if (data.date_notification_refus) {
-          setRefDate(data.date_notification_refus);
-          setDlResult(getDeadlineResult(data.date_notification_refus));
-        }
+        hydrateFromDossier(data as ActiveDossier);
       } else {
         const ref = `IZY-${new Date().getFullYear()}-${String(Date.now()).slice(-6)}`;
         const { data: newDossier, error } = await supabase
@@ -437,12 +496,12 @@ const ClientSpace = () => {
           .single();
 
         if (!error && newDossier) {
-          setActiveDossier(newDossier as ActiveDossier);
+          hydrateFromDossier(newDossier as ActiveDossier);
         }
       }
     };
     loadOrCreateDossier();
-  }, [user]);
+  }, [hydrateFromDossier, user]);
 
   // Check payment status from DB — only for the currently selected option
   useEffect(() => {
@@ -510,39 +569,42 @@ const ClientSpace = () => {
     };
 
     const handlePaymentReturn = async () => {
-    if (paymentStatus === "success") {
-      const sessionId = params.get("session_id");
-      if (sessionId) {
-        try {
-          const confirmed = await confirmStripeSession(sessionId);
-          setPaymentConfirmed(true);
-          if (confirmed?.option) setSelectedOption(normalizeStoredOption(confirmed.option));
-        } catch (error) {
-          console.error("Stripe session confirmation error:", error);
-          toast({
-            title: "Paiement en cours de confirmation",
-            description: "Stripe a validé le retour. Attendez quelques secondes ou rechargez la page.",
-          });
+      if (paymentStatus === "success") {
+        const sessionId = params.get("session_id");
+        if (sessionId) {
+          try {
+            const confirmed = await confirmStripeSession(sessionId);
+            setPaymentConfirmed(true);
+            if (confirmed?.option) setSelectedOption(normalizeStoredOption(confirmed.option));
+            if (confirmed?.dossier_ref) {
+              await loadDossierByRef(confirmed.dossier_ref);
+            }
+          } catch (error) {
+            console.error("Stripe session confirmation error:", error);
+            toast({
+              title: "Paiement en cours de confirmation",
+              description: "Stripe a validé le retour. Attendez quelques secondes ou rechargez la page.",
+            });
+          }
         }
+        toast({ title: "✅ Paiement confirmé", description: "Vous pouvez maintenant signer votre lettre de recours." });
+        setStep(10);
+      } else if (paymentStatus === "taramoney_pending") {
+        toast({ title: "Paiement Mobile Money en attente", description: "La signature sera débloquée après confirmation du paiement." });
+        setStep(9);
+      } else if (paymentStatus === "cancelled") {
+        toast({ title: "Paiement annulé", description: "Aucun paiement n'a été enregistré." });
+        setStep(9);
       }
-      toast({ title: "✅ Paiement confirmé", description: "Vous pouvez maintenant signer votre lettre de recours." });
-      setStep(10);
-    } else if (paymentStatus === "taramoney_pending") {
-      toast({ title: "Paiement Mobile Money en attente", description: "La signature sera débloquée après confirmation du paiement." });
-      setStep(9);
-    } else if (paymentStatus === "cancelled") {
-      toast({ title: "Paiement annulé", description: "Aucun paiement n'a été enregistré." });
-      setStep(9);
-    }
 
-    params.delete("payment");
-    params.delete("session_id");
-    const nextQuery = params.toString();
-    window.history.replaceState({}, "", `${window.location.pathname}${nextQuery ? `?${nextQuery}` : ""}`);
+      params.delete("payment");
+      params.delete("session_id");
+      const nextQuery = params.toString();
+      window.history.replaceState({}, "", `${window.location.pathname}${nextQuery ? `?${nextQuery}` : ""}`);
     };
 
     handlePaymentReturn();
-  }, [activeDossier]);
+  }, [activeDossier, loadDossierByRef]);
 
   useEffect(() => {
     if (!activeDossier) return;

@@ -225,8 +225,8 @@ serve(async (req) => {
           option,
         },
       },
-      success_url: `${appBaseUrl}/client?payment=success&session_id={CHECKOUT_SESSION_ID}`,
-      cancel_url: `${appBaseUrl}/client?payment=cancelled`,
+      success_url: `${appBaseUrl}/client?payment=success&session_id={CHECKOUT_SESSION_ID}&dossier_ref=${encodeURIComponent(dossier_ref)}`,
+      cancel_url: `${appBaseUrl}/client?payment=cancelled&dossier_ref=${encodeURIComponent(dossier_ref)}`,
     });
 
     // Record pending payment
