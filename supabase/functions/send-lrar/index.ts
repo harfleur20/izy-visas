@@ -91,6 +91,10 @@ function normalizeSendOption(value?: string | null): "A" | "B" | "C" | null {
   return normalized === "A" || normalized === "B" || normalized === "C" ? normalized : null;
 }
 
+function normalizeVisaTypeForRouting(visaType?: string | null): "long_sejour" | "court_sejour" {
+  return visaType === "court_sejour" ? "court_sejour" : "long_sejour";
+}
+
 // ── Router ──────────────────────────────────────────────────────────────────
 
 serve(async (req) => {
@@ -266,7 +270,8 @@ async function handleSend(req: Request) {
   const pdfArrayBuffer = await pdfRes.arrayBuffer();
 
   // ── Determine destination ──
-  const destKey = dossier.destinataire_recours || (dossier.visa_type === "long_sejour" ? "crrv_nantes" : "sous_directeur_visas");
+  const routedVisaType = normalizeVisaTypeForRouting(dossier.visa_type);
+  const destKey = dossier.destinataire_recours || (routedVisaType === "long_sejour" ? "crrv_nantes" : "sous_directeur_visas");
   const dest = DESTINATIONS[destKey] || DESTINATIONS.sous_directeur_visas;
 
   console.log(`[SEND-LRAR] Envoi LRAR dossier=${dossier.dossier_ref} dest=${dest.name}`);

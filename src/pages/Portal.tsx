@@ -4,15 +4,20 @@ import { useEffect } from "react";
 import { homeRouteForRole } from "@/lib/roles";
 import ValueFirstTunnel from "@/pages/ValueFirstTunnel";
 
+const TUNNEL_AUTH_IN_PROGRESS_KEY = "tunnel_auth_in_progress";
+
 const Portal = () => {
   const navigate = useNavigate();
   const { user, role, loading } = useAuth();
+  const tunnelAuthInProgress =
+    typeof window !== "undefined" &&
+    window.sessionStorage.getItem(TUNNEL_AUTH_IN_PROGRESS_KEY) === "true";
 
   useEffect(() => {
-    if (!loading && user && role) {
+    if (!loading && user && role && !tunnelAuthInProgress) {
       navigate(homeRouteForRole(role), { replace: true });
     }
-  }, [loading, user, role, navigate]);
+  }, [loading, user, role, navigate, tunnelAuthInProgress]);
 
   // While loading auth, show a spinner
   if (loading) {
@@ -29,7 +34,7 @@ const Portal = () => {
   }
 
   // If connected, the useEffect will redirect — show nothing
-  if (user) return null;
+  if (user && !tunnelAuthInProgress) return null;
 
   // Not connected: show the value-first tunnel
   return <ValueFirstTunnel />;

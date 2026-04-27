@@ -194,13 +194,28 @@ function formatDateToLetters(dateStr: string): string {
   return `${d.getDate()} ${months[d.getMonth()]} ${d.getFullYear()}`;
 }
 
+function formatPhoneForDisplay(phone?: string, prefix?: string) {
+  const normalizedPhone = (phone || "").trim();
+  if (!normalizedPhone) return "";
+  if (normalizedPhone.startsWith("+")) return normalizedPhone;
+  return `${prefix || "+237"} ${normalizedPhone}`.trim();
+}
+
+function formatPhoneForSigning(phone?: string, prefix?: string) {
+  const normalizedPhone = (phone || "").trim();
+  if (!normalizedPhone) return "";
+  if (normalizedPhone.startsWith("+")) return normalizedPhone.replace(/\s+/g, "");
+  const normalizedPrefix = (prefix || "+237").replace(/\s+/g, "");
+  return `${normalizedPrefix}${normalizedPhone}`.replace(/\s+/g, "");
+}
+
 function generateProcurationData(p: ProfileData, dossierRef: string, email?: string) {
   const nom = (p.last_name || "").toUpperCase();
   const prenom = p.first_name || "";
   const adresseLigne2 = p.adresse_ligne2 ? `\n${p.adresse_ligne2}` : "";
   const pays = (p.pays || "Cameroun").toUpperCase();
   const ville = p.ville || "";
-  const tel = p.phone ? `${p.prefixe_telephone || "+237"} ${p.phone}` : "";
+  const tel = formatPhoneForDisplay(p.phone, p.prefixe_telephone);
   const today = formatDateToLetters(new Date().toISOString());
   const emailStr = email || "";
 
@@ -374,7 +389,7 @@ export const ProcurationFlow = ({
     { label: "Nationalité", value: profile.nationalite, key: "nationalite" as const },
     { label: "N° de passeport", value: profile.passport_number, key: "passport_number" as const },
     { label: "Adresse", value: [profile.adresse_ligne1, profile.adresse_ligne2, `${profile.ville}, ${(profile.pays || "").toUpperCase()}`].filter(Boolean).join(", "), key: "adresse_ligne1" as const },
-    { label: "Téléphone WhatsApp", value: profile.phone ? `${profile.prefixe_telephone} ${profile.phone}` : "", key: "phone" as const },
+    { label: "Téléphone WhatsApp", value: formatPhoneForDisplay(profile.phone, profile.prefixe_telephone), key: "phone" as const },
     { label: "Email", value: userEmail },
   ];
 
@@ -401,7 +416,7 @@ export const ProcurationFlow = ({
     setLoading(true);
     try {
       const documentBase64 = textToPdfBase64(procurationData.pdf);
-      const signerPhone = profile.phone ? `${profile.prefixe_telephone}${profile.phone}` : undefined;
+      const signerPhone = formatPhoneForSigning(profile.phone, profile.prefixe_telephone) || undefined;
 
       const { data, error } = await supabase.functions.invoke("yousign-signature/create", {
         body: {
@@ -742,7 +757,7 @@ export const ProcurationFlow = ({
                 </div>
               ) : (
                 <div className="bg-primary/5 border border-primary/20 rounded-lg p-3 text-sm text-muted-foreground">
-                  📱 Un code OTP à 6 chiffres a été envoyé {isSandbox || !profile.phone ? `à ${userEmail}` : `par SMS au ${profile.prefixe_telephone} ${profile.phone}`}.
+                  📱 Un code OTP à 6 chiffres a été envoyé {isSandbox || !profile.phone ? `à ${userEmail}` : `par SMS au ${formatPhoneForDisplay(profile.phone, profile.prefixe_telephone)}`}.
                 </div>
               )}
 

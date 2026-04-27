@@ -21,6 +21,8 @@ import { LrarTrackingSuivi } from "@/components/LrarTrackingSuivi";
 import { PiecesComplementaires } from "@/components/PiecesComplementaires";
 import { ClientNotificationBell } from "@/components/ClientNotificationBell";
 import { TopbarProfileBadge } from "@/components/TopbarProfileBadge";
+import { deleteTunnelPieceBundle, loadTunnelPieceBundle } from "@/lib/tunnelPieceBundle";
+import { uploadTunnelPiecesToDossier } from "@/lib/tunnelUploads";
 
 type SendOption = "A" | "B" | "C";
 type PaymentMethod = "stripe" | "taramoney";
@@ -54,6 +56,7 @@ type ActiveDossier = {
   dossier_ref: string;
   client_first_name?: string | null;
   client_last_name?: string | null;
+  client_phone?: string | null;
   client_passport_number?: string | null;
   client_date_naissance?: string | null;
   client_lieu_naissance?: string | null;
@@ -218,7 +221,7 @@ const normalizeStoredOption = (value?: string | null): SendOption | null => {
 };
 
 const ACTIVE_DOSSIER_SELECT =
-  "id, dossier_ref, client_first_name, client_last_name, client_passport_number, client_date_naissance, client_lieu_naissance, client_nationalite, visa_type, motifs_refus, motifs_texte_original, consulat_nom, consulat_ville, consulat_pays, numero_decision, procuration_signee, date_signature_procuration, procuration_expiration, date_notification_refus, lettre_neutre_contenu, lrar_status, option_choisie, option_envoi, url_lettre_definitive, url_lettre_signee_avocat, date_signature_avocat, validation_juridique_status";
+  "id, dossier_ref, client_first_name, client_last_name, client_phone, client_passport_number, client_date_naissance, client_lieu_naissance, client_nationalite, visa_type, motifs_refus, motifs_texte_original, consulat_nom, consulat_ville, consulat_pays, numero_decision, procuration_signee, date_signature_procuration, procuration_expiration, date_notification_refus, lettre_neutre_contenu, lrar_status, option_choisie, option_envoi, url_lettre_definitive, url_lettre_signee_avocat, date_signature_avocat, validation_juridique_status";
 
 const getDossierHydrationScore = (dossier: ActiveDossier) => {
   let score = 0;
@@ -255,6 +258,9 @@ const getDeadlineResult = (dateStr: string) => {
 const ACCEPTED_OCR_STATUSES = new Set(["accepte", "accepted"]);
 const REJECTED_OCR_STATUSES = new Set(["rejete", "rejected", "erreur", "failed"]);
 const PENDING_OCR_STATUSES = new Set(["pending", "en_cours", "analyzing", "uploading", "correcting"]);
+const CLIENT_TUNNEL_NOTICE_KEY = "client_tunnel_notice";
+const TUNNEL_AUTH_IN_PROGRESS_KEY = "tunnel_auth_in_progress";
+const TUNNEL_DATA_KEY = "tunnel_data";
 
 // Removed getErrorMessage — all errors are now handled with user-friendly messages inline
 
@@ -278,6 +284,22 @@ const extractFunctionErrorMessage = async (error: unknown, data?: unknown) => {
   }
 
   return error instanceof Error ? error.message : "";
+};
+
+const formatTunnelFlowError = (message: string) => {
+  if (!message) {
+    return "Une erreur est survenue pendant la reprise de votre dossier.";
+  }
+
+  if (message.includes("Non authentifie") || message.includes("Non autorise")) {
+    return "Votre session n'est pas encore finalisée. Reconnectez-vous pour reprendre votre dossier.";
+  }
+
+  if (message.includes("APP_BASE_URL") || message.includes("configured") || message.includes("secrets")) {
+    return "Le service de paiement est temporairement indisponible. Réessayez dans quelques minutes.";
+  }
+
+  return message;
 };
 
 // ── Step prerequisite definitions ────────────────────────────────
@@ -374,11 +396,12 @@ const ClientSpace = () => {
       setSelectedMotif(firstMotif);
     }
 
-    if (dossier.client_first_name || dossier.client_last_name) {
+    if (dossier.client_first_name || dossier.client_last_name || dossier.client_phone) {
       setProfileForm((prev) => ({
         ...prev,
         first_name: prev.first_name || dossier.client_first_name || "",
         last_name: prev.last_name || dossier.client_last_name || "",
+        phone: prev.phone || dossier.client_phone || "",
       }));
     }
   }, []);
@@ -415,28 +438,97 @@ const ClientSpace = () => {
         .select("first_name, last_name, phone, prefixe_telephone")
         .eq("id", user.id)
         .single();
-      if (data) {
-        setProfileForm({
-          first_name: data.first_name || user.user_metadata?.first_name || user.user_metadata?.given_name || "",
-          last_name: data.last_name || user.user_metadata?.last_name || user.user_metadata?.family_name || "",
-          phone: data.phone || "",
-          prefixe_telephone: data.prefixe_telephone || "+237",
-        });
-      }
+      setProfileForm((prev) => ({
+        first_name: data?.first_name || prev.first_name || user.user_metadata?.first_name || user.user_metadata?.given_name || "",
+        last_name: data?.last_name || prev.last_name || user.user_metadata?.last_name || user.user_metadata?.family_name || "",
+        phone: data?.phone || prev.phone || (typeof user.user_metadata?.phone === "string" ? user.user_metadata.phone : ""),
+        prefixe_telephone: data?.prefixe_telephone || prev.prefixe_telephone || "+237",
+      }));
       setProfileLoaded(true);
     };
     loadProfile();
   }, [user]);
+
+  useEffect(() => {
+    const rawNotice = sessionStorage.getItem(CLIENT_TUNNEL_NOTICE_KEY);
+    if (!rawNotice) return;
+
+    sessionStorage.removeItem(CLIENT_TUNNEL_NOTICE_KEY);
+
+    try {
+      const notice = JSON.parse(rawNotice) as {
+        title?: string;
+        description?: string;
+        variant?: "default" | "destructive";
+      };
+
+      if (!notice.title && !notice.description) return;
+
+      toast({
+        title: notice.title || "Information",
+        description: notice.description,
+        variant: notice.variant === "destructive" ? "destructive" : "default",
+      });
+    } catch (error) {
+      console.error("Tunnel notice parse error:", error);
+    }
+  }, []);
 
   // Fetch or create active dossier
   useEffect(() => {
     if (!user) return;
     const loadOrCreateDossier = async () => {
       const params = new URLSearchParams(window.location.search);
+      const fromTunnelMode = params.get("from_tunnel") === "true";
       const requestedDossierRef = params.get("dossier_ref");
-      const pendingTunnel = params.get("oauth_pending") === "true" ? sessionStorage.getItem("tunnel_data") : null;
+      const pendingTunnel = params.get("oauth_pending") === "true" ? sessionStorage.getItem(TUNNEL_DATA_KEY) : null;
+      const replaceCurrentUrl = () => {
+        const nextQuery = params.toString();
+        window.history.replaceState({}, "", `${window.location.pathname}${nextQuery ? `?${nextQuery}` : ""}`);
+      };
+      const clearTunnelQueryFlags = () => {
+        sessionStorage.removeItem(TUNNEL_AUTH_IN_PROGRESS_KEY);
+        params.delete("from_tunnel");
+        params.delete("oauth_pending");
+        replaceCurrentUrl();
+      };
+      const setClientTunnelNotice = (
+        title: string,
+        description: string,
+        variant: "default" | "destructive" = "default",
+      ) => {
+        sessionStorage.setItem(CLIENT_TUNNEL_NOTICE_KEY, JSON.stringify({ title, description, variant }));
+      };
+      const exitTunnelResume = (title: string, description: string) => {
+        clearTunnelQueryFlags();
+        toast({ title, description, variant: "destructive" });
+      };
+      const invokeTunnelFunction = async <T,>(functionName: string, body: unknown) => {
+        const {
+          data: { session },
+        } = await supabase.auth.getSession();
+
+        if (!session?.access_token) {
+          throw new Error("Votre session n'est pas encore finalisée. Reconnectez-vous pour reprendre votre dossier.");
+        }
+
+        const { data, error } = await supabase.functions.invoke(functionName, {
+          headers: {
+            Authorization: `Bearer ${session.access_token}`,
+          },
+          body,
+        });
+
+        if (error || (data && typeof data === "object" && "error" in data)) {
+          throw new Error(formatTunnelFlowError(await extractFunctionErrorMessage(error, data)));
+        }
+
+        return data as T;
+      };
 
       if (pendingTunnel) {
+        let migratedDossierRef: string | null = null;
+
         try {
           const tunnelData = JSON.parse(pendingTunnel) as {
             identity: unknown;
@@ -445,42 +537,113 @@ const ClientSpace = () => {
             letterContent?: string | null;
             optionChoisie?: string | null;
             paymentMethod?: PaymentMethod;
+            pieceBundleKey?: string | null;
           };
           const option = normalizeStoredOption(tunnelData.optionChoisie) || "B";
-          const { data: migrationResult, error: migrationError } = await supabase.functions.invoke("migrate-tunnel-dossier", {
-            body: {
+          let restoredPieces: Awaited<ReturnType<typeof loadTunnelPieceBundle>> = null;
+          if (tunnelData.pieceBundleKey) {
+            try {
+              restoredPieces = await loadTunnelPieceBundle(tunnelData.pieceBundleKey);
+            } catch (pieceRestoreError) {
+              console.error("OAuth tunnel piece restore error:", pieceRestoreError);
+            }
+          }
+          const hasRestoredFiles = Boolean(restoredPieces && restoredPieces.length > 0);
+          const migrationResult = await invokeTunnelFunction<{ dossier_ref?: string; dossier_id?: string }>(
+            "migrate-tunnel-dossier",
+            {
               identity: tunnelData.identity,
               ocrData: tunnelData.ocrData,
               pieces: tunnelData.pieces || [],
               letterContent: tunnelData.letterContent || null,
               optionChoisie: option,
+              skipPieceRecords: hasRestoredFiles,
             },
-          });
+          );
 
-          if (!migrationError && migrationResult?.dossier_ref) {
-            sessionStorage.removeItem("tunnel_data");
-            const method = tunnelData.paymentMethod || "stripe";
-            const functionName = method === "stripe" ? "create-payment" : "create-taramoney-payment";
-            const { data: paymentData, error: paymentError } = await supabase.functions.invoke(functionName, {
-              body: { dossier_ref: migrationResult.dossier_ref, option, from_tunnel: true },
-            });
+          if (!migrationResult?.dossier_ref || !migrationResult?.dossier_id) {
+            throw new Error("La création du dossier a échoué. Réessayez.");
+          }
 
-            if (!paymentError && method === "stripe" && paymentData?.url) {
-              window.location.href = paymentData.url;
+          migratedDossierRef = migrationResult.dossier_ref;
+
+          if (hasRestoredFiles && restoredPieces) {
+            const uploadSummary = await uploadTunnelPiecesToDossier(migrationResult.dossier_id, restoredPieces);
+            if (uploadSummary.failed > 0) {
+              setClientTunnelNotice(
+                "Pièces à vérifier",
+                "Certaines pièces n'ont pas pu être rattachées automatiquement. Vérifiez-les dans votre espace client.",
+              );
+            }
+          }
+
+          sessionStorage.removeItem(TUNNEL_DATA_KEY);
+          sessionStorage.removeItem(TUNNEL_AUTH_IN_PROGRESS_KEY);
+          if (tunnelData.pieceBundleKey) {
+            try {
+              await deleteTunnelPieceBundle(tunnelData.pieceBundleKey);
+            } catch (pieceCleanupError) {
+              console.error("OAuth tunnel piece cleanup error:", pieceCleanupError);
+            }
+          }
+
+          const method = tunnelData.paymentMethod || "stripe";
+          const paymentData = await invokeTunnelFunction<Record<string, unknown>>(
+            method === "stripe" ? "create-payment" : "create-taramoney-payment",
+            { dossier_ref: migrationResult.dossier_ref, option, from_tunnel: true },
+          );
+
+          if (method === "stripe") {
+            const checkoutUrl = typeof paymentData?.url === "string" ? paymentData.url : "";
+            if (checkoutUrl) {
+              window.location.href = checkoutUrl;
               return;
             }
-            if (!paymentError && method === "taramoney" && paymentData?.primaryLink) {
-              sessionStorage.setItem("taramoney_links", JSON.stringify(paymentData.links || {}));
-              window.location.href = `/client?payment=taramoney_pending&dossier_ref=${migrationResult.dossier_ref}`;
-              return;
-            }
 
-            window.location.href = `/client?from_tunnel=true&dossier_ref=${migrationResult.dossier_ref}`;
+            setClientTunnelNotice(
+              "Paiement à finaliser",
+              "Votre dossier a bien été créé, mais le checkout Stripe est indisponible pour le moment. Reprenez le paiement depuis votre espace client.",
+              "destructive",
+            );
+            window.location.href = `/client?dossier_ref=${encodeURIComponent(migrationResult.dossier_ref)}`;
             return;
           }
+
+          const primaryLink = typeof paymentData?.primaryLink === "string" ? paymentData.primaryLink : "";
+          if (primaryLink) {
+            sessionStorage.setItem("taramoney_links", JSON.stringify(paymentData.links || {}));
+            window.location.href = `/client?payment=taramoney_pending&dossier_ref=${migrationResult.dossier_ref}`;
+            return;
+          }
+
+          setClientTunnelNotice(
+            "Paiement à finaliser",
+            "Votre dossier a bien été créé, mais le lien Mobile Money n'est pas disponible. Reprenez le paiement depuis votre espace client.",
+            "destructive",
+          );
+          window.location.href = `/client?dossier_ref=${encodeURIComponent(migrationResult.dossier_ref)}`;
+          return;
         } catch (error) {
           console.error("OAuth tunnel migration error:", error);
+          const description = formatTunnelFlowError(error instanceof Error ? error.message : "");
+          if (migratedDossierRef) {
+            setClientTunnelNotice("Paiement à finaliser", description, "destructive");
+            sessionStorage.removeItem(TUNNEL_AUTH_IN_PROGRESS_KEY);
+            window.location.href = `/client?dossier_ref=${encodeURIComponent(migratedDossierRef)}`;
+            return;
+          }
+
+          exitTunnelResume("Reprise du tunnel impossible", description);
+          return;
         }
+      }
+
+      if (fromTunnelMode && !requestedDossierRef) {
+        exitTunnelResume(
+          "Reprise du tunnel impossible",
+          "Le dossier du tunnel est introuvable. Reprenez la connexion depuis le tunnel.",
+        );
+        return;
       }
 
       const baseQuery = supabase
@@ -498,6 +661,19 @@ const ClientSpace = () => {
           : (data as ActiveDossier)
         : null;
 
+      if (!existingDossier && requestedDossierRef) {
+        const description = fromTunnelMode
+          ? "Le dossier du tunnel n'a pas été retrouvé après la connexion. Reprenez le tunnel pour finaliser votre dossier."
+          : `Le dossier ${requestedDossierRef} est introuvable dans votre espace client.`;
+
+        if (fromTunnelMode) {
+          exitTunnelResume("Dossier introuvable", description);
+        } else {
+          toast({ title: "Dossier introuvable", description, variant: "destructive" });
+        }
+        return;
+      }
+
       if (existingDossier) {
         hydrateFromDossier(existingDossier);
       } else {
@@ -510,6 +686,7 @@ const ClientSpace = () => {
             visa_type: "court_sejour",
             client_first_name: user.user_metadata?.first_name || user.user_metadata?.given_name || "",
             client_last_name: user.user_metadata?.last_name || user.user_metadata?.family_name || "",
+            client_phone: typeof user.user_metadata?.phone === "string" ? user.user_metadata.phone : null,
             client_email: user.email || "",
             recipient_name: "Commission de Recours contre les Refus de Visa",
             recipient_address: "BP 83609",
@@ -634,6 +811,17 @@ const ClientSpace = () => {
     if (!activeDossier) return;
     const params = new URLSearchParams(window.location.search);
     if (params.get("from_tunnel") !== "true") return;
+    const requestedDossierRef = params.get("dossier_ref");
+    if (!requestedDossierRef || requestedDossierRef !== activeDossier.dossier_ref) {
+      sessionStorage.removeItem(TUNNEL_AUTH_IN_PROGRESS_KEY);
+      params.delete("from_tunnel");
+      params.delete("oauth_pending");
+      const nextQuery = params.toString();
+      window.history.replaceState({}, "", `${window.location.pathname}${nextQuery ? `?${nextQuery}` : ""}`);
+      return;
+    }
+
+    sessionStorage.removeItem(TUNNEL_AUTH_IN_PROGRESS_KEY);
 
     const option = normalizeStoredOption(activeDossier.option_choisie || activeDossier.option_envoi);
     if (option) setSelectedOption(option);

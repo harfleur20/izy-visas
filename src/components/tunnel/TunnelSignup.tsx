@@ -5,8 +5,52 @@ import { lovable } from "@/integrations/lovable/index";
 import { toast } from "@/hooks/use-toast";
 import { PhoneInput, isValidPhoneNumber } from "@/components/PhoneInput";
 import type { TunnelIdentityData, TunnelOcrData, TunnelPieceFile } from "@/hooks/useTunnelState";
+import { createTunnelPieceBundleId, saveTunnelPieceBundle } from "@/lib/tunnelPieceBundle";
+import { uploadTunnelPiecesToDossier } from "@/lib/tunnelUploads";
 
 type PaymentMethod = "stripe" | "taramoney";
+const TUNNEL_AUTH_IN_PROGRESS_KEY = "tunnel_auth_in_progress";
+const CLIENT_TUNNEL_NOTICE_KEY = "client_tunnel_notice";
+
+const delay = (ms: number) => new Promise((resolve) => window.setTimeout(resolve, ms));
+
+const extractFunctionErrorMessage = async (error: unknown, data?: unknown) => {
+  if (data && typeof data === "object" && "error" in data && typeof (data as { error?: unknown }).error === "string") {
+    return (data as { error: string }).error;
+  }
+
+  const context = error && typeof error === "object" && "context" in error
+    ? (error as { context?: Response }).context
+    : undefined;
+
+  if (context) {
+    try {
+      const body = await context.clone().json();
+      if (body?.error && typeof body.error === "string") return body.error;
+      if (body?.message && typeof body.message === "string") return body.message;
+    } catch {
+      // Fall back to the generic SDK error message below.
+    }
+  }
+
+  return error instanceof Error ? error.message : "";
+};
+
+const formatTunnelErrorMessage = (message: string) => {
+  if (!message) {
+    return "Une erreur est survenue pendant la reprise de votre dossier.";
+  }
+
+  if (message.includes("Non authentifie") || message.includes("Non autorise")) {
+    return "Votre session n'est pas encore finalisée. Reconnectez-vous pour reprendre votre dossier.";
+  }
+
+  if (message.includes("APP_BASE_URL") || message.includes("configured") || message.includes("secrets")) {
+    return "Le service de paiement est temporairement indisponible. Réessayez dans quelques minutes.";
+  }
+
+  return message;
+};
 
 interface TunnelSignupProps {
   identity: TunnelIdentityData;
@@ -16,39 +60,6 @@ interface TunnelSignupProps {
   optionChoisie: string | null;
   paymentMethod: PaymentMethod;
   onBack: () => void;
-}
-
-async function triggerPayment(dossierRef: string, option: string, method: PaymentMethod) {
-  const functionName = method === "stripe" ? "create-payment" : "create-taramoney-payment";
-  const { data, error } = await supabase.functions.invoke(functionName, {
-    body: { dossier_ref: dossierRef, option, from_tunnel: true },
-  });
-  if (error) throw new Error(error.message || "Erreur lors de la création du paiement");
-  return data;
-}
-
-async function uploadTunnelPieces(dossierId: string, pieces: TunnelPieceFile[]) {
-  if (pieces.length === 0) return;
-
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
-  if (!user) return;
-
-  await Promise.allSettled(
-    pieces.map((piece) => {
-      const formData = new FormData();
-      formData.append("file", piece.file);
-      formData.append("dossier_id", dossierId);
-      formData.append("user_id", user.id);
-      formData.append("nom_piece", piece.nomPiece);
-      formData.append("type_piece", piece.typePiece || "obligatoire");
-
-      return supabase.functions.invoke("check-document-ocr", {
-        body: formData,
-      });
-    })
-  );
 }
 
 export default function TunnelSignup({
@@ -61,102 +72,208 @@ export default function TunnelSignup({
   onBack,
 }: TunnelSignupProps) {
   const [mode, setMode] = useState<"signup" | "login">("signup");
-  const [email, setEmail] = useState("");
+  const [email, setEmail] = useState(identity.email || "");
   const [password, setPassword] = useState("");
-  const [phone, setPhone] = useState("");
+  const [phone, setPhone] = useState(identity.phone || "");
   const [phoneError, setPhoneError] = useState("");
   const [loading, setLoading] = useState(false);
   const [statusMessage, setStatusMessage] = useState("");
+  const effectiveEmail = email.trim().toLowerCase() || identity.email.trim().toLowerCase();
+  const effectivePhone = phone.trim() || identity.phone.trim();
+
+  const setTunnelAuthInProgress = () => {
+    sessionStorage.setItem(TUNNEL_AUTH_IN_PROGRESS_KEY, "true");
+  };
+
+  const clearTunnelAuthInProgress = () => {
+    sessionStorage.removeItem(TUNNEL_AUTH_IN_PROGRESS_KEY);
+  };
+
+  const redirectTo = (url: string) => {
+    clearTunnelAuthInProgress();
+    window.location.href = url;
+  };
+
+  const setClientTunnelNotice = (title: string, description: string, variant: "default" | "destructive" = "default") => {
+    sessionStorage.setItem(CLIENT_TUNNEL_NOTICE_KEY, JSON.stringify({ title, description, variant }));
+  };
+
+  const buildIdentityPayload = () => ({
+    ...identity,
+    email: effectiveEmail,
+    phone: effectivePhone,
+  });
+
+  const buildStoredTunnelData = () => ({
+    identity: buildIdentityPayload(),
+    ocrData,
+    pieces: pieces.map((p) => ({
+      nomPiece: p.nomPiece,
+      typePiece: p.typePiece,
+      fileName: p.file.name,
+      fileSize: p.file.size,
+      scoreQualite: p.scoreQualite,
+      statutOcr: p.statutOcr,
+      extractedPassportNumber: p.extractedPassportNumber,
+    })),
+    letterContent,
+    optionChoisie,
+    paymentMethod,
+  });
+
+  const persistTunnelResumeData = async () => {
+    let pieceBundleKey: string | null = null;
+    if (pieces.length > 0) {
+      pieceBundleKey = createTunnelPieceBundleId();
+      await saveTunnelPieceBundle(pieceBundleKey, pieces);
+    }
+
+    sessionStorage.setItem("tunnel_data", JSON.stringify({
+      ...buildStoredTunnelData(),
+      pieceBundleKey,
+    }));
+  };
+
+  const waitForAuthenticatedSession = async (timeoutMs = 6000) => {
+    const start = Date.now();
+
+    while (Date.now() - start < timeoutMs) {
+      const {
+        data: { session },
+      } = await supabase.auth.getSession();
+
+      if (session?.access_token) {
+        return session;
+      }
+
+      await delay(250);
+    }
+
+    return null;
+  };
+
+  const invokeTunnelFunction = async <T,>(functionName: string, body: unknown) => {
+    const session = await waitForAuthenticatedSession();
+
+    if (!session?.access_token) {
+      await persistTunnelResumeData();
+      throw new Error("Votre compte a été créé, mais la session n'est pas encore active. Reconnectez-vous pour reprendre le tunnel.");
+    }
+
+    const { data, error } = await supabase.functions.invoke(functionName, {
+      headers: {
+        Authorization: `Bearer ${session.access_token}`,
+      },
+      body,
+    });
+
+    if (error || (data && typeof data === "object" && "error" in data)) {
+      throw new Error(formatTunnelErrorMessage(await extractFunctionErrorMessage(error, data)));
+    }
+
+    return data as T;
+  };
 
   const processPostSignup = async () => {
     const option = optionChoisie || "B";
+    const identityPayload = buildIdentityPayload();
 
     // Step 1: Migrate tunnel data
     setStatusMessage("Création de votre dossier…");
-    const { data: migrationResult, error: migrationError } = await supabase.functions.invoke(
+    const migrationResult = await invokeTunnelFunction<{ dossier_ref?: string; dossier_id?: string }>(
       "migrate-tunnel-dossier",
       {
-        body: {
-          identity,
-          ocrData,
-          pieces: pieces.map((p) => ({
-            nomPiece: p.nomPiece,
-            typePiece: p.typePiece,
-            fileName: p.file.name,
-            fileSize: p.file.size,
-            scoreQualite: p.scoreQualite,
-            statutOcr: p.statutOcr,
-            extractedPassportNumber: p.extractedPassportNumber,
-          })),
-          letterContent,
-          optionChoisie: option,
-          skipPieceRecords: true,
-        },
-      }
+        identity: identityPayload,
+        ocrData,
+        pieces: pieces.map((p) => ({
+          nomPiece: p.nomPiece,
+          typePiece: p.typePiece,
+          fileName: p.file.name,
+          fileSize: p.file.size,
+          scoreQualite: p.scoreQualite,
+          statutOcr: p.statutOcr,
+          extractedPassportNumber: p.extractedPassportNumber,
+        })),
+        letterContent,
+        optionChoisie: option,
+        skipPieceRecords: true,
+      },
     );
 
-    if (migrationError || !migrationResult?.dossier_ref || !migrationResult?.dossier_id) {
-      console.error("Migration error:", migrationError);
-      toast({
-        title: "Compte créé",
-        description: "Votre compte a été créé. Finalisez le paiement dans votre espace.",
-        variant: "destructive",
-      });
-      window.location.href = "/client?from_tunnel=true";
-      return;
+    if (!migrationResult?.dossier_ref || !migrationResult?.dossier_id) {
+      throw new Error("La création du dossier a échoué. Réessayez.");
     }
 
     const dossierRef = migrationResult.dossier_ref;
     const dossierId = migrationResult.dossier_id;
 
     setStatusMessage("Transfert de vos pièces justificatives…");
-    await uploadTunnelPieces(dossierId, pieces);
+    const uploadSummary = await uploadTunnelPiecesToDossier(dossierId, pieces);
+    if (uploadSummary.failed > 0) {
+      setClientTunnelNotice(
+        "Pièces à vérifier",
+        "Certaines pièces n'ont pas pu être rattachées automatiquement. Vérifiez-les dans votre espace client.",
+      );
+    }
 
     // Step 2: Trigger payment
     setStatusMessage("Redirection vers le paiement…");
-    try {
-      const paymentResult = await triggerPayment(dossierRef, option, paymentMethod);
+    const paymentResult = await invokeTunnelFunction<Record<string, unknown>>(
+      paymentMethod === "stripe" ? "create-payment" : "create-taramoney-payment",
+      { dossier_ref: dossierRef, option, from_tunnel: true },
+    );
 
-      if (paymentMethod === "stripe" && paymentResult?.url) {
-        // Redirect to Stripe Checkout
-        window.location.href = paymentResult.url;
-      } else if (paymentMethod === "taramoney" && paymentResult?.primaryLink) {
-        // Store links and redirect to client space with taramoney info
-        sessionStorage.setItem("taramoney_links", JSON.stringify(paymentResult.links));
-        window.location.href = "/client?payment=taramoney_pending&dossier_ref=" + dossierRef;
-      } else {
-        // Fallback: redirect to client space
-        window.location.href = "/client?from_tunnel=true&dossier_ref=" + dossierRef;
+    if (paymentMethod === "stripe") {
+      const checkoutUrl = typeof paymentResult?.url === "string" ? paymentResult.url : "";
+      if (!checkoutUrl) {
+        setClientTunnelNotice(
+          "Paiement à finaliser",
+          "Votre dossier a bien été créé, mais le checkout Stripe est indisponible pour le moment. Reprenez le paiement depuis votre espace client.",
+          "destructive",
+        );
+        redirectTo(`/client?dossier_ref=${encodeURIComponent(dossierRef)}`);
+        return;
       }
-    } catch (paymentErr) {
-      console.error("Payment error:", paymentErr);
-      toast({
-        title: "Dossier créé",
-        description: "Votre dossier est prêt. Finalisez le paiement dans votre espace client.",
-      });
-      window.location.href = "/client?from_tunnel=true&dossier_ref=" + dossierRef;
+
+      redirectTo(checkoutUrl);
+      return;
     }
+
+    const primaryLink = typeof paymentResult?.primaryLink === "string" ? paymentResult.primaryLink : "";
+    if (primaryLink) {
+      sessionStorage.setItem("taramoney_links", JSON.stringify(paymentResult.links || {}));
+      redirectTo("/client?payment=taramoney_pending&dossier_ref=" + dossierRef);
+      return;
+    }
+
+    setClientTunnelNotice(
+      "Paiement à finaliser",
+      "Votre dossier a bien été créé, mais le lien Mobile Money n'est pas disponible. Reprenez le paiement depuis votre espace client.",
+      "destructive",
+    );
+    redirectTo(`/client?dossier_ref=${encodeURIComponent(dossierRef)}`);
   };
 
   const handleSignup = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (phone && !isValidPhoneNumber(phone)) {
+    if (effectivePhone && !isValidPhoneNumber(effectivePhone)) {
       setPhoneError("Numéro invalide");
       return;
     }
     setPhoneError("");
     setLoading(true);
     setStatusMessage("Création de votre compte…");
+    setTunnelAuthInProgress();
 
     try {
       const { data: signupData, error: signupError } = await supabase.auth.signUp({
-        email,
+        email: effectiveEmail,
         password,
         options: {
           data: {
             first_name: identity.firstName,
             last_name: identity.lastName,
-            phone,
+            phone: effectivePhone,
             date_naissance: identity.dateNaissance,
             lieu_naissance: identity.lieuNaissance,
             nationalite: identity.nationalite,
@@ -168,11 +285,21 @@ export default function TunnelSignup({
 
       if (signupError) throw signupError;
       if (!signupData.user) throw new Error("Erreur lors de la création du compte");
+      if (!signupData.session) {
+        await persistTunnelResumeData();
+        throw new Error("Votre compte a été créé, mais la session n'est pas encore active. Reconnectez-vous pour reprendre votre dossier.");
+      }
 
       await processPostSignup();
     } catch (err: unknown) {
+      const {
+        data: { session },
+      } = await supabase.auth.getSession();
+      if (!session) {
+        clearTunnelAuthInProgress();
+      }
       const message = err instanceof Error ? err.message : "Erreur lors de l'inscription";
-      toast({ title: "Erreur", description: message, variant: "destructive" });
+      toast({ title: "Erreur", description: formatTunnelErrorMessage(message), variant: "destructive" });
       setStatusMessage("");
     } finally {
       setLoading(false);
@@ -183,15 +310,22 @@ export default function TunnelSignup({
     e.preventDefault();
     setLoading(true);
     setStatusMessage("Connexion à votre compte…");
+    setTunnelAuthInProgress();
 
     try {
-      const { error } = await supabase.auth.signInWithPassword({ email, password });
+      const { error } = await supabase.auth.signInWithPassword({ email: effectiveEmail, password });
       if (error) throw error;
 
       await processPostSignup();
     } catch (err: unknown) {
+      const {
+        data: { session },
+      } = await supabase.auth.getSession();
+      if (!session) {
+        clearTunnelAuthInProgress();
+      }
       const message = err instanceof Error ? err.message : "Erreur lors de la connexion";
-      toast({ title: "Erreur", description: message, variant: "destructive" });
+      toast({ title: "Erreur", description: formatTunnelErrorMessage(message), variant: "destructive" });
       setStatusMessage("");
     } finally {
       setLoading(false);
@@ -201,18 +335,7 @@ export default function TunnelSignup({
   const handleGoogleSignup = async () => {
     setLoading(true);
     try {
-      // Store tunnel data in sessionStorage before redirect
-      sessionStorage.setItem(
-        "tunnel_data",
-        JSON.stringify({
-          identity,
-          ocrData,
-          pieces: pieces.map((p) => ({ nomPiece: p.nomPiece, typePiece: p.typePiece, fileName: p.file.name })),
-          letterContent,
-          optionChoisie,
-          paymentMethod,
-        })
-      );
+      await persistTunnelResumeData();
 
       const result = await lovable.auth.signInWithOAuth("google", {
         redirect_uri: window.location.origin + "/client?from_tunnel=true&oauth_pending=true",

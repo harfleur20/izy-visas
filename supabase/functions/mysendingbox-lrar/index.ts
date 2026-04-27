@@ -56,6 +56,10 @@ function jsonResponse(data: unknown, status = 200) {
   });
 }
 
+function normalizeVisaTypeForRouting(visaType?: string | null): "long_sejour" | "court_sejour" {
+  return visaType === "court_sejour" ? "court_sejour" : "long_sejour";
+}
+
 async function notifyClient(
   supabase: ReturnType<typeof getSupabaseAdmin>,
   payload: { user_id: string; titre: string; message: string; type: string; lien?: string },
@@ -119,12 +123,9 @@ async function handleSend(req: Request) {
     return jsonResponse({ error: "Missing: dossierRef, visaType, userId" }, 400);
   }
 
-  if (!["long_sejour", "court_sejour"].includes(visaType)) {
-    return jsonResponse({ error: "visaType must be 'long_sejour' or 'court_sejour'" }, 400);
-  }
-
   const supabase = getSupabaseAdmin();
-  const dest = ADDRESSES[visaType as keyof typeof ADDRESSES];
+  const routedVisaType = normalizeVisaTypeForRouting(visaType);
+  const dest = ADDRESSES[routedVisaType];
 
   // If signatureRequestId provided, fetch the signed PDF from YouSign
   let pdfUrl: string | undefined;
@@ -203,7 +204,7 @@ async function handleSend(req: Request) {
     user_id: userId,
     dossier_ref: dossierRef,
     signature_id: signatureId || null,
-    visa_type: visaType,
+    visa_type: routedVisaType,
     recipient_name: dest.name,
     recipient_address_line1: dest.address_line1,
     recipient_address_line2: (dest as Record<string, string>).address_line2 || null,

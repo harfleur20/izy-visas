@@ -88,6 +88,11 @@ serve(async (req) => {
         .map((p: { extractedPassportNumber?: string }) => p.extractedPassportNumber)
         .find((value: string | undefined) => typeof value === "string" && value.trim())
       : null;
+    const firstName = typeof identity.firstName === "string" ? identity.firstName.trim() : "";
+    const lastName = typeof identity.lastName === "string" ? identity.lastName.trim() : "";
+    const birthPlace = typeof identity.lieuNaissance === "string" ? identity.lieuNaissance.trim() : "";
+    const nationality = typeof identity.nationalite === "string" ? identity.nationalite.trim() : "";
+    const normalizedPhone = typeof identity.phone === "string" && identity.phone.trim() ? identity.phone.trim() : null;
     const passportNumber = identity.passportNumber || extractedPassportFromPieces || null;
 
     const dateNotifIso = toIsoDate(ocrData.dateNotificationRefus);
@@ -114,12 +119,13 @@ serve(async (req) => {
         dossier_ref: dossierRef,
         visa_type: ocrData.visaType || "court_sejour",
         type_visa_texte_original: ocrData.typeVisaTexteOriginal || null,
-        client_first_name: identity.firstName,
-        client_last_name: identity.lastName,
+        client_first_name: firstName,
+        client_last_name: lastName,
         client_email: user.email || null,
+        client_phone: normalizedPhone,
         client_date_naissance: dateNaissanceIso,
-        client_lieu_naissance: identity.lieuNaissance || null,
-        client_nationalite: identity.nationalite || null,
+        client_lieu_naissance: birthPlace || null,
+        client_nationalite: nationality || null,
         client_passport_number: passportNumber,
         consulat_nom: ocrData.consulatNom || null,
         consulat_ville: ocrData.consulatVille || null,
@@ -150,6 +156,25 @@ serve(async (req) => {
         JSON.stringify({ error: "Erreur création dossier: " + dossierError.message }),
         { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }
       );
+    }
+
+    const profilePayload: Record<string, string> = { id: user.id };
+    if (firstName) profilePayload.first_name = firstName;
+    if (lastName) profilePayload.last_name = lastName;
+    if (normalizedPhone) profilePayload.phone = normalizedPhone;
+    if (dateNaissanceIso) profilePayload.date_naissance = dateNaissanceIso;
+    if (birthPlace) profilePayload.lieu_naissance = birthPlace;
+    if (nationality) profilePayload.nationalite = nationality;
+    if (passportNumber) profilePayload.passport_number = passportNumber;
+
+    if (Object.keys(profilePayload).length > 1) {
+      const { error: profileError } = await supabaseAdmin
+        .from("profiles")
+        .upsert(profilePayload, { onConflict: "id" });
+
+      if (profileError) {
+        console.error("Profile sync error:", profileError);
+      }
     }
 
     // Create fallback piece records when the caller cannot upload File objects after migration.
