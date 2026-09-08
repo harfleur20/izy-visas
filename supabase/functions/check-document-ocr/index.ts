@@ -1,21 +1,47 @@
 import { serve } from "https://deno.land/std@0.190.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.49.4";
 // Mistral SDK removed — calling REST API directly to avoid esm.sh transitive deps (zod) timing out at deploy.
+async function lovableChatComplete(body: Record<string, unknown>): Promise<{ choices?: Array<{ message?: { content?: string } }> }> {
+  const key = Deno.env.get("LOVABLE_API_KEY");
+  if (!key) throw new Error("No fallback AI key");
+  const res = await fetch("https://ai.gateway.lovable.dev/v1/chat/completions", {
+    method: "POST",
+    headers: { "Authorization": `Bearer ${key}`, "Content-Type": "application/json" },
+    body: JSON.stringify({ ...body, model: "google/gemini-2.5-flash" }),
+  });
+  if (!res.ok) {
+    const t = await res.text().catch(() => "");
+    throw new Error(`Fallback AI error ${res.status}: ${t.slice(0, 300)}`);
+  }
+  console.log("[check-document-ocr] Lovable fallback used");
+  return await res.json();
+}
+
 async function mistralChatComplete(apiKey: string, body: Record<string, unknown>): Promise<{ choices?: Array<{ message?: { content?: string } }> }> {
-  const res = await fetch("https://api.mistral.ai/v1/chat/completions", {
+  const init: RequestInit = {
     method: "POST",
     headers: {
       "Authorization": `Bearer ${apiKey}`,
       "Content-Type": "application/json",
     },
     body: JSON.stringify(body),
-  });
+  };
+  let res = await fetch("https://api.mistral.ai/v1/chat/completions", init);
+  let wait = 2000;
+  for (let i = 1; i < 3 && (res.status === 429 || res.status >= 500); i++) {
+    console.log(`[check-document-ocr] Mistral ${res.status}, retry ${i} in ${wait}ms`);
+    await new Promise((r) => setTimeout(r, wait));
+    wait *= 2;
+    res = await fetch("https://api.mistral.ai/v1/chat/completions", init);
+  }
   if (!res.ok) {
     const errText = await res.text().catch(() => "");
-    throw new Error(`Mistral chat API error ${res.status}: ${errText}`);
+    console.error(`[check-document-ocr] Mistral chat error ${res.status}: ${errText.slice(0, 300)}`);
+    return await lovableChatComplete(body);
   }
   return await res.json();
 }
+
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
