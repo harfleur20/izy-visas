@@ -424,7 +424,7 @@ async function runOcrAnalysis(
         try {
           const expectedLabel = TYPE_LABELS[expectedType] || "";
           const visionRes = await mistralChatComplete(mistralApiKey, {
-            model: "pixtral-12b-2409",
+            model: "mistral-medium-latest",
             messages: [{
               role: "user",
               content: [
@@ -490,7 +490,7 @@ async function runOcrAnalysis(
 
     const expectedLabel = TYPE_LABELS[expectedType] || "";
     const visionResponse = await mistralChatComplete(mistralApiKey, {
-      model: "pixtral-12b-2409",
+      model: "mistral-medium-latest",
       messages: [{
         role: "user",
         content: [
