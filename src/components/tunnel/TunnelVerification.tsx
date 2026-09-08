@@ -187,7 +187,9 @@ export default function TunnelVerification({ ocrData, identity, onUpdate, onUpda
   const hasMotifs = editData.motifsRefus.length > 0;
   const hasDate = editData.dateNotificationRefus.trim().length > 0;
   const coherenceBlocking = coherence.level === "error" && !coherenceAcknowledged;
-  const canContinue = hasMotifs && hasDate && !coherenceBlocking;
+  const hasNom = !!identity.lastName.trim();
+  const hasPrenom = !!identity.firstName.trim();
+  const canContinue = hasMotifs && hasDate && hasNom && hasPrenom && !coherenceBlocking;
 
   return (
     <div className="fixed inset-0 bg-background flex flex-col overflow-y-auto">
@@ -278,6 +280,28 @@ export default function TunnelVerification({ ocrData, identity, onUpdate, onUpda
               <p className="text-sm text-emerald-400">{coherence.message}</p>
             </div>
           )}
+
+          {/* Identité du demandeur */}
+          <div className="grid grid-cols-2 gap-3 mb-5">
+            <div className="space-y-2">
+              <Label className="text-xs text-muted-foreground">Nom</Label>
+              <Input
+                value={identity.lastName}
+                onChange={(e) => onUpdateIdentity({ lastName: e.target.value.toUpperCase() })}
+                placeholder="Votre nom"
+                className="h-12 text-base"
+              />
+            </div>
+            <div className="space-y-2">
+              <Label className="text-xs text-muted-foreground">Prénom</Label>
+              <Input
+                value={identity.firstName}
+                onChange={(e) => onUpdateIdentity({ firstName: e.target.value })}
+                placeholder="Votre prénom"
+                className="h-12 text-base"
+              />
+            </div>
+          </div>
 
           {/* Type de visa */}
           <div className="space-y-2 mb-5">
