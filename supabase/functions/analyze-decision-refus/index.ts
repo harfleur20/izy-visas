@@ -184,6 +184,49 @@ function resolveMotifCodes(modelCodes: unknown, motifTexts: unknown, sourceText?
   return Array.from(merged);
 }
 
+// Fallback vision engine (Lovable AI Gateway) when Mistral is unavailable/rate-limited.
+async function lovableVisionAnalysis(dataUrl: string, prompt: string): Promise<string> {
+  const key = Deno.env.get("LOVABLE_API_KEY");
+  if (!key) throw new Error("No fallback vision key");
+  const res = await fetch("https://ai.gateway.lovable.dev/v1/chat/completions", {
+    method: "POST",
+    headers: { "Authorization": `Bearer ${key}`, "Content-Type": "application/json" },
+    body: JSON.stringify({
+      model: "google/gemini-2.5-flash",
+      messages: [{
+        role: "user",
+        content: [
+          { type: "image_url", image_url: { url: dataUrl } },
+          { type: "text", text: prompt },
+        ],
+      }],
+    }),
+  });
+  if (!res.ok) {
+    const body = await res.text().catch(() => "");
+    console.error("[analyze-decision] Lovable fallback error:", res.status, body.slice(0, 400));
+    throw new Error(`Fallback vision error: ${res.status}`);
+  }
+  const data = await res.json();
+  console.log("[analyze-decision] Lovable fallback used");
+  return (data.choices?.[0]?.message?.content || "") as string;
+}
+
+// Mistral rate-limits bursty requests: retry 429/5xx with backoff.
+async function mistralFetch(url: string, init: RequestInit, attempts = 4): Promise<Response> {
+  let res = await fetch(url, init);
+  let wait = 2000;
+  for (let i = 1; i < attempts && (res.status === 429 || res.status >= 500); i++) {
+    console.log(`[analyze-decision] Mistral ${res.status}, retry ${i} in ${wait}ms`);
+    await new Promise((r) => setTimeout(r, wait));
+    wait *= 2;
+    res = await fetch(url, init);
+  }
+  return res;
+}
+
+
+
 async function extractConsulatViaPixtral(
   imageBase64: string,
   mimeType: string,
@@ -194,7 +237,7 @@ async function extractConsulatViaPixtral(
       method: "POST",
       headers: { "Authorization": `Bearer ${apiKey}`, "Content-Type": "application/json" },
       body: JSON.stringify({
-        model: "pixtral-large-latest",
+        model: "mistral-medium-latest",
         temperature: 0,
         response_format: { type: "json_object" },
         messages: [{
@@ -472,7 +515,7 @@ serve(async (req) => {
     try {
       if (fileType === "application/pdf" && signedUrl) {
         // PDF: use Mistral OCR REST API (include_image_base64 to enable Pixtral fallback)
-        const ocrRes = await fetch("https://api.mistral.ai/v1/ocr", {
+        const ocrRes = await mistralFetch("https://api.mistral.ai/v1/ocr", {
           method: "POST",
           headers: {
             "Authorization": `Bearer ${mistralApiKey}`,
@@ -521,14 +564,14 @@ serve(async (req) => {
         console.log("[analyze-decision] OCR text length:", allText.length, "preview:", allText.substring(0, 300));
 
         // Analyze extracted text with mistral-large via REST (more reliable than pixtral for extraction)
-        const analysisRes = await fetch("https://api.mistral.ai/v1/chat/completions", {
+        const analysisRes = await mistralFetch("https://api.mistral.ai/v1/chat/completions", {
           method: "POST",
           headers: {
             "Authorization": `Bearer ${mistralApiKey}`,
             "Content-Type": "application/json",
           },
           body: JSON.stringify({
-            model: "mistral-large-latest",
+            model: "mistral-medium-latest",
             temperature: 0,
             response_format: { type: "json_object" },
             messages: [{
@@ -546,42 +589,50 @@ serve(async (req) => {
         if (!jsonMatch) throw new Error("No JSON in response");
         analysisResult = JSON.parse(jsonMatch[0]);
       } else {
-        // Image: use pixtral-12b-2409 directly via REST
+        // Image: use mistral-medium-latest via REST, with Lovable AI fallback
         let binary = "";
         for (let i = 0; i < bytes.length; i++) {
           binary += String.fromCharCode(bytes[i]);
         }
         const base64Content = btoa(binary);
         const mimeType = fileType === "image/png" ? "image/png" : "image/jpeg";
+        const dataUrl = `data:${mimeType};base64,${base64Content}`;
 
-        const visionRes = await fetch("https://api.mistral.ai/v1/chat/completions", {
+        const visionRes = await mistralFetch("https://api.mistral.ai/v1/chat/completions", {
           method: "POST",
           headers: {
             "Authorization": `Bearer ${mistralApiKey}`,
             "Content-Type": "application/json",
           },
           body: JSON.stringify({
-            model: "pixtral-large-latest",
+            model: "mistral-medium-latest",
             temperature: 0,
             response_format: { type: "json_object" },
             messages: [{
               role: "user",
               content: [
-                { type: "image_url", image_url: { url: `data:${mimeType};base64,${base64Content}` } },
+                { type: "image_url", image_url: { url: dataUrl } },
                 { type: "text", text: DECISION_REFUS_PROMPT },
               ],
             }],
           }),
         });
 
-        if (!visionRes.ok) throw new Error(`Vision API error: ${visionRes.status}`);
-        const visionResponse = await visionRes.json();
+        let responseText = "";
+        if (visionRes.ok) {
+          const visionResponse = await visionRes.json();
+          responseText = (visionResponse.choices?.[0]?.message?.content || "") as string;
+        } else {
+          const errBody = await visionRes.text().catch(() => "");
+          console.error("[analyze-decision] Vision API body:", errBody.slice(0, 400));
+          responseText = await lovableVisionAnalysis(dataUrl, DECISION_REFUS_PROMPT);
+        }
 
-        const responseText = (visionResponse.choices?.[0]?.message?.content || "") as string;
         const jsonMatch = responseText.match(/\{[\s\S]*\}/);
         if (!jsonMatch) throw new Error("No JSON in response");
         analysisResult = JSON.parse(jsonMatch[0]);
       }
+
     } catch (err: any) {
       console.error("[analyze-decision] Mistral error:", err);
       return jsonResponse({
